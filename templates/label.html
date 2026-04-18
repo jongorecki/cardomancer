@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Foil Labeler — MTG Card Sorter</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background: #1a1a2e; color: #eee; }
+        .card-img-container {
+            max-width: 380px;
+            margin: 0 auto;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+        .card-img-container img {
+            width: 100%;
+            display: block;
+        }
+        .btn-foil {
+            background: linear-gradient(135deg, #f0c27f, #fc5c7d, #6a82fb, #f0c27f);
+            background-size: 300% 300%;
+            animation: foilShimmer 3s ease infinite;
+            color: #000;
+            font-weight: bold;
+            border: none;
+            font-size: 1.3rem;
+            padding: 12px 40px;
+        }
+        .btn-foil:hover { color: #000; filter: brightness(1.1); }
+        @keyframes foilShimmer {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        .btn-nonfoil {
+            background: #444;
+            color: #ccc;
+            font-weight: bold;
+            border: none;
+            font-size: 1.3rem;
+            padding: 12px 40px;
+        }
+        .btn-nonfoil:hover { background: #555; color: #fff; }
+        .btn-skip {
+            font-size: 1rem;
+            padding: 8px 24px;
+        }
+        .stats-bar {
+            font-size: 0.9rem;
+            color: #999;
+        }
+        .stats-bar .badge { font-size: 0.85rem; }
+        .card-name {
+            font-size: 1.4rem;
+            font-weight: bold;
+            text-align: center;
+            margin: 12px 0 4px;
+        }
+        .card-meta {
+            text-align: center;
+            color: #888;
+            margin-bottom: 16px;
+        }
+        .progress-text {
+            text-align: center;
+            font-size: 0.9rem;
+            color: #666;
+            margin-bottom: 8px;
+        }
+        .keyboard-hint {
+            text-align: center;
+            font-size: 0.8rem;
+            color: #555;
+            margin-top: 12px;
+        }
+        .labeled-foil { border: 3px solid #fc5c7d; }
+        .labeled-nonfoil { border: 3px solid #444; }
+    </style>
+</head>
+<body>
+    <div class="container py-4" style="max-width: 600px;">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h4 class="mb-0">Foil Labeler</h4>
+            <a href="/" class="btn btn-sm btn-outline-secondary">Back to Sorter</a>
+        </div>
+
+        <!-- Session selector -->
+        <div id="session-select" class="mb-3">
+            <label class="form-label">Session</label>
+            <select id="session-dropdown" class="form-select form-select-sm" onchange="loadSession(this.value)">
+                <option value="">Loading sessions...</option>
+            </select>
+        </div>
+
+        <!-- Stats bar -->
+        <div class="stats-bar d-flex justify-content-between align-items-center mb-3" id="stats-bar" style="display:none !important;">
+            <div>
+                <span class="badge bg-secondary" id="stat-total">0 labeled</span>
+                <span class="badge" style="background: linear-gradient(135deg, #f0c27f, #fc5c7d);" id="stat-foil">0 foil</span>
+                <span class="badge bg-dark" id="stat-nonfoil">0 non-foil</span>
+            </div>
+            <div>
+                <span id="progress-label">0 / 0</span>
+                <button class="btn btn-sm btn-outline-secondary ms-2" onclick="toggleShowLabeled()">
+                    <span id="toggle-label">Show All</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Card display -->
+        <div id="card-area" style="display:none;">
+            <div class="progress-text" id="position-text"></div>
+            <div class="card-img-container" id="img-container">
+                <img id="card-image" src="" alt="Card image">
+            </div>
+            <div class="card-name" id="card-name"></div>
+            <div class="card-meta" id="card-meta"></div>
+
+            <!-- Buttons -->
+            <div class="d-flex justify-content-center gap-3 mb-2">
+                <button class="btn btn-nonfoil" id="btn-nonfoil" onclick="labelCard('nonfoil')">Not Foil</button>
+                <button class="btn btn-foil" id="btn-foil" onclick="labelCard('foil')">Foil</button>
+            </div>
+            <div class="d-flex justify-content-center gap-3">
+                <button class="btn btn-outline-secondary btn-skip" onclick="prevCard()">&larr; Prev</button>
+                <button class="btn btn-outline-secondary btn-skip" onclick="labelCard(null)">Clear</button>
+                <button class="btn btn-outline-secondary btn-skip" onclick="nextCard()">Skip &rarr;</button>
+            </div>
+            <div class="keyboard-hint">
+                Keyboard: <strong>F</strong> = Foil, <strong>N</strong> = Not Foil,
+                <strong>&larr;</strong> / <strong>&rarr;</strong> = Prev / Next,
+                <strong>C</strong> = Clear
+            </div>
+        </div>
+
+        <!-- Empty state -->
+        <div id="empty-state" class="text-center text-muted py-5" style="display:none;">
+            <p>No card crops found. Sort some cards first — card images will be saved automatically.</p>
+        </div>
+
+        <!-- All done state -->
+        <div id="done-state" class="text-center py-5" style="display:none;">
+            <h5 class="text-success">All cards labeled!</h5>
+            <p class="text-muted">Select another session or sort more cards to continue building the dataset.</p>
+        </div>
+    </div>
+
+    <script>
+    let cards = [];
+    let currentIndex = 0;
+    let sessionName = '';
+    let showLabeled = false;
+    let filteredCards = [];
+
+    async function init() {
+        const resp = await fetch('/api/label/sessions');
+        const sessions = await resp.json();
+        const dropdown = document.getElementById('session-dropdown');
+        if (sessions.length === 0) {
+            dropdown.innerHTML = '<option value="">No sessions with card crops</option>';
+            document.getElementById('empty-state').style.display = '';
+            return;
+        }
+        dropdown.innerHTML = sessions.map(s =>
+            `<option value="${s.name}">${s.name} (${s.crop_count} cards)</option>`
+        ).join('');
+        loadSession(sessions[0].name);
+    }
+
+    async function loadSession(name) {
+        if (!name) return;
+        sessionName = name;
+        const resp = await fetch(`/api/label/cards/${name}`);
+        cards = await resp.json();
+        currentIndex = 0;
+        applyFilter();
+
+        if (filteredCards.length === 0 && cards.length > 0) {
+            // All labeled
+            document.getElementById('card-area').style.display = 'none';
+            document.getElementById('done-state').style.display = '';
+        } else if (filteredCards.length === 0) {
+            document.getElementById('card-area').style.display = 'none';
+            document.getElementById('empty-state').style.display = '';
+        } else {
+            document.getElementById('card-area').style.display = '';
+            document.getElementById('done-state').style.display = 'none';
+            document.getElementById('empty-state').style.display = 'none';
+            showCard();
+        }
+
+        document.getElementById('stats-bar').style.display = '';
+        document.getElementById('stats-bar').style.setProperty('display', 'flex', 'important');
+        updateStats();
+    }
+
+    function applyFilter() {
+        if (showLabeled) {
+            filteredCards = cards;
+        } else {
+            filteredCards = cards.filter(c => c.label === null || c.label === undefined);
+        }
+    }
+
+    function toggleShowLabeled() {
+        showLabeled = !showLabeled;
+        document.getElementById('toggle-label').textContent = showLabeled ? 'Unlabeled Only' : 'Show All';
+        const oldKey = filteredCards[currentIndex]?.key;
+        applyFilter();
+        // Try to stay on the same card
+        if (oldKey) {
+            const newIdx = filteredCards.findIndex(c => c.key === oldKey);
+            currentIndex = newIdx >= 0 ? newIdx : 0;
+        } else {
+            currentIndex = 0;
+        }
+        if (filteredCards.length > 0) {
+            document.getElementById('card-area').style.display = '';
+            document.getElementById('done-state').style.display = 'none';
+            showCard();
+        } else {
+            document.getElementById('card-area').style.display = 'none';
+            document.getElementById('done-state').style.display = '';
+        }
+    }
+
+    function showCard() {
+        if (currentIndex < 0) currentIndex = 0;
+        if (currentIndex >= filteredCards.length) {
+            if (!showLabeled) {
+                document.getElementById('card-area').style.display = 'none';
+                document.getElementById('done-state').style.display = '';
+            } else {
+                currentIndex = filteredCards.length - 1;
+            }
+            return;
+        }
+
+        const card = filteredCards[currentIndex];
+        const img = document.getElementById('card-image');
+        img.src = `/api/label/image/${sessionName}/${card.file}`;
+
+        const container = document.getElementById('img-container');
+        container.className = 'card-img-container';
+        if (card.label === 'foil') container.classList.add('labeled-foil');
+        else if (card.label === 'nonfoil') container.classList.add('labeled-nonfoil');
+
+        document.getElementById('card-name').textContent = card.name || 'Unknown';
+        const meta = [card.set, card.rarity].filter(Boolean).join(' \u2022 ');
+        document.getElementById('card-meta').textContent = meta || `Scan #${card.scan_num}`;
+
+        const unlabeled = cards.filter(c => !c.label).length;
+        document.getElementById('position-text').textContent =
+            `${currentIndex + 1} / ${filteredCards.length}`;
+        document.getElementById('progress-label').textContent =
+            `${cards.length - unlabeled} / ${cards.length} labeled`;
+    }
+
+    async function labelCard(label) {
+        if (currentIndex >= filteredCards.length) return;
+        const card = filteredCards[currentIndex];
+
+        const resp = await fetch('/api/label/set', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({key: card.key, label: label}),
+        });
+        const data = await resp.json();
+
+        // Update local state
+        card.label = label;
+        // Also update in the main cards array
+        const mainCard = cards.find(c => c.key === card.key);
+        if (mainCard) mainCard.label = label;
+
+        updateStatsFromData(data);
+
+        // Auto-advance to next unlabeled
+        if (!showLabeled && label !== null) {
+            applyFilter();
+            // currentIndex stays the same since the labeled card was removed from filtered
+            if (currentIndex >= filteredCards.length) {
+                document.getElementById('card-area').style.display = 'none';
+                document.getElementById('done-state').style.display = '';
+                return;
+            }
+        } else {
+            if (label !== null) nextCard();
+            else showCard(); // Just refresh current (cleared label)
+        }
+        showCard();
+    }
+
+    function nextCard() {
+        if (currentIndex < filteredCards.length - 1) {
+            currentIndex++;
+            showCard();
+        }
+    }
+
+    function prevCard() {
+        if (currentIndex > 0) {
+            currentIndex--;
+            showCard();
+        }
+    }
+
+    function updateStats() {
+        const foil = cards.filter(c => c.label === 'foil').length;
+        const nonfoil = cards.filter(c => c.label === 'nonfoil').length;
+        const total = foil + nonfoil;
+        document.getElementById('stat-total').textContent = `${total} labeled`;
+        document.getElementById('stat-foil').textContent = `${foil} foil`;
+        document.getElementById('stat-nonfoil').textContent = `${nonfoil} non-foil`;
+    }
+
+    function updateStatsFromData(data) {
+        document.getElementById('stat-total').textContent = `${data.total} labeled`;
+        document.getElementById('stat-foil').textContent = `${data.foil} foil`;
+        document.getElementById('stat-nonfoil').textContent = `${data.nonfoil} non-foil`;
+        const unlabeled = cards.filter(c => !c.label).length;
+        document.getElementById('progress-label').textContent =
+            `${cards.length - unlabeled} / ${cards.length} labeled`;
+    }
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+        switch(e.key.toLowerCase()) {
+            case 'f': labelCard('foil'); break;
+            case 'n': labelCard('nonfoil'); break;
+            case 'c': labelCard(null); break;
+            case 'arrowleft': prevCard(); break;
+            case 'arrowright': nextCard(); break;
+        }
+    });
+
+    init();
+    </script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+# EDH/Commander Sorting
+# Separates high-value staples, ramp, removal, card draw, then by color.
+# Uses otag: queries (requires internet for initial fetch from Scryfall API).
+
+bins: 8
+fallback: 8
+
+bin1: usd>=5 legal:commander
+bin2: otag:ramp legal:commander
+bin3: otag:removal legal:commander
+bin4: otag:card-advantage legal:commander
+bin5: t:creature legal:commander
+bin6: t:instant or t:sorcery
+bin7: t:land
+# bin8 = fallback

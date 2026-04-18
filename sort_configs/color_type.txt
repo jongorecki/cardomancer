@@ -1,0 +1,16 @@
+# Color + Type Sort
+# Sorts creatures by color, then noncreature spells, lands, and everything else.
+
+bins: 10
+fallback: 10
+
+bin1: c:w t:creature
+bin2: c:u t:creature
+bin3: c:b t:creature
+bin4: c:r t:creature
+bin5: c:g t:creature
+bin6: is:multicolor t:creature
+bin7: t:instant or t:sorcery
+bin8: t:artifact or t:enchantment
+bin9: t:land
+# bin10 = fallback (everything else)

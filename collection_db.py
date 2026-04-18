@@ -1,0 +1,923 @@
+# collection_db.py
+# ---------------------------------------------------------------------------
+# SQLite-based collection database for tracking all scanned cards.
+#
+# Tables:
+#   sessions      — one row per sorting session
+#   scan_history  — append-only log of every scan ever performed
+#   inventory     — cards in the collection with quantity
+#
+# Every recognized scan adds the card to inventory (quantity+1 if it
+# already exists). The inventory is just "cards I own" — no location
+# tracking since cards get re-sorted into different bins over time.
+# ---------------------------------------------------------------------------
+
+import os
+import sqlite3
+from datetime import datetime
+
+from config import SCRIPT_DIR
+
+DB_PATH = os.path.join(SCRIPT_DIR, "collection.db")
+
+
+def get_connection(db_path=None):
+    """Get a connection to the collection database, creating tables if needed."""
+    path = db_path or DB_PATH
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    _create_tables(conn)
+    return conn
+
+
+def _create_tables(conn):
+    """Create tables if they don't exist."""
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            start_time TEXT NOT NULL,
+            end_time TEXT,
+            sort_mode TEXT,
+            config_name TEXT,
+            bin_count INTEGER,
+            total_scans INTEGER DEFAULT 0,
+            recognized INTEGER DEFAULT 0,
+            unrecognized INTEGER DEFAULT 0,
+            notes TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS scan_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            scan_num INTEGER NOT NULL,
+            timestamp TEXT NOT NULL,
+            name TEXT,
+            set_code TEXT,
+            collector_number TEXT,
+            oracle_id TEXT,
+            illustration_id TEXT,
+            colors TEXT,
+            cmc REAL,
+            type_line TEXT,
+            rarity TEXT,
+            price_usd REAL,
+            bin INTEGER,
+            method TEXT,
+            hash_distance REAL,
+            recognized INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (session_id) REFERENCES sessions(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS inventory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            set_code TEXT NOT NULL,
+            collector_number TEXT NOT NULL DEFAULT '',
+            oracle_id TEXT,
+            illustration_id TEXT,
+            colors TEXT,
+            cmc REAL,
+            type_line TEXT,
+            rarity TEXT,
+            price_usd REAL,
+            quantity INTEGER NOT NULL DEFAULT 1,
+            first_scanned TEXT,
+            last_scanned TEXT,
+            box TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_inventory_card
+            ON inventory(name, set_code, collector_number);
+
+        CREATE INDEX IF NOT EXISTS idx_inventory_oracle
+            ON inventory(oracle_id);
+
+        CREATE INDEX IF NOT EXISTS idx_scan_history_session
+            ON scan_history(session_id);
+
+        CREATE TABLE IF NOT EXISTS wishlist (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            set_code TEXT,
+            max_price REAL,
+            priority TEXT DEFAULT 'normal',
+            notes TEXT,
+            added_date TEXT,
+            found INTEGER NOT NULL DEFAULT 0
+        );
+    """)
+    # Migration: add box column if missing (existing databases)
+    try:
+        conn.execute("SELECT box FROM inventory LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE inventory ADD COLUMN box TEXT")
+        conn.commit()
+    conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Session management
+# ---------------------------------------------------------------------------
+
+def start_session(conn, sort_mode=None, config_name=None, bin_count=None,
+                  notes=None):
+    """Create a new session record. Returns the session_id."""
+    cursor = conn.execute(
+        """INSERT INTO sessions (start_time, sort_mode, config_name,
+                                bin_count, notes)
+           VALUES (?, ?, ?, ?, ?)""",
+        (datetime.now().isoformat(), sort_mode, config_name,
+         bin_count, notes)
+    )
+    conn.commit()
+    session_id = cursor.lastrowid
+    print(f"[collection] Session #{session_id} started")
+    return session_id
+
+
+def end_session(conn, session_id, total_scans=0, recognized=0, unrecognized=0):
+    """Update session with final stats."""
+    conn.execute(
+        """UPDATE sessions
+           SET end_time=?, total_scans=?, recognized=?, unrecognized=?
+           WHERE id=?""",
+        (datetime.now().isoformat(), total_scans, recognized, unrecognized,
+         session_id)
+    )
+    conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Recording scans
+# ---------------------------------------------------------------------------
+
+def record_scan(conn, session_id, scan_num,
+                card_info=None, card_data=None, bin_num=None,
+                method=None, hash_distance=None):
+    """
+    Record a scan to both scan_history and inventory.
+
+    Every recognized card is added to inventory. If the card already
+    exists (same name + set + collector_number), quantity is incremented.
+    """
+    timestamp = datetime.now().isoformat()
+    recognized = card_info is not None
+
+    # Extract fields
+    name = card_info.get('Name', '') if card_info else ''
+    set_code = card_info.get('Set', '') if card_info else ''
+    collector_number = ''
+    oracle_id = None
+    illustration_id = None
+    colors = ''
+    cmc = None
+    type_line = ''
+    rarity = ''
+    price_usd = None
+
+    if card_data:
+        collector_number = card_data.get('collector_number', '')
+        oracle_id = card_data.get('oracle_id')
+        illustration_id = card_data.get('illustration_id')
+        type_line = card_data.get('type_line', '')
+        rarity = card_data.get('rarity', '')
+        prices = card_data.get('prices', {})
+        if prices:
+            try:
+                price_usd = float(prices.get('usd') or prices.get('usd_foil') or 0)
+            except (ValueError, TypeError):
+                price_usd = None
+
+    if card_info:
+        colors = ''.join(card_info.get('Colors', []))
+        cmc = card_info.get('CMC')
+        if not type_line:
+            types = card_info.get('Types', [])
+            type_line = ' '.join(types) if isinstance(types, list) else str(types)
+        if not rarity:
+            rarity = card_info.get('Rarity', '')
+        if price_usd is None:
+            try:
+                p = card_info.get('Price', '')
+                if p and p != 'N/A':
+                    price_usd = float(str(p).replace('$', ''))
+            except (ValueError, TypeError):
+                pass
+
+    # --- 1. Always append to scan_history ---
+    conn.execute(
+        """INSERT INTO scan_history
+           (session_id, scan_num, timestamp, name, set_code, collector_number,
+            oracle_id, illustration_id, colors, cmc, type_line, rarity,
+            price_usd, bin, method, hash_distance, recognized)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (session_id, scan_num, timestamp, name, set_code, collector_number,
+         oracle_id, illustration_id, colors, cmc, type_line, rarity,
+         price_usd, bin_num, method, hash_distance, int(recognized))
+    )
+
+    # --- 2. Update inventory (only for recognized cards) ---
+    if recognized and name:
+        existing = conn.execute(
+            """SELECT id, quantity FROM inventory
+               WHERE name=? AND set_code=? AND collector_number=?
+               LIMIT 1""",
+            (name, set_code, collector_number)
+        ).fetchone()
+
+        if existing:
+            conn.execute(
+                """UPDATE inventory
+                   SET quantity=quantity+1, last_scanned=?,
+                       price_usd=COALESCE(?, price_usd)
+                   WHERE id=?""",
+                (timestamp, price_usd, existing['id'])
+            )
+        else:
+            conn.execute(
+                """INSERT INTO inventory
+                   (name, set_code, collector_number, oracle_id,
+                    illustration_id, colors, cmc, type_line, rarity,
+                    price_usd, quantity, first_scanned, last_scanned)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+                (name, set_code, collector_number, oracle_id,
+                 illustration_id, colors, cmc, type_line, rarity,
+                 price_usd, timestamp, timestamp)
+            )
+
+    conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Query functions
+# ---------------------------------------------------------------------------
+
+def get_collection_stats(conn):
+    """Get overall collection statistics."""
+    row = conn.execute(
+        """SELECT
+             COUNT(*) as unique_cards,
+             COALESCE(SUM(quantity), 0) as total_cards,
+             COALESCE(SUM(quantity * COALESCE(price_usd, 0)), 0) as total_value
+           FROM inventory"""
+    ).fetchone()
+
+    session_count = conn.execute(
+        "SELECT COUNT(*) FROM sessions"
+    ).fetchone()[0]
+
+    return {
+        "unique_cards": row['unique_cards'],
+        "total_cards": row['total_cards'],
+        "total_value": row['total_value'],
+        "sessions": session_count,
+    }
+
+
+def get_inventory(conn, order_by="name", order_dir="ASC", limit=None):
+    """Get the full inventory."""
+    allowed_sort = {"name", "set_code", "price_usd", "quantity", "cmc",
+                    "rarity", "colors", "last_scanned", "box", "type_line"}
+    if order_by not in allowed_sort:
+        order_by = "name"
+    direction = "DESC" if order_dir.upper() == "DESC" else "ASC"
+
+    query = f"SELECT * FROM inventory ORDER BY {order_by} {direction}"
+    if limit:
+        query += f" LIMIT {int(limit)}"
+
+    rows = conn.execute(query).fetchall()
+    return [dict(r) for r in rows]
+
+
+def search_collection(conn, name=None, set_code=None, colors=None,
+                      rarity=None, type_line=None, min_price=None,
+                      max_price=None, box=None,
+                      order_by="name", order_dir="ASC"):
+    """Search the inventory with optional filters."""
+    conditions = []
+    params = []
+
+    if name:
+        conditions.append("name LIKE ?")
+        params.append(f"%{name}%")
+    if set_code:
+        conditions.append("set_code=?")
+        params.append(set_code)
+    if colors:
+        conditions.append("colors LIKE ?")
+        params.append(f"%{colors}%")
+    if rarity:
+        conditions.append("rarity=?")
+        params.append(rarity)
+    if type_line:
+        conditions.append("type_line LIKE ?")
+        params.append(f"%{type_line}%")
+    if min_price is not None:
+        conditions.append("price_usd >= ?")
+        params.append(min_price)
+    if max_price is not None:
+        conditions.append("price_usd <= ?")
+        params.append(max_price)
+    if box is not None:
+        if box == '__unassigned__':
+            conditions.append("box IS NULL")
+        else:
+            conditions.append("box=?")
+            params.append(box)
+
+    allowed_sort = {"name", "set_code", "price_usd", "quantity", "cmc",
+                    "rarity", "colors", "last_scanned", "box", "type_line"}
+    if order_by not in allowed_sort:
+        order_by = "name"
+    direction = "DESC" if order_dir.upper() == "DESC" else "ASC"
+
+    where = " AND ".join(conditions) if conditions else "1=1"
+    query = f"SELECT * FROM inventory WHERE {where} ORDER BY {order_by} {direction}"
+
+    rows = conn.execute(query, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_duplicates(conn, min_quantity=2):
+    """Find cards with multiple copies."""
+    rows = conn.execute(
+        """SELECT name, set_code, collector_number, quantity, price_usd
+           FROM inventory WHERE quantity >= ? ORDER BY quantity DESC""",
+        (min_quantity,)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_session_history(conn):
+    """Get all sessions."""
+    rows = conn.execute(
+        "SELECT * FROM sessions ORDER BY start_time DESC"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_scan_history(conn, session_id=None, limit=None):
+    """Get scan history, optionally filtered by session."""
+    query = "SELECT * FROM scan_history"
+    params = []
+    if session_id:
+        query += " WHERE session_id=?"
+        params.append(session_id)
+    query += " ORDER BY timestamp DESC"
+    if limit:
+        query += f" LIMIT {int(limit)}"
+
+    rows = conn.execute(query, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_unrecognized_scans(conn, session_id=None, page=1, per_page=20):
+    """
+    Get unrecognized scans with pagination.
+
+    Returns dict with 'items', 'total', 'page', 'pages'.
+    Each item includes the scan_history row plus the session start_time
+    (needed to locate card crop images on disk).
+    """
+    where = "sh.recognized = 0"
+    params = []
+    if session_id:
+        where += " AND sh.session_id = ?"
+        params.append(session_id)
+
+    count_row = conn.execute(
+        f"SELECT COUNT(*) FROM scan_history sh WHERE {where}", params
+    ).fetchone()
+    total = count_row[0]
+    pages = max(1, (total + per_page - 1) // per_page)
+    offset = (page - 1) * per_page
+
+    rows = conn.execute(
+        f"""SELECT sh.*, s.start_time as session_start_time
+            FROM scan_history sh
+            JOIN sessions s ON sh.session_id = s.id
+            WHERE {where}
+            ORDER BY sh.id DESC
+            LIMIT ? OFFSET ?""",
+        params + [per_page, offset]
+    ).fetchall()
+
+    return {
+        'items': [dict(r) for r in rows],
+        'total': total,
+        'page': page,
+        'pages': pages,
+    }
+
+
+def resolve_unrecognized_scan(conn, scan_id, card_info, card_data=None):
+    """
+    Resolve an unrecognized scan by updating it with correct card details
+    and adding the card to inventory.
+
+    :param scan_id:   The scan_history.id to update
+    :param card_info: Dict with Name, Set, Colors, CMC, Types, Rarity, Price
+    :param card_data: Optional Scryfall card dict for extra fields
+    :returns: True if updated, False if scan not found or already recognized
+    """
+    row = conn.execute(
+        "SELECT * FROM scan_history WHERE id = ?", (scan_id,)
+    ).fetchone()
+    if row is None:
+        return False
+    if row['recognized']:
+        return False  # Already resolved
+
+    name = card_info.get('Name', '')
+    set_code = card_info.get('Set', '')
+    collector_number = ''
+    oracle_id = None
+    illustration_id = None
+    colors = ''.join(card_info.get('Colors', []))
+    cmc = card_info.get('CMC')
+    type_line = ''
+    rarity = card_info.get('Rarity', '')
+    price_usd = None
+
+    if card_data:
+        collector_number = card_data.get('collector_number', '')
+        oracle_id = card_data.get('oracle_id')
+        illustration_id = card_data.get('illustration_id')
+        type_line = card_data.get('type_line', '')
+        rarity = card_data.get('rarity', rarity)
+        prices = card_data.get('prices', {})
+        if prices:
+            try:
+                price_usd = float(prices.get('usd') or prices.get('usd_foil') or 0)
+            except (ValueError, TypeError):
+                pass
+
+    if not type_line:
+        types = card_info.get('Types', [])
+        type_line = ' '.join(types) if isinstance(types, list) else str(types)
+
+    if price_usd is None:
+        try:
+            p = card_info.get('Price', '')
+            if p and p != 'N/A':
+                price_usd = float(str(p).replace('$', ''))
+        except (ValueError, TypeError):
+            pass
+
+    timestamp = datetime.now().isoformat()
+
+    # Update scan_history
+    conn.execute(
+        """UPDATE scan_history
+           SET name=?, set_code=?, collector_number=?, oracle_id=?,
+               illustration_id=?, colors=?, cmc=?, type_line=?, rarity=?,
+               price_usd=?, method='manual_review', recognized=1
+           WHERE id=?""",
+        (name, set_code, collector_number, oracle_id, illustration_id,
+         colors, cmc, type_line, rarity, price_usd, scan_id)
+    )
+
+    # Update session stats
+    conn.execute(
+        """UPDATE sessions
+           SET recognized = recognized + 1,
+               unrecognized = MAX(0, unrecognized - 1)
+           WHERE id = ?""",
+        (row['session_id'],)
+    )
+
+    # Add to inventory
+    if name:
+        existing = conn.execute(
+            """SELECT id, quantity FROM inventory
+               WHERE name=? AND set_code=? AND collector_number=?
+               LIMIT 1""",
+            (name, set_code, collector_number)
+        ).fetchone()
+
+        if existing:
+            conn.execute(
+                """UPDATE inventory
+                   SET quantity=quantity+1, last_scanned=?,
+                       price_usd=COALESCE(?, price_usd)
+                   WHERE id=?""",
+                (timestamp, price_usd, existing['id'])
+            )
+        else:
+            conn.execute(
+                """INSERT INTO inventory
+                   (name, set_code, collector_number, oracle_id,
+                    illustration_id, colors, cmc, type_line, rarity,
+                    price_usd, quantity, first_scanned, last_scanned)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+                (name, set_code, collector_number, oracle_id,
+                 illustration_id, colors, cmc, type_line, rarity,
+                 price_usd, timestamp, timestamp)
+            )
+
+    conn.commit()
+    print(f"[collection] Resolved scan #{scan_id}: {name} ({set_code})")
+    return True
+
+
+def export_inventory_csv(conn, filepath):
+    """Export the full inventory to a CSV file."""
+    import csv
+    rows = get_inventory(conn, order_by="name")
+    if not rows:
+        print("[collection] No cards in inventory to export.")
+        return
+
+    with open(filepath, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=rows[0].keys())
+        writer.writeheader()
+        writer.writerows(rows)
+
+    print(f"[collection] Exported {len(rows)} cards to {filepath}")
+
+
+def import_inventory_csv(conn, csv_text):
+    """
+    Import cards from CSV text into inventory.
+
+    Expects columns: name, set_code, collector_number, and optionally
+    oracle_id, illustration_id, colors, cmc, type_line, rarity,
+    price_usd, quantity.
+
+    Cards with matching (name, set_code, collector_number) get their
+    quantity incremented; new cards are inserted.
+
+    Returns (imported, updated, skipped) counts.
+    """
+    import csv
+    import io
+
+    reader = csv.DictReader(io.StringIO(csv_text))
+    imported = 0
+    updated = 0
+    skipped = 0
+    now = datetime.now().isoformat()
+
+    for row in reader:
+        name = row.get('name', '').strip()
+        set_code = row.get('set_code', '').strip()
+        if not name or not set_code:
+            skipped += 1
+            continue
+
+        collector_number = row.get('collector_number', '').strip()
+        quantity = int(row.get('quantity', 1) or 1)
+
+        existing = conn.execute(
+            """SELECT id, quantity FROM inventory
+               WHERE name=? AND set_code=? AND collector_number=?
+               LIMIT 1""",
+            (name, set_code, collector_number)
+        ).fetchone()
+
+        if existing:
+            conn.execute(
+                """UPDATE inventory SET quantity=quantity+?, last_scanned=?
+                   WHERE id=?""",
+                (quantity, now, existing['id'])
+            )
+            updated += 1
+        else:
+            def _f(key):
+                val = row.get(key, '')
+                return val if val else None
+
+            try:
+                price = float(row.get('price_usd', 0) or 0)
+            except (ValueError, TypeError):
+                price = None
+            try:
+                cmc = float(row.get('cmc', 0) or 0)
+            except (ValueError, TypeError):
+                cmc = None
+
+            conn.execute(
+                """INSERT INTO inventory
+                   (name, set_code, collector_number, oracle_id,
+                    illustration_id, colors, cmc, type_line, rarity,
+                    price_usd, quantity, first_scanned, last_scanned)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (name, set_code, collector_number, _f('oracle_id'),
+                 _f('illustration_id'), _f('colors'), cmc,
+                 _f('type_line'), _f('rarity'), price, quantity, now, now)
+            )
+            imported += 1
+
+    conn.commit()
+    print(f"[collection] CSV import: {imported} new, {updated} updated, "
+          f"{skipped} skipped")
+    return imported, updated, skipped
+
+
+def generate_test_collection(conn, count=50):
+    """
+    Generate a test collection by pulling random cards from the Scryfall
+    bulk data. Returns the number of cards added.
+    """
+    import random
+    try:
+        from cards import CARDS_DATA
+    except ImportError:
+        return 0
+
+    if not CARDS_DATA:
+        return 0
+
+    # Filter to paper cards with English names
+    eligible = [c for c in CARDS_DATA
+                if c.get('lang') == 'en'
+                and 'paper' in c.get('games', [])
+                and c.get('name')]
+
+    if not eligible:
+        return 0
+
+    sample = random.sample(eligible, min(count, len(eligible)))
+    now = datetime.now().isoformat()
+    added = 0
+
+    for card in sample:
+        name = card.get('name', '')
+        set_code = card.get('set', '')
+        collector_number = card.get('collector_number', '')
+        quantity = random.choices([1, 2, 3, 4], weights=[50, 30, 15, 5])[0]
+
+        prices = card.get('prices', {})
+        try:
+            price_usd = float(prices.get('usd') or prices.get('usd_foil') or 0)
+        except (ValueError, TypeError):
+            price_usd = None
+
+        colors = ''.join(card.get('colors', []))
+        cmc = card.get('cmc')
+        type_line = card.get('type_line', '')
+        rarity = card.get('rarity', '')
+
+        conn.execute(
+            """INSERT INTO inventory
+               (name, set_code, collector_number, oracle_id,
+                illustration_id, colors, cmc, type_line, rarity,
+                price_usd, quantity, first_scanned, last_scanned)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (name, set_code, collector_number, card.get('oracle_id'),
+             card.get('illustration_id'), colors, cmc, type_line, rarity,
+             price_usd, quantity, now, now)
+        )
+        added += 1
+
+    conn.commit()
+    print(f"[collection] Generated test collection: {added} cards")
+    return added
+
+
+# ---------------------------------------------------------------------------
+# Box management
+# ---------------------------------------------------------------------------
+
+def get_boxes(conn):
+    """Get list of all unique box names in use."""
+    rows = conn.execute(
+        "SELECT DISTINCT box FROM inventory WHERE box IS NOT NULL ORDER BY box"
+    ).fetchall()
+    return [r['box'] for r in rows]
+
+
+def get_box_summary(conn):
+    """Get card count and total value per box."""
+    rows = conn.execute(
+        """SELECT
+             COALESCE(box, '__unassigned__') as box_name,
+             COUNT(*) as unique_cards,
+             COALESCE(SUM(quantity), 0) as total_cards,
+             COALESCE(SUM(quantity * COALESCE(price_usd, 0)), 0) as total_value
+           FROM inventory
+           GROUP BY COALESCE(box, '__unassigned__')
+           ORDER BY box_name"""
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def assign_box(conn, item_id, box_name, move_quantity=None):
+    """
+    Assign a box to an inventory item.
+
+    If move_quantity is specified and less than the item's total quantity,
+    splits the row: the original keeps (quantity - move_quantity) with its
+    current box, and a new row is created with move_quantity in the new box.
+
+    If move_quantity is None or equals total quantity, just updates the box.
+    """
+    row = conn.execute(
+        "SELECT * FROM inventory WHERE id=?", (item_id,)
+    ).fetchone()
+    if not row:
+        return False
+
+    current_qty = row['quantity']
+    box = box_name.strip() if box_name else None
+
+    if move_quantity is not None and 0 < move_quantity < current_qty:
+        # Split: reduce original, create new row with the new box
+        conn.execute(
+            "UPDATE inventory SET quantity=? WHERE id=?",
+            (current_qty - move_quantity, item_id)
+        )
+        conn.execute(
+            """INSERT INTO inventory
+               (name, set_code, collector_number, oracle_id,
+                illustration_id, colors, cmc, type_line, rarity,
+                price_usd, quantity, first_scanned, last_scanned, box)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (row['name'], row['set_code'], row['collector_number'],
+             row['oracle_id'], row['illustration_id'], row['colors'],
+             row['cmc'], row['type_line'], row['rarity'], row['price_usd'],
+             move_quantity, row['first_scanned'], row['last_scanned'], box)
+        )
+    else:
+        # Update box on the whole row
+        conn.execute(
+            "UPDATE inventory SET box=? WHERE id=?", (box, item_id)
+        )
+
+    conn.commit()
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Delete / reset operations
+# ---------------------------------------------------------------------------
+
+def increment_inventory_item(conn, item_id, quantity=1):
+    """Add copies to an existing inventory item."""
+    now = datetime.now().isoformat()
+    conn.execute(
+        "UPDATE inventory SET quantity = quantity + ?, last_scanned = ? WHERE id = ?",
+        (quantity, now, item_id)
+    )
+    conn.commit()
+
+
+def add_inventory_item(conn, name, set_code, collector_number='',
+                       colors=None, type_line=None, rarity=None,
+                       price_usd=None, quantity=1, box=None):
+    """
+    Manually add a card to inventory.
+
+    If a matching (name, set_code, collector_number) already exists,
+    increments its quantity instead.
+    """
+    now = datetime.now().isoformat()
+    existing = conn.execute(
+        """SELECT id, quantity FROM inventory
+           WHERE name=? AND set_code=? AND collector_number=?
+           LIMIT 1""",
+        (name, set_code, collector_number)
+    ).fetchone()
+
+    if existing:
+        conn.execute(
+            "UPDATE inventory SET quantity = quantity + ?, last_scanned = ? WHERE id = ?",
+            (quantity, now, existing['id'])
+        )
+        conn.commit()
+        return existing['id']
+
+    conn.execute(
+        """INSERT INTO inventory
+           (name, set_code, collector_number, colors, type_line, rarity,
+            price_usd, quantity, first_scanned, last_scanned, box)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (name, set_code, collector_number, colors, type_line, rarity,
+         price_usd, quantity, now, now, box)
+    )
+    conn.commit()
+    return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+
+def delete_inventory_item(conn, item_id, quantity=None):
+    """
+    Remove cards from inventory.
+
+    If quantity is None or >= the item's current quantity, deletes the row.
+    Otherwise decrements quantity by the specified amount.
+    """
+    if quantity is not None:
+        row = conn.execute(
+            "SELECT quantity FROM inventory WHERE id = ?", (item_id,)
+        ).fetchone()
+        if row and quantity < row['quantity']:
+            conn.execute(
+                "UPDATE inventory SET quantity = quantity - ? WHERE id = ?",
+                (quantity, item_id)
+            )
+            conn.commit()
+            return
+    conn.execute("DELETE FROM inventory WHERE id = ?", (item_id,))
+    conn.commit()
+
+
+def delete_session(conn, session_id):
+    """Delete a session and its scan history."""
+    conn.execute("DELETE FROM scan_history WHERE session_id = ?", (session_id,))
+    conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+    conn.commit()
+
+
+def reset_collection(conn):
+    """Delete all data from all tables."""
+    conn.executescript("""
+        DELETE FROM scan_history;
+        DELETE FROM sessions;
+        DELETE FROM inventory;
+    """)
+    conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Wishlist
+# ---------------------------------------------------------------------------
+
+def get_wishlist(conn):
+    """Get all wishlist items."""
+    rows = conn.execute(
+        "SELECT * FROM wishlist ORDER BY found ASC, priority DESC, name"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def add_wishlist_item(conn, name, set_code=None, max_price=None,
+                      priority='normal', notes=None):
+    """Add a card to the wishlist."""
+    now = datetime.now().isoformat()
+    conn.execute(
+        """INSERT INTO wishlist (name, set_code, max_price, priority, notes,
+                                added_date, found)
+           VALUES (?, ?, ?, ?, ?, ?, 0)""",
+        (name, set_code, max_price, priority, notes, now)
+    )
+    conn.commit()
+
+
+def delete_wishlist_item(conn, item_id):
+    """Remove an item from the wishlist."""
+    conn.execute("DELETE FROM wishlist WHERE id = ?", (item_id,))
+    conn.commit()
+
+
+def mark_wishlist_found(conn, item_id):
+    """Mark a wishlist item as found."""
+    conn.execute("UPDATE wishlist SET found = 1 WHERE id = ?", (item_id,))
+    conn.commit()
+
+
+def check_wishlist_match(conn, card_name):
+    """Check if a scanned card name matches any wishlist item. Returns matches."""
+    rows = conn.execute(
+        "SELECT * FROM wishlist WHERE found = 0 AND ? LIKE '%' || name || '%'",
+        (card_name,)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Display helpers
+# ---------------------------------------------------------------------------
+
+def print_collection_stats(conn):
+    """Print collection overview to console."""
+    stats = get_collection_stats(conn)
+    print(f"\n{'═' * 50}")
+    print(f"  Collection Overview")
+    print(f"{'═' * 50}")
+    print(f"  Unique cards:  {stats['unique_cards']}")
+    print(f"  Total cards:   {stats['total_cards']}")
+    print(f"  Total value:   ${stats['total_value']:.2f}")
+    print(f"  Sessions:      {stats['sessions']}")
+    print(f"{'═' * 50}\n")
+
+
+def print_inventory_summary(conn, limit=20):
+    """Print a summary of the inventory."""
+    rows = get_inventory(conn, order_by="name", limit=limit)
+    total = conn.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
+
+    print(f"\n{'─' * 70}")
+    print(f"  Inventory ({total} unique cards)")
+    print(f"{'─' * 70}")
+    print(f"  {'Name':<30} {'Set':<6} {'Qty':>4} {'Price':>8}")
+    print(f"  {'─'*30} {'─'*5} {'─'*4} {'─'*8}")
+    for r in rows:
+        price_str = f"${r['price_usd']:.2f}" if r['price_usd'] else "N/A"
+        print(f"  {r['name'][:30]:<30} {r['set_code']:<6} {r['quantity']:>4} "
+              f"{price_str:>8}")
+    if total > limit:
+        print(f"  ... and {total - limit} more")
+    print(f"{'─' * 70}\n")

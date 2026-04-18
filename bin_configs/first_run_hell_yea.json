@@ -1,0 +1,20 @@
+{
+  "name": "first run hell yea",
+  "bin_count": 7,
+  "start_x": 162.9,
+  "spacing": 87.1,
+  "source_x": 596.5,
+  "detection_x": 100.0,
+  "staging_x": 465.8,
+  "staging_width": 100.0,
+  "locations": {
+    "0": 596.5,
+    "1": 162.9,
+    "2": 250.0,
+    "3": 340.8,
+    "4": 692.5,
+    "5": 780.3,
+    "6": 865.1,
+    "7": 949.2
+  }
+}

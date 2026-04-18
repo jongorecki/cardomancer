@@ -1,0 +1,56 @@
+# Secrets
+.env
+.env.local
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# DBs (data, not code)
+collection.db
+collection.db-journal
+collection.db-wal
+collection.db-shm
+enrichment.db
+enrichment.db-journal
+enrichment.db-wal
+enrichment.db-shm
+backup/dbs/
+
+# Scan logs and debug outputs
+logs/
+scan_logs/
+test_logs/
+debug_crops/
+debug_warps/
+diag_*/
+*.log
+sim_debug.log
+sim_start.log
+layout_test_failures/
+foil_signal1/
+
+# Large data files (user regenerates locally)
+downloaded_cards/
+card_hashes*.json
+card_hashes*.npz
+card_embeddings.npz
+default-cards-*.json
+AtomicCards.json
+
+# Test artifacts — keep only _pinned.json snapshots
+tests/probe_snapshots/*_20*.json
+
+# OS
+Thumbs.db
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "card-sorter-web",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["web_server.py"],
+      "port": 5000
+    }
+  ]
+}

@@ -1,0 +1,146 @@
+{
+  "normal": {
+    "avg_num_contours": 12.623836420434824,
+    "avg_mean_area": 238561.20773455143,
+    "avg_std_area": 112847.8283960285,
+    "avg_mean_ar": 1.7113936825998552,
+    "avg_std_ar": 1.2221092445706412,
+    "count_cards": 95073
+  },
+  "token": {
+    "avg_num_contours": 15.03292496171516,
+    "avg_mean_area": 115424.37528416458,
+    "avg_std_area": 131748.8513787831,
+    "avg_mean_ar": 1.8419577610196698,
+    "avg_std_ar": 1.1290763278105123,
+    "count_cards": 2612
+  },
+  "adventure": {
+    "avg_num_contours": 16.612535612535613,
+    "avg_mean_area": 46529.02133529131,
+    "avg_std_area": 155850.14662830744,
+    "avg_mean_ar": 2.227489169728259,
+    "avg_std_ar": 1.7050396996198542,
+    "count_cards": 351
+  },
+  "split": {
+    "avg_num_contours": 12.224852071005918,
+    "avg_mean_area": 154150.4505438082,
+    "avg_std_area": 95218.10593194551,
+    "avg_mean_ar": 1.8207072338771277,
+    "avg_std_ar": 1.1657562805203956,
+    "count_cards": 338
+  },
+  "mutate": {
+    "avg_num_contours": 20.19178082191781,
+    "avg_mean_area": 42201.808811703384,
+    "avg_std_area": 146560.75136717054,
+    "avg_mean_ar": 2.103475420878481,
+    "avg_std_ar": 1.3125948710901088,
+    "count_cards": 146
+  },
+  "planar": {
+    "avg_num_contours": 27.16842105263158,
+    "avg_mean_area": 79672.15094624877,
+    "avg_std_area": 267089.77730559005,
+    "avg_mean_ar": 1.0169580448235185,
+    "avg_std_ar": 0.8702348998897778,
+    "count_cards": 285
+  },
+  "emblem": {
+    "avg_num_contours": 12.119047619047619,
+    "avg_mean_area": 112221.43367307555,
+    "avg_std_area": 152119.21039525815,
+    "avg_mean_ar": 1.9470733223473682,
+    "avg_std_ar": 1.17201615481837,
+    "count_cards": 126
+  },
+  "meld": {
+    "avg_num_contours": 15.166666666666666,
+    "avg_mean_area": 60645.48958044744,
+    "avg_std_area": 155962.3763441916,
+    "avg_mean_ar": 1.9261528056148831,
+    "avg_std_ar": 1.2435140650383973,
+    "count_cards": 54
+  },
+  "saga": {
+    "avg_num_contours": 13.967509025270758,
+    "avg_mean_area": 50158.64805117577,
+    "avg_std_area": 165683.34808445888,
+    "avg_mean_ar": 2.2369232949291997,
+    "avg_std_ar": 1.3938737461092345,
+    "count_cards": 277
+  },
+  "vanguard": {
+    "avg_num_contours": 34.50420168067227,
+    "avg_mean_area": 367888.58437801927,
+    "avg_std_area": 42462.30636413327,
+    "avg_mean_ar": 1.4681242054762098,
+    "avg_std_ar": 1.5243526725664542,
+    "count_cards": 119
+  },
+  "scheme": {
+    "avg_num_contours": 16.081818181818182,
+    "avg_mean_area": 537508.2281053887,
+    "avg_std_area": 210318.26510470978,
+    "avg_mean_ar": 1.5225373079680449,
+    "avg_std_ar": 1.038790792144469,
+    "count_cards": 110
+  },
+  "class": {
+    "avg_num_contours": 13.796875,
+    "avg_mean_area": 48246.337712340865,
+    "avg_std_area": 164361.6172398525,
+    "avg_mean_ar": 2.124305530039031,
+    "avg_std_ar": 1.388981740579376,
+    "count_cards": 64
+  },
+  "augment": {
+    "avg_num_contours": 61.88235294117647,
+    "avg_mean_area": 6996.0375805253325,
+    "avg_std_area": 48896.90851302186,
+    "avg_mean_ar": 2.4762818455371454,
+    "avg_std_ar": 4.028703722878467,
+    "count_cards": 17
+  },
+  "case": {
+    "avg_num_contours": 14.692307692307692,
+    "avg_mean_area": 48421.695077538025,
+    "avg_std_area": 159045.23696903093,
+    "avg_mean_ar": 2.244161098181527,
+    "avg_std_ar": 1.4719351998155052,
+    "count_cards": 26
+  },
+  "flip": {
+    "avg_num_contours": 4.088888888888889,
+    "avg_mean_area": 455544.28264753765,
+    "avg_std_area": 84203.97937616045,
+    "avg_mean_ar": 1.0174928820692555,
+    "avg_std_ar": 0.29328031009867156,
+    "count_cards": 45
+  },
+  "host": {
+    "avg_num_contours": 13.413793103448276,
+    "avg_mean_area": 48957.384182125345,
+    "avg_std_area": 170284.45671907687,
+    "avg_mean_ar": 2.067201705148151,
+    "avg_std_ar": 1.318103382081404,
+    "count_cards": 29
+  },
+  "leveler": {
+    "avg_num_contours": 6.0476190476190474,
+    "avg_mean_area": 369909.84171094676,
+    "avg_std_area": 110722.76994985643,
+    "avg_mean_ar": 1.1463865924502246,
+    "avg_std_ar": 0.4833657251564511,
+    "count_cards": 63
+  },
+  "prototype": {
+    "avg_num_contours": 20.595744680851062,
+    "avg_mean_area": 39690.72548826257,
+    "avg_std_area": 138612.3022461491,
+    "avg_mean_ar": 2.1518284144388695,
+    "avg_std_ar": 1.2241216459175281,
+    "count_cards": 47
+  }
+}
