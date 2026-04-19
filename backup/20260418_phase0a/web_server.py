@@ -15,14 +15,6 @@ import logging.handlers
 import sys
 import traceback
 
-# Load .env into os.environ before anything else reads env vars. Missing
-# file is fine — python-dotenv is silent on absent paths.
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
-
 from flask import Flask, render_template, request, jsonify, Response, send_file
 from flask_socketio import SocketIO
 
@@ -35,11 +27,6 @@ from web_calibration import calibrator
 import cv2
 
 from config import SCRIPT_DIR, SORT_CONFIGS_DIR, SORTING_MODES, SCAN_LOGS_DIR
-
-import enrichment_db
-from web_enrichment.repo import EnrichmentRepo
-from web_enrichment.scheduler import RefreshScheduler
-from web_enrichment.stubs import ALL_STUBS
 
 
 # ---------------------------------------------------------------------------
@@ -181,35 +168,6 @@ socketio = SocketIO(app, async_mode='threading', cors_allowed_origins='*')
 worker.set_emit(lambda event, data: socketio.emit(event, data))
 db_updater.set_emit(lambda event, data: socketio.emit(event, data))
 calibrator.set_emit(lambda event, data: socketio.emit(event, data))
-
-
-# =========================================================================
-# Enrichment (Phase 0A foundation — scheduler + stub sources)
-# =========================================================================
-#
-# `enrichment.db` sits next to `collection.db` and holds pulled data from
-# external sources (Scryfall Tagger, EDHREC, edhtop16, Commander
-# Spellbook, buylists). Phase 0A wires the plumbing (DB schema, repo,
-# scheduler, endpoints) and registers placeholder stub sources. Phase 1+
-# replaces each stub with a real implementation.
-
-enrichment_repo = EnrichmentRepo()
-try:
-    _enr_conn = enrichment_db.get_connection()
-    _enr_conn.close()
-except Exception as _enr_err:
-    logging.error("Failed to open enrichment.db: %s", _enr_err)
-
-enrichment_scheduler = RefreshScheduler(
-    emit=lambda event, data: socketio.emit(event, data),
-)
-for _stub_name, _stub_cls in ALL_STUBS.items():
-    _cron = "daily" if _stub_name in ("buylist_ck", "prices") else "weekly"
-    try:
-        enrichment_scheduler.register(_stub_cls(), cron=_cron)
-    except Exception as _stub_err:
-        logging.error("Could not register stub source %s: %s",
-                      _stub_name, _stub_err)
 
 
 # =========================================================================
@@ -2984,87 +2942,6 @@ def _load_default_bin_config():
             print(f"  Warning: failed to load default bin config: {e}")
 
 
-# =========================================================================
-# Enrichment API (Phase 0A — scheduler status + manual refresh + lookups)
-# =========================================================================
-
-@app.route('/api/enrichment/sources', methods=['GET'])
-def api_enrichment_sources():
-    """List every registered source with its cron, last-run state, and
-    coverage summary. Used by the Database subsection in the UI."""
-    try:
-        entries = enrichment_scheduler.list_sources()
-    except Exception as e:
-        logging.exception("enrichment sources list failed")
-        return jsonify({'error': str(e)}), 500
-
-    coverage = enrichment_repo.coverage_overview()
-    for e in entries:
-        cov = coverage.get(e['name'])
-        if cov:
-            e['coverage'] = {
-                'last_success': cov.get('last_success'),
-                'last_attempt': cov.get('last_attempt'),
-                'error': cov.get('error'),
-                'coverage_pct': cov.get('coverage_pct'),
-            }
-        else:
-            e['coverage'] = None
-    return jsonify({'sources': entries})
-
-
-@app.route('/api/enrichment/refresh/<source>', methods=['POST'])
-def api_enrichment_refresh(source):
-    """Manually trigger a refresh. Returns 202 immediately; the actual
-    refresh runs on a background thread and emits
-    enrichment_refresh_progress + enrichment_refresh_complete events."""
-    full = False
-    if request.is_json:
-        full = bool((request.get_json(silent=True) or {}).get('full', False))
-    try:
-        enrichment_scheduler.trigger(source, full=full)
-    except KeyError:
-        return jsonify({'error': f'Unknown source: {source}'}), 404
-    except RuntimeError as e:
-        return jsonify({'error': str(e)}), 409
-    return jsonify({'queued': True, 'source': source}), 202
-
-
-@app.route('/api/enrichment/probes/run', methods=['POST'])
-def api_enrichment_probes_run():
-    """Run every probe script synchronously and return the summary.
-    Use sparingly — each probe may hit its real endpoint in Phase 0B+.
-    """
-    try:
-        from probes.run_all import run_all
-    except Exception as e:
-        return jsonify({'error': f'probes import failed: {e}'}), 500
-    exit_code, results = run_all()
-    return jsonify({
-        'ok': exit_code == 0,
-        'results': [r.to_dict() for r in results],
-    })
-
-
-@app.route('/api/enrichment/card/<oracle_id>', methods=['GET'])
-def api_enrichment_card(oracle_id):
-    """Return the full enrichment payload for one oracle_id, or 404."""
-    card = enrichment_repo.get_card(oracle_id)
-    if card is None:
-        return jsonify({'error': 'not found'}), 404
-    return jsonify({
-        'oracle_id': card.oracle_id,
-        'tags': card.tags,
-        'staples': card.staples,
-        'salt': card.salt,
-        'combos': card.combos,
-        'buylists': card.buylists,
-        'themes': card.themes,
-        'commander_rank': card.commander_rank,
-        'source_freshness': card.source_freshness,
-    })
-
-
 _shutting_down = False
 
 
@@ -3129,13 +3006,6 @@ def _graceful_shutdown(reason='shutdown'):
             print("[server] Serial disconnected")
     except Exception as e:
         print(f"[server] disconnect failed: {e}")
-
-    # 6. Stop the enrichment scheduler.
-    try:
-        enrichment_scheduler.shutdown()
-        print("[server] Enrichment scheduler stopped")
-    except Exception as e:
-        print(f"[server] enrichment scheduler shutdown failed: {e}")
 
     print("[server] Shutdown complete")
 
@@ -3455,14 +3325,6 @@ def main():
 
     # Start the worker thread
     worker.start()
-
-    # Start the enrichment refresh scheduler. Failure here is non-fatal
-    # — the core sorting flow does not depend on enrichment.
-    try:
-        enrichment_scheduler.start()
-        print("[server] Enrichment scheduler started")
-    except Exception as e:
-        print(f"[server] enrichment scheduler start failed: {e}")
 
     # Run Flask with SocketIO
     socketio.run(app, host='0.0.0.0', port=5000,
