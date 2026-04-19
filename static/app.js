@@ -2063,6 +2063,16 @@ function startSession() {
 
     const notes = document.getElementById('session-notes')?.value?.trim();
     if (notes) payload.notes = notes;
+
+    // Phase 0B-1: storage plan is required before Start is enabled.
+    const plan = typeof getStoragePlan === 'function' ? getStoragePlan() : null;
+    if (!plan) {
+        addLog('⚠️ Set storage box + starting divider before starting');
+        if (typeof onStoragePlanChange === 'function') onStoragePlanChange();
+        return;
+    }
+    payload.storage_plan = plan;
+
     console.log('[startSession] payload:', JSON.stringify(payload));
     apiPost('/api/session/start', payload);
 }
@@ -4283,6 +4293,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Phase 0A: enrichment sources panel + collection sub-nav
     loadEnrichmentSources();
     wireCollectionSubnav();
+
+    // Phase 0B-1: unified preset panel + storage plan gating
+    loadPresetCatalog();
+    onStoragePlanChange();
 });
 
 // -------- Phase 0A additions (enrichment sources + collection sub-nav) --------
@@ -4343,4 +4357,212 @@ function wireCollectionSubnav() {
             });
         });
     });
+}
+
+// ========================================================================
+// Phase 0B-1: unified sort preset panel + storage plan gating
+// ========================================================================
+
+let _presetCache = [];        // last /api/presets response
+let _activePreset = null;     // currently displayed preset (mutable copy)
+let _presetDirty = false;
+
+async function loadPresetCatalog() {
+    const sel = document.getElementById('preset-select');
+    if (!sel) return;
+    try {
+        const data = await apiGet('/api/presets');
+        _presetCache = data.presets || [];
+        sel.innerHTML = '';
+        const groups = { builtin: [], file: [], user: [] };
+        _presetCache.forEach(p => {
+            (groups[p.source] || (groups[p.source] = [])).push(p);
+        });
+        for (const label of ['builtin', 'file', 'user']) {
+            const list = groups[label] || [];
+            if (!list.length) continue;
+            const og = document.createElement('optgroup');
+            og.label = label[0].toUpperCase() + label.slice(1);
+            list.forEach(p => {
+                const o = document.createElement('option');
+                o.value = p.id;
+                o.textContent = p.name;
+                og.appendChild(o);
+            });
+            sel.appendChild(og);
+        }
+        if (_presetCache.length) {
+            sel.value = _presetCache[0].id;
+            onPresetSelect();
+        }
+    } catch (e) {
+        console.warn('loadPresetCatalog failed', e);
+    }
+}
+
+function onPresetSelect() {
+    const sel = document.getElementById('preset-select');
+    if (!sel) return;
+    const preset = _presetCache.find(p => p.id === sel.value);
+    if (!preset) return;
+    _activePreset = JSON.parse(JSON.stringify(preset));
+    _presetDirty = false;
+    renderPreset(_activePreset);
+}
+
+function renderPreset(preset) {
+    const tbody = document.getElementById('preset-table-body');
+    const desc = document.getElementById('preset-description');
+    const badge = document.getElementById('preset-source-badge');
+    const delBtn = document.getElementById('btn-preset-delete');
+    const dirty = document.getElementById('preset-dirty-badge');
+    if (!tbody) return;
+
+    badge.textContent = preset.source;
+    badge.className = 'badge ' + ({
+        builtin: 'bg-secondary',
+        file: 'bg-info text-dark',
+        user: 'bg-success',
+    }[preset.source] || 'bg-secondary');
+    desc.textContent = preset.description || '';
+    delBtn.style.display = preset.source === 'user' ? '' : 'none';
+    dirty.style.display = _presetDirty ? '' : 'none';
+
+    const editable = !!preset.editable;
+    tbody.innerHTML = '';
+    (preset.bins || []).forEach((b, idx) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><code>${b.bin}</code></td>
+            <td><input type="text" class="form-control form-control-sm"
+                       data-bin-idx="${idx}" data-bin-field="query"
+                       value="${escapeHtml(b.query || '')}"
+                       ${editable ? '' : 'readonly'}></td>
+            <td><input type="text" class="form-control form-control-sm"
+                       data-bin-idx="${idx}" data-bin-field="description"
+                       value="${escapeHtml(b.description || '')}"
+                       ${editable ? '' : 'readonly'}></td>
+            <td class="text-end"><span class="preset-count text-muted"
+                                       data-bin="${b.bin}">–</span></td>
+        `;
+        tbody.appendChild(tr);
+    });
+    tbody.querySelectorAll('input').forEach(inp => {
+        inp.addEventListener('input', onPresetCellEdit);
+    });
+}
+
+function onPresetCellEdit(ev) {
+    const inp = ev.target;
+    const idx = parseInt(inp.getAttribute('data-bin-idx'), 10);
+    const field = inp.getAttribute('data-bin-field');
+    if (!_activePreset || !_activePreset.bins[idx]) return;
+    _activePreset.bins[idx][field] = inp.value;
+    _presetDirty = true;
+    document.getElementById('preset-dirty-badge').style.display = '';
+}
+
+function escapeHtml(s) {
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+async function estimatePresetCounts() {
+    if (!_activePreset) return;
+    const btn = document.getElementById('btn-preset-estimate');
+    const t0 = performance.now();
+    if (btn) btn.disabled = true;
+    try {
+        const r = await fetch('/api/presets/estimate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ preset: _activePreset }),
+        });
+        const data = await r.json();
+        const counts = data.counts || {};
+        document.querySelectorAll('.preset-count').forEach(el => {
+            const bin = el.getAttribute('data-bin');
+            const v = counts[bin];
+            el.textContent = (v === undefined || v === null) ? '–' : String(v);
+            el.classList.remove('text-muted');
+        });
+        const dt = Math.round(performance.now() - t0);
+        addLog(`Estimated preset counts in ${dt}ms`);
+    } catch (e) {
+        addLog('Estimate failed: ' + e);
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+async function saveAsUserPreset() {
+    if (!_activePreset) return;
+    const name = prompt('Save as — preset name:',
+        (_activePreset.name || 'My preset') + ' (copy)');
+    if (!name) return;
+    const payload = {
+        name,
+        description: _activePreset.description || '',
+        bin_count: _activePreset.bin_count,
+        fallback_bin: _activePreset.fallback_bin,
+        bin_limit: _activePreset.bin_limit || null,
+        bins: _activePreset.bins,
+    };
+    try {
+        const r = await fetch('/api/presets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            addLog('Save failed: ' + (err.error || r.status));
+            return;
+        }
+        const saved = await r.json();
+        await loadPresetCatalog();
+        const sel = document.getElementById('preset-select');
+        if (sel) { sel.value = saved.id; onPresetSelect(); }
+        addLog('Saved preset: ' + saved.name);
+    } catch (e) {
+        addLog('Save failed: ' + e);
+    }
+}
+
+async function deleteCurrentUserPreset() {
+    if (!_activePreset || _activePreset.source !== 'user') return;
+    if (!confirm(`Delete user preset "${_activePreset.name}"?`)) return;
+    try {
+        const r = await fetch('/api/presets/' + encodeURIComponent(_activePreset.id),
+            { method: 'DELETE' });
+        if (!r.ok) {
+            addLog('Delete failed: ' + r.status);
+            return;
+        }
+        await loadPresetCatalog();
+    } catch (e) {
+        addLog('Delete failed: ' + e);
+    }
+}
+
+// Storage plan gating — Start Session disabled until both fields set.
+function onStoragePlanChange() {
+    const box = document.getElementById('storage-box-select');
+    const div = document.getElementById('storage-divider-input');
+    const btn = document.getElementById('btn-start-session');
+    const hint = document.getElementById('storage-plan-hint');
+    if (!box || !div || !btn) return;
+    const ready = !!(box.value && div.value && parseInt(div.value, 10) >= 1);
+    btn.disabled = !ready;
+    if (hint) hint.style.display = ready ? 'none' : '';
+}
+
+function getStoragePlan() {
+    const box = document.getElementById('storage-box-select');
+    const div = document.getElementById('storage-divider-input');
+    if (!box || !div || !box.value || !div.value) return null;
+    return { box: box.value, starting_divider: parseInt(div.value, 10) };
 }

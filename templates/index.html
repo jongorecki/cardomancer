@@ -268,7 +268,68 @@
             <!-- SORT SESSION TAB -->
             <!-- ============================================================ -->
             <div class="tab-pane fade" id="tab-session">
-                <!-- Sort Configuration (formerly its own tab) -->
+                <!-- Unified sort preset table (Phase 0B-1) -->
+                <div class="row mb-2">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center"
+                                 style="cursor:pointer;"
+                                 data-bs-toggle="collapse"
+                                 data-bs-target="#preset-panel-collapse">
+                                <span>Sort Preset</span>
+                                <small class="text-muted">click to show/hide</small>
+                            </div>
+                            <div id="preset-panel-collapse" class="collapse show">
+                                <div class="card-body">
+                                    <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                                        <label class="form-label mb-0"><strong>Preset</strong></label>
+                                        <select class="form-select form-select-sm"
+                                                id="preset-select"
+                                                style="width:auto; min-width:220px;"
+                                                onchange="onPresetSelect()"></select>
+                                        <span id="preset-source-badge" class="badge bg-secondary">–</span>
+                                        <span id="preset-dirty-badge" class="badge bg-warning"
+                                              style="display:none;">modified</span>
+                                        <button class="btn btn-sm btn-outline-primary"
+                                                id="btn-preset-estimate"
+                                                onclick="estimatePresetCounts()">
+                                            Estimate counts
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-success"
+                                                id="btn-preset-save-as"
+                                                onclick="saveAsUserPreset()">
+                                            Save As…
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-danger"
+                                                id="btn-preset-delete"
+                                                onclick="deleteCurrentUserPreset()"
+                                                style="display:none;">
+                                            Delete
+                                        </button>
+                                    </div>
+                                    <p class="text-muted small mb-2" id="preset-description"></p>
+                                    <div class="table-responsive">
+                                        <table class="table table-sm table-borderless align-middle mb-0" id="preset-table">
+                                            <thead>
+                                                <tr>
+                                                    <th style="width:4rem;">Bin #</th>
+                                                    <th>Query</th>
+                                                    <th>Description</th>
+                                                    <th style="width:8rem;">Est. count</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="preset-table-body">
+                                                <tr><td colspan="4" class="text-muted">Loading…</td></tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sort Configuration (legacy controls — kept for Set/Custom modes) -->
                 <div class="row mb-2">
                     <div class="col-12">
                         <div class="card">
@@ -276,7 +337,7 @@
                                  style="cursor:pointer;"
                                  data-bs-toggle="collapse"
                                  data-bs-target="#sort-config-collapse">
-                                <span>Sort Configuration</span>
+                                <span>Sort Configuration (advanced)</span>
                                 <small class="text-muted">click to show/hide</small>
                             </div>
                             <div id="sort-config-collapse" class="collapse show">
@@ -351,12 +412,16 @@
                                                     <div id="custom-query-inputs"></div>
                                                     <div class="mt-2 d-flex gap-2 flex-wrap align-items-center">
                                                         <button class="btn btn-sm btn-outline-success" onclick="saveCustomConfig()">Save to File</button>
-                                                        <div class="d-flex gap-1 align-items-center">
-                                                            <select class="form-select form-select-sm" id="custom-load-file" style="width:auto; min-width:150px;">
-                                                                <option value="">-- Load from file --</option>
-                                                            </select>
-                                                            <button class="btn btn-sm btn-outline-primary" onclick="loadCustomConfigFromFile()">Load</button>
-                                                        </div>
+                                                        <!--
+                                                          Phase 0B-1: "Load custom from file" button removed.
+                                                          sort_configs/*.txt files are now auto-imported as
+                                                          read-only presets on startup via preset_store.py;
+                                                          select them from the Sort Preset panel above.
+                                                          The backing DOM is retained for the legacy
+                                                          loadCustomConfigFromFile() JS path (dead unless
+                                                          called programmatically).
+                                                        -->
+                                                        <input type="hidden" id="custom-load-file" value="">
                                                     </div>
                                                 </div>
                                             </div>
@@ -406,8 +471,38 @@
                         <div class="card mt-2">
                             <div class="card-body">
                                 <input type="text" class="form-control form-control-sm mb-2" id="session-notes" placeholder="Session notes (e.g. 'Sorting Commander deck', 'Bulk commons box 3')">
+                                <!-- Storage plan (Phase 0B-1): required before Start -->
+                                <div class="row g-2 mb-2">
+                                    <div class="col-sm-6">
+                                        <label class="form-label small mb-0">Storage box</label>
+                                        <select class="form-select form-select-sm"
+                                                id="storage-box-select"
+                                                onchange="onStoragePlanChange()"
+                                                required>
+                                            <option value="">-- choose box --</option>
+                                            <option value="box-a">Box A — bulk commons</option>
+                                            <option value="box-b">Box B — bulk uncommons</option>
+                                            <option value="box-c">Box C — rares / foils</option>
+                                            <option value="box-d">Box D — overflow</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-sm-6">
+                                        <label class="form-label small mb-0">Starting divider</label>
+                                        <input type="number"
+                                               id="storage-divider-input"
+                                               class="form-control form-control-sm"
+                                               min="1" max="200" step="1"
+                                               placeholder="e.g. 1"
+                                               oninput="onStoragePlanChange()"
+                                               required>
+                                    </div>
+                                </div>
+                                <div id="storage-plan-hint" class="small text-danger mb-2"
+                                     style="display:none;">
+                                    Pick a storage box and starting divider before starting the session.
+                                </div>
                                 <div class="d-flex gap-2 flex-wrap">
-                                    <button id="btn-start-session" class="btn btn-success" onclick="startSession()">Start Session</button>
+                                    <button id="btn-start-session" class="btn btn-success" onclick="startSession()" disabled>Start Session</button>
                                     <button id="btn-detect" class="btn btn-primary btn-lg" onclick="apiPost('/api/session/detect')" disabled>Detect & Sort</button>
                                     <button id="btn-continuous" class="btn btn-outline-primary" onclick="toggleContinuousSort()" disabled title="Auto-detect loop">&#9654; Continuous</button>
                                     <button id="btn-undo" class="btn btn-outline-warning" onclick="undoLastSort()" disabled title="Undo last sort">&#8630; Undo</button>
