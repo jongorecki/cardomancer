@@ -1,33 +1,52 @@
 # probes/probe_scryfall_search.py
 # ---------------------------------------------------------------------------
-# Probe Scryfall's public search API (/cards/search). Confirmed stable.
-# Phase 0A scaffold; real shape assertion lands in Phase 0B-2.
+# Probe the Scryfall /cards/search API. Confirmed public API.
 # ---------------------------------------------------------------------------
 
 from __future__ import annotations
 
 import sys
-import time
 
-from probes.base import ProbeResult
+import httpx
+
+from probes.base import (
+    DEFAULT_TIMEOUT_S,
+    USER_AGENT,
+    ProbeResult,
+    run_http_probe,
+)
 
 SOURCE = "scryfall_search"
 ENDPOINT = "https://api.scryfall.com/cards/search"
-IMPLEMENTED = False
+QUERY = "otag:removal"  # stable, always has results
+
+REQUIRED = [
+    "object",
+    "total_cards",
+    "has_more",
+    "data",
+    "data[].id",
+    "data[].oracle_id",
+    "data[].name",
+    "data[].type_line",
+    "data[].color_identity",
+    "data[].legalities",
+]
+
+
+def _fetch():
+    r = httpx.get(
+        ENDPOINT,
+        params={"q": QUERY, "page": 1},
+        timeout=DEFAULT_TIMEOUT_S,
+        headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+    )
+    r.raise_for_status()
+    return r.json()
 
 
 def probe() -> ProbeResult:
-    start = time.time()
-    warnings = []
-    if not IMPLEMENTED:
-        warnings.append("Probe stub — real shape assertion lands in Phase 0B.")
-    return ProbeResult(
-        source=SOURCE,
-        ok=True,
-        endpoint=ENDPOINT,
-        duration_ms=int((time.time() - start) * 1000),
-        warnings=warnings,
-    )
+    return run_http_probe(SOURCE, ENDPOINT, _fetch, required_paths=REQUIRED)
 
 
 if __name__ == "__main__":

@@ -39,9 +39,10 @@ def test_probe_script_exists_for_every_source():
 
 
 def test_run_all_exits_zero():
-    """With the Phase 0A stubs, run_all.py must exit 0."""
+    """Offline probe pass — PROBES_OFFLINE skips network but must still exit 0."""
     env = os.environ.copy()
     env.setdefault("PYTHONPATH", str(_ROOT))
+    env["PROBES_OFFLINE"] = "1"
     result = subprocess.run(
         [sys.executable, str(PROBES_DIR / "run_all.py")],
         capture_output=True,

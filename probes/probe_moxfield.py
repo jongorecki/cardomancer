@@ -1,34 +1,57 @@
 # probes/probe_moxfield.py
 # ---------------------------------------------------------------------------
-# Probe api2.moxfield.com. Unofficial, fragile; endpoint paths have
-# changed before. Pin a known-stable public deck in Phase 0B-2.
-# Phase 0A scaffold only.
+# Probe api2.moxfield.com. Unofficial and fragile — the v2 path changed
+# once before; a pinned snapshot is how we'll catch the next drift.
+#
+# The probe targets a single public deck. The deck ID is configurable via
+# the MOXFIELD_PROBE_DECK_ID env var; if unset, a placeholder from the
+# planning docs is used. Operators should pick a long-lived public deck
+# they trust and pin their own snapshot on first successful run.
 # ---------------------------------------------------------------------------
 
 from __future__ import annotations
 
+import os
 import sys
-import time
 
-from probes.base import ProbeResult
+import httpx
+
+from probes.base import (
+    DEFAULT_TIMEOUT_S,
+    USER_AGENT,
+    ProbeResult,
+    run_http_probe,
+)
 
 SOURCE = "moxfield"
-ENDPOINT = "https://api2.moxfield.com/v2/decks/all/"
-IMPLEMENTED = False
+# Placeholder deck ID — override via MOXFIELD_PROBE_DECK_ID.
+_DEFAULT_DECK_ID = "lzbasAFQhEqY5x5SmJRZ9w"
+DECK_ID = os.environ.get("MOXFIELD_PROBE_DECK_ID", _DEFAULT_DECK_ID)
+ENDPOINT = f"https://api2.moxfield.com/v2/decks/all/{DECK_ID}"
+
+REQUIRED = [
+    "id",
+    "name",
+    "format",
+    "mainboard",
+]
+
+
+def _fetch():
+    r = httpx.get(
+        ENDPOINT,
+        timeout=DEFAULT_TIMEOUT_S,
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": "application/json",
+        },
+    )
+    r.raise_for_status()
+    return r.json()
 
 
 def probe() -> ProbeResult:
-    start = time.time()
-    warnings = []
-    if not IMPLEMENTED:
-        warnings.append("Probe stub — real shape assertion lands in Phase 0B.")
-    return ProbeResult(
-        source=SOURCE,
-        ok=True,
-        endpoint=ENDPOINT,
-        duration_ms=int((time.time() - start) * 1000),
-        warnings=warnings,
-    )
+    return run_http_probe(SOURCE, ENDPOINT, _fetch, required_paths=REQUIRED)
 
 
 if __name__ == "__main__":
