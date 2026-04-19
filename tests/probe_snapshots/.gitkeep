@@ -1,0 +1,2 @@
+# Pinned probe snapshots live here as *_pinned.json files.
+# Timestamped snapshots (<source>_<YYYYMMDD_HHMMSS>.json) are gitignored.
