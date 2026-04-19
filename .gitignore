@@ -21,6 +21,7 @@ enrichment.db-journal
 enrichment.db-wal
 enrichment.db-shm
 backup/dbs/
+backup/*.zip
 
 # Scan logs and debug outputs
 logs/
