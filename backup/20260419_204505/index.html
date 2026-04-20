@@ -34,12 +34,13 @@
             <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-dashboard">Dashboard</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-bins">Bin Setup</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-session">Sort Session</a></li>
-            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-calibration">Calibration</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-collection">Collection</a></li>
-            <!-- Motion Preview and Database are not top-level tabs. To
-                 re-enable Motion Preview, restore this line:
+            <!-- Phase 0A tab consolidation: Motion Preview, Calibration, and
+                 Database are no longer top-level tabs. To re-enable Motion
+                 Preview, restore this line:
                  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-motion">Motion Preview</a></li>
-                 Database content is embedded as a Dashboard card modal. -->
+                 Calibration content is launched from the Dashboard via a
+                 modal; Database content is embedded as a Dashboard card. -->
         </ul>
 
         <div class="tab-content mt-3" id="mainTabContent">
@@ -89,6 +90,11 @@
                             <div class="card-header d-flex justify-content-between align-items-center">
                                 <span>Data &amp; Sources</span>
                                 <div>
+                                    <button class="btn btn-sm btn-outline-primary"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#calibration-modal">
+                                        Calibration…
+                                    </button>
                                     <button class="btn btn-sm btn-outline-secondary"
                                             data-bs-toggle="modal"
                                             data-bs-target="#database-modal">
@@ -465,14 +471,15 @@
                         <div class="card mt-2">
                             <div class="card-body">
                                 <input type="text" class="form-control form-control-sm mb-2" id="session-notes" placeholder="Session notes (e.g. 'Sorting Commander deck', 'Bulk commons box 3')">
-                                <!-- Optional destination plan (where sorted output will live).
-                                     Fill in now, or leave blank and record per-bin later. -->
+                                <!-- Storage plan (Phase 0B-1): required before Start -->
                                 <div class="row g-2 mb-2">
                                     <div class="col-sm-6">
-                                        <label class="form-label small mb-0">Destination box (optional)</label>
+                                        <label class="form-label small mb-0">Storage box</label>
                                         <select class="form-select form-select-sm"
-                                                id="storage-box-select">
-                                            <option value="">-- not set --</option>
+                                                id="storage-box-select"
+                                                onchange="onStoragePlanChange()"
+                                                required>
+                                            <option value="">-- choose box --</option>
                                             <option value="box-a">Box A — bulk commons</option>
                                             <option value="box-b">Box B — bulk uncommons</option>
                                             <option value="box-c">Box C — rares / foils</option>
@@ -480,39 +487,22 @@
                                         </select>
                                     </div>
                                     <div class="col-sm-6">
-                                        <label class="form-label small mb-0">Starting divider (optional)</label>
+                                        <label class="form-label small mb-0">Starting divider</label>
                                         <input type="number"
                                                id="storage-divider-input"
                                                class="form-control form-control-sm"
                                                min="1" max="200" step="1"
-                                               placeholder="e.g. 1">
+                                               placeholder="e.g. 1"
+                                               oninput="onStoragePlanChange()"
+                                               required>
                                     </div>
                                 </div>
-                                <!-- Re-sort mode: only show a source-box picker when the user
-                                     is explicitly re-sorting an already-scanned box. -->
-                                <div class="form-check form-check-inline mb-2">
-                                    <input class="form-check-input" type="checkbox"
-                                           id="resort-mode-toggle"
-                                           onchange="onResortToggle()">
-                                    <label class="form-check-label small"
-                                           for="resort-mode-toggle">
-                                        Re-sorting an existing box
-                                    </label>
-                                </div>
-                                <div id="resort-source-row" class="row g-2 mb-2" style="display:none;">
-                                    <div class="col-sm-6">
-                                        <label class="form-label small mb-0">Source box</label>
-                                        <select class="form-select form-select-sm" id="resort-source-select">
-                                            <option value="">-- choose source box --</option>
-                                            <option value="box-a">Box A — bulk commons</option>
-                                            <option value="box-b">Box B — bulk uncommons</option>
-                                            <option value="box-c">Box C — rares / foils</option>
-                                            <option value="box-d">Box D — overflow</option>
-                                        </select>
-                                    </div>
+                                <div id="storage-plan-hint" class="small text-danger mb-2"
+                                     style="display:none;">
+                                    Pick a storage box and starting divider before starting the session.
                                 </div>
                                 <div class="d-flex gap-2 flex-wrap">
-                                    <button id="btn-start-session" class="btn btn-success" onclick="startSession()">Start Session</button>
+                                    <button id="btn-start-session" class="btn btn-success" onclick="startSession()" disabled>Start Session</button>
                                     <button id="btn-detect" class="btn btn-primary btn-lg" onclick="apiPost('/api/session/detect')" disabled>Detect & Sort</button>
                                     <button id="btn-continuous" class="btn btn-outline-primary" onclick="toggleContinuousSort()" disabled title="Auto-detect loop">&#9654; Continuous</button>
                                     <button id="btn-undo" class="btn btn-outline-warning" onclick="undoLastSort()" disabled title="Undo last sort">&#8630; Undo</button>
@@ -658,10 +648,14 @@
             <!-- ============================================================ -->
             <!-- CALIBRATION MODAL (opened from Dashboard "Calibration…" button) -->
             <!-- ============================================================ -->
-            <!-- ============================================================ -->
-            <!-- CALIBRATION TAB -->
-            <!-- ============================================================ -->
-            <div class="tab-pane fade" id="tab-calibration">
+            <div class="modal fade" id="calibration-modal" tabindex="-1" aria-hidden="true">
+              <div class="modal-dialog modal-xl modal-dialog-scrollable">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title">Calibration</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                  </div>
+                  <div class="modal-body">
                 <div class="row">
                     <div class="col-md-6">
                         <div class="card">
@@ -845,7 +839,10 @@
                         </div>
                     </div>
                 </div>
-            </div><!-- /#tab-calibration -->
+                  </div><!-- /.modal-body -->
+                </div><!-- /.modal-content -->
+              </div><!-- /.modal-dialog -->
+            </div><!-- /#calibration-modal -->
 
             <!-- ============================================================ -->
             <!-- COLLECTION TAB -->

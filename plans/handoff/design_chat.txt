@@ -1,0 +1,1853 @@
+
+i'm designing a magic the gathering card sorter and I'm running into some physical problems with the design my machine. I'm trying to keep it as simple as possible, and I'm using 3d printer parts because that's what I'm familiar with. I know this isn't super ideal but its what I've got. 
+
+The way the machine works is that it picks up the card with a suction pump and suction cup (like the kind used for injection molding) and uses a carriage to move along an axis to drop the card in different bins. This part all works and isn't an issue. where I'm looking for ideas is for two things:
+
+First, I need to slightly bend the card (a few millimeters of bend across the card) to make sure I'm only holding one. I'm thinking a TPU piece that lightly pushes the card would work here, while giving it enough flex to not damage the card. I'm thinking just a wide u-shaped piece should work here. I just want to know if there's any issues with this approach.
+
+Second, and more importantly, I'm trying to figure out a way to avoid adding anything else controlled if i can, but I need to either keep the cards in a better stack without obscuring them at all, or find a good way to drop the suction head down to the stack of cards. currently, i have my z axis controlling the stack of cards in the "to be sorted" bin moving up and down, the x axis controlling the carriage that moves between bins to put the card in, and don't use the y or e extruders at all yet, so I have plenty of extra steppers I could use, but I just haven't done that yet. I think the only real way to go is going to be adding some vertical movement of the suction head on one of those steppers, but I'm open to other options if you have them.
+
+Show more
+Mar 16
+These are fun engineering problems. Let me work through both.
+
+The TPU flexure for singling cards
+
+Your instinct here is solid. A TPU piece that applies a slight lateral deflection to the top card is a well-known approach in card handling — it's essentially a poor-man's version of what commercial card feeders do with rubber rollers or friction pads. The bend causes the top card to separate from the ones below because a single card will flex while a stuck-together pair resists bending differently.
+
+A few things to watch out for:
+
+The U-shape works, but pay attention to the contact area. You want it wide enough that you're not creating a crease or point load on the card — spread the force across at least 15-20mm of the card edge. TPU at around 95A shore hardness is probably your sweet spot: soft enough to not mark cards, stiff enough to actually apply meaningful deflection.
+
+The bigger concern is that MTG cards vary quite a bit in condition. Foils are stiffer and more prone to damage, and older cards may already have a natural curve. You might find you need to tune the deflection amount. Consider making the TPU piece mount adjustable — maybe a slot instead of a fixed screw hole — so you can dial in how much pressure it applies.
+
+One thing worth considering: rather than pushing from the side, some DIY builds use a curved ramp or lip at the pickup point that the card gets dragged across as the suction cup lifts it. This naturally peels the top card off the stack. It might be simpler than a separate flexure mechanism.
+
+The Z-axis problem for the suction head
+
+You're right that adding vertical movement to the suction head is probably the cleanest solution, and since you have spare stepper outputs, the cost is mostly just mechanical complexity.
+
+But before going there, a few alternatives worth considering:
+
+Spring-loaded suction head with a hard stop. Mount the suction cup on a short linear rail or smooth rod with a light compression spring behind it. The suction head rides maybe 10-15mm below the carriage at rest. When the carriage moves over the card stack, the Z axis pushes the stack up until the card contacts the suction cup, compressing the spring slightly. This gives you compliant contact without needing to control the head's Z position at all — the spring absorbs the tolerance. You're already controlling the stack height with Z, so this just makes the pickup point forgiving. This is probably the lowest-complexity option.
+
+Pivoting arm. Instead of linear Z motion on the head, mount the suction cup on a hinged arm that swings down. You could actuate this with a simple servo, or even with a mechanical cam triggered by the X carriage position — when the carriage is at the pickup station, a fixed ramp pushes the arm down. No extra stepper needed, purely mechanical.
+
+If you do go with a stepper-driven Z on the head, keep the travel short. You only need maybe 20-30mm of movement. A small lead screw or even a belt-driven linear rail segment would work. Since you're already running a 3D printer control board, mapping it to the E or Y axis in firmware is straightforward. This is the most flexible option and probably what you'll end up with if the spring approach doesn't give you enough control.
+
+My honest recommendation: try the spring-loaded approach first. It's mechanically the simplest, adds no firmware complexity, and the compliance actually helps with reliable pickup. If you find you need more precision — say the stack height varies enough that the spring can't compensate — then add the stepper-driven Z on the head using one of your spare outputs.
+
+the problem with the spring loaded approach is that I would then have the card run into the edge of the bin when trying to move it out of that position to any of the bins I'm sorting to, and if the bin is big enough where that's not an issue, then it doesn't keep the cards in enough of a stack for the sorting. does that change your recommendation?
+
+Mar 16
+Ah, that makes sense — the stack bin needs walls close enough to keep cards aligned, but then those walls are in the way when the carriage tries to move the picked-up card laterally. That's a real constraint and it does change things.
+
+The pivoting arm idea actually gets worse here too, for the same reason — you need vertical clearance above the bin walls before any lateral movement.
+
+So yeah, I think you're right that a controlled Z on the suction head is the way to go. It lets you drop down into the bin, pick up, lift clear of the walls, then move laterally. That's a clean sequence and you already have the stepper outputs for it.
+
+For implementation, since the travel is so short (just enough to clear the bin walls, probably 30-50mm), I'd lean toward a small lead screw setup rather than a belt. At that short travel distance a lead screw gives you better precision and holding force without needing to worry about belt tension, and it's naturally resistant to backdriving so the head stays put when the stepper is idle. A T8 lead screw with a 2mm pitch would give you plenty of resolution and you can probably just use a short section cut from a standard length one. Mount it right on the carriage with a couple of small linear rods or a mini rail for guidance.
+
+One thing to think about: you'll want to home this axis. A simple microswitch at the top of travel is probably enough — home it up so that the default position is "head raised, clear of all bins," and then you only plunge down when you're positioned over the pickup bin. That way you never risk dragging a card into a wall even if something goes wrong with positioning.
+
+Also, since you're doing this sequence repeatedly (lower, pick, raise, traverse, lower, release, raise, return), make sure your firmware handles it as discrete moves and doesn't try to interpolate diagonally. If you're using Marlin or Klipper, you'll just want to make sure you're sending sequential G-code moves rather than combined ones, which you probably already know from the 3D printing side.
+
+I was thinking just a slider-crank mechanism would probably be the simplest way, kind of like a rack and pinion. thoughts\
+
+Mar 16
+Yeah, a rack and pinion style setup makes a lot of sense here. For such short linear travel it's mechanically simple, easy to 3D print, and you don't need to source a lead screw or linear rail. You can print the rack right onto the suction head carriage and mount a small pinion gear on the stepper.
+
+The main thing to watch is backlash. 3D printed gear teeth won't be as tight as machined ones, so you'll get a little slop. But for this application it probably doesn't matter much — you don't need micron precision, you just need "down in the bin" and "up clear of the walls." If you find the backlash is annoying, you can add a light spring that biases the head in one direction so the teeth stay loaded against one side.
+
+Print the teeth at the finest layer height you're willing to wait for, and orient the rack so the teeth are printed in profile rather than stacking vertically — you'll get much stronger teeth that way. PETG would be a good choice over PLA for the gear pair since it handles the repeated contact better without wearing as fast.
+
+One other thought — if you meant an actual slider-crank (like a connecting rod on a crankshaft) rather than rack and pinion, that could work too but it gives you sinusoidal motion. That's actually not terrible here since it naturally slows down at the top and bottom of travel, giving you a soft approach to the card stack. The downside is you get a fixed stroke length set by your crank radius, so you lose adjustability. The rack and pinion lets you just command whatever travel distance you want in firmware, which is more flexible if you end up tweaking bin wall heights or stack positions later.
+
+So rack and pinion gets my vote unless you have a specific reason to prefer the crank. It keeps things simple and gives you the most control with the least fuss.
+
+would it make sense to just make a really long rack and pinion style z axis and remove the movement up and down from the actual sorting bin? that would make it so that I could sort from any bin to any other bin (if i add the camera to the carriage like I've thought about), but it would probably be slower since it has to move further. we'd need to add a limit switch to this new axis anyway, unless we treat it like an e axis where it doesn't ever actually zero, but we still need to know when it hits the card, so I'm trying to figure out how to solve that issue.
+
+Mar 16
+That's an interesting idea and it does add a lot of flexibility — being able to pick from any bin opens up re-sorting and multi-pass workflows which could be really useful. The tradeoff in speed is real but probably manageable if you're not trying to hit high throughput.
+
+The sensing problem is the more interesting one to solve. You need to know when the suction cup contacts the card, and there are a few ways to think about it.
+
+The simplest approach might be to just sense suction itself. If you're using a vacuum pump, the pressure in the line drops noticeably when the cup seals against a card. A cheap inline vacuum pressure sensor or even a simple analog pressure transducer on the suction line would tell you "I've got a card" without any mechanical switch. This is actually how a lot of pick-and-place machines work. You slowly lower the head, and when the pressure reading changes, you know you've made contact and have a grip. This also doubles as a pickup confirmation — if you try to pick and the pressure doesn't change, you know you missed or the stack is empty.
+
+If you don't want to add a sensor, you could use stall detection if your stepper drivers support it. TMC2209s or similar can detect when the motor hits resistance, which would happen when the suction cup presses into the card stack. Klipper supports sensorless homing on those drivers. It's a bit finicky to tune but it would work without adding any hardware.
+
+The brute force approach is just to track the stack height in software. If you know how thick a card is (about 0.3mm for MTG), and you know how many cards are in the bin, you can calculate where the top of the stack is and just drive to that position. You'd zero the axis once against a limit switch at a known position, then rely on step counting from there. This is the least robust option since it drifts if you ever miss a pick, but combined with the vacuum sensing for confirmation it could work fine.
+
+Honestly the vacuum pressure sensing is the cleanest solution here. It solves both the "where is the card" problem and the "did I actually pick one up" problem in one sensor, and you were going to want pickup confirmation eventually anyway. A small analog pressure sensor is a few dollars and you can read it on a spare analog input on your control board.
+
+I'm not using klipper, I'm using Marlin. and I'm not sure how I'd implement that vacuum pressure sensor into the board (i think its a bigtreetech one, its been a while since I've physically looked at it), so I'd probably avoid that. Our suction head is slightly spring loaded already, so I know I have a little play in it and I think i have a limit switch now that i was trying to figure out how to integrate. I do track the stack height in software I think right now.
+
+Mar 16
+If you already have a spring-loaded suction head and a spare limit switch, this is pretty straightforward. Mount the limit switch so that the spring-loaded portion of the head triggers it when the cup presses against something and compresses the spring. So the sequence is: lower the head, the cup contacts the card, the head keeps lowering a tiny bit more, the spring compresses, and that compression trips the limit switch. Now you know you've made contact.
+
+In Marlin you'd wire that to an available endstop pin on the BTT board — most of them have a few spare endstop connectors. Then you can just use a standard G28 homing move on that axis or use M119 to check endstop state manually. If you map your rack and pinion Z to an unused axis, you can home it downward toward the cards and Marlin will stop the move when the switch triggers, just like homing a normal axis.
+
+For the actual pick cycle it would look something like: move the X carriage over the target bin, then home the suction axis downward (Marlin stops when the switch trips, meaning you've contacted the stack), turn on the pump, raise the suction axis to full clearance height, move X to the destination bin, lower the suction axis to a known drop height (which is fixed since you're dropping into a bin, not searching for a stack), turn off the pump, raise again, repeat.
+
+The nice thing about this is you get your stack height tracking for free — every time you home down and make contact, Marlin knows the position where the switch tripped, so you always know exactly where the top of each stack is without calculating it from card count. That's more reliable than tracking in software since it self-corrects if you ever miss a pick or a card is slightly warped.
+
+The one thing to double-check is which endstop pins are free on your specific BTT board. If you pull it out and check the silkscreen or look up the pinout, you'll probably find you have more available than you think.
+
+what if we made it ratchet down so it can't press too hard? we still probably need to know when its high enough up where its not going to hit the edge of the bin when it comes up so we'd probably have to put the limit switch there.
+
+Mar 16
+Oh that's clever. So the ratchet only lets the head move downward freely, and when it contacts the card and tries to push further, the ratchet just doesn't advance — so you mechanically limit the force to whatever one ratchet tooth's worth of spring compression gives you. That's a nice passive safety feature.
+
+And you're right, the more important thing to know is actually the "I'm clear of the bins" position, not the contact position. So put the limit switch at the top of travel as a home position. Home up, now you know you're clear, then move laterally however you need to.
+
+But I'm thinking through the ratchet and I'm not sure it buys you much over just relying on the spring. The spring already limits contact force — that's what springs do. If you drive down and the cup hits the card, the spring compresses and the force is just a function of how much further you drive past contact. If you overshoot by a millimeter or two it doesn't matter, the spring absorbs it and the force stays low. A ratchet adds complexity to solve a problem the spring is already handling.
+
+The ratchet also creates a new problem — how do you retract? If it only moves one direction you need some release mechanism to let it come back up. That's either a solenoid, a second motion, or some clever geometry, all of which add complexity.
+
+I think the simpler version is: limit switch at the top for homing, spring-loaded head for compliant contact, and just drive the axis down a bit past where you expect the stack to be. The spring absorbs the overshoot, you turn on the pump, then retract up to the home switch. You don't even need to know exactly where the stack is — just go low enough that you're definitely making contact and let the spring handle the rest. Since you said you're already tracking stack height in software, you have a rough idea of where to go, and the spring gives you enough forgiveness that being off by a few millimeters doesn't matter.
+
+since there isnt a fixed stack height that i plan on adding, i don't know if that would work. i guess ratcheting is a bad idea though so scrap that completely. we will need to have some sort of sensing, and a limit switch is probably the best way, but how will the firmware deal with an endstop being sensed at multiple positions on a single axis? will it care? 
+
+I was talking to a friend about this and the most important message from that conversation is this:
+
+but also, a simple rack and pinion type arm on a stepper motor is pretty easy, especially for a short distance. and that would let me do two things: first, solve the problem of the stack getting messy that i've been trying to fix, and second, allow me to tune the height at which I'm raising the cards, so I could add the thing that bends the card a little to keep them from sticking way easier since I can raise up into the bender and drop down into the card bin to grab cards.
+
+Show more
+Mar 16
+Your friend is right, and that's a much cleaner way to think about the flex separation. Instead of a fixed TPU piece that pushes sideways, you raise the card up into a stationary flexure mounted above the pickup point. The head grabs the card, lifts up into the bender, any doubles fall away, then continues up to clearance height and moves laterally. That's a really elegant integration because the Z motion you're already adding does double duty.
+
+For the endstop question — Marlin doesn't care where an endstop triggers on an axis. It only checks the endstop state during homing moves (G28) or probing moves (G38). During normal G1 moves it ignores endstops entirely by default. So you can home up to your top limit switch to establish your reference position, then send regular G1 moves downward to whatever depth you want, and when the head contacts the card and the switch triggers, Marlin won't even notice because it's not listening.
+
+That means you'd want to use G38 probing moves for the downward card-finding motion instead of G1. G38.2 moves the axis in a direction until the endstop triggers, then stops and records the position. So you'd wire one limit switch at the top for homing, and a second one on the spring-loaded head for contact sensing. Marlin can handle multiple endstops on the same axis — you just configure one as the max endstop and one as the min, or use the probe pin for the contact switch.
+
+So your cycle becomes: home up to the top switch, move X over the target bin, G38.2 down until the contact switch trips, pump on, G1 up to the flexure height to single the card, G1 up to full clearance, G1 X to the destination bin, G1 down to drop height, pump off, G1 up to clearance, repeat. All standard Marlin G-code, no custom firmware needed.
+
+1773684211120_image.png
+this would be for a second axis controlling a short motion of the head down. I guess I need to give you a bit more of that convo:
+
+Mar 16
+Got it, so your friend is suggesting an SG90 servo for a short up/down motion on the head instead of a full stepper-driven axis. And you correctly identified that cheap servos like the SG90 don't love being held at a position under load for extended periods.
+
+But thinking about your use case — the servo wouldn't actually need to hold position for long. The cycle is: move down, pick card, move up, traverse, drop, repeat. The servo is always moving, never sitting there stalled holding a load for minutes. An SG90 would probably survive that just fine since it's only holding position for a few seconds at a time during each pick cycle.
+
+That said, I think you already talked yourself into the right answer in that conversation. The stepper-driven rack and pinion gives you way more flexibility, and you said yourself it's pretty easy for a short distance. The servo saves you one stepper output, but you have spare stepper outputs already. And the servo introduces new problems — you need to control it separately (Marlin can drive a servo but it's a bit clunky), you get less precise position control, you can't do the G38 probing move to find the card stack, and you lose the ability to vary your travel distance.
+
+The servo would make sense if you were tight on stepper outputs or if the mechanical build for the rack and pinion was hard. But you've got spare steppers and you're comfortable printing gears, so the stepper axis is just the better choice here. It solves more problems at once — variable stack height sensing, controlled lift into the flexure, full clearance for lateral movement — and it fits cleanly into Marlin's existing motion planning.
+
+Your friend's instinct to keep it simple is good, but in this case the "simpler" component actually makes the overall system more complicated. The rack and pinion on a stepper is more mechanical work up front but way less headache in software and operation.
+
+i meant a third axis. we have x for which bin the carriage is over, z for moving the card stack up and down, and this would be either y or e I guess. can you help me design the carriage for it?
+
+Mar 16
+Right, sorry — third axis. Makes sense.
+
+Before I start designing, let me make sure I understand what we're working with and what the carriage needs to do.
+
+The carriage rides on the X axis and needs to hold the suction cup assembly plus a rack and pinion driven by a stepper for vertical motion. The suction head has some spring loading already built in, and we want a limit switch for contact sensing on the head and probably one at the top for homing.
+
+A few things I need to know to make this useful for you:
+
+Also, do you know what stepper you'd be using for this axis? Is it a standard NEMA 17 like most 3D printers use, or something smaller? And roughly what size pinion gear are you thinking — or do you want me to suggest that too?
+
+Q: What kind of X axis is the carriage riding on?
+A: Linear rods with bearings
+
+Q: How is the suction cup currently mounted? I need to understand what I'm integrating with.
+A: Just a tube/hose pointing down
+
+Q: Do you have a rough sense of how much vertical travel you need on this new axis?
+A: 25-50mm
+
+Mar 16
+Great. And those last couple questions:
+
+Also, how is the suction hose routed — does it come from above, from the side, or does it just need a hole to pass through? I want to make sure the carriage design doesn't kink or interfere with it.
+
+Q: What stepper motor for this axis?
+A: NEMA 17 (standard 3D printer size)
+
+Q: What diameter are the linear rods on your X axis?
+A: my linear bearings have a 42mm OD
+
+Q: What type of linear bearings are you using?
+A: LM8UU or similar cylindrical bearings
+
+Mar 16
+Wait — 42mm OD on the bearings but LM8UU style? Standard LM8UU bearings are 15mm OD. 42mm OD sounds more like you might be on larger rods, or maybe that's the overall dimension of a bearing block/housing?
+
+I want to get the bearing dimensions right so the carriage clamps onto them properly. If you're not sure, taking a quick measurement of the rod diameter would be the most reliable thing.
+
+Q: What's the inner diameter of the bearings / the diameter of the smooth rods they ride on?
+A: 20mm
+
+Q: Where did the 42mm number come from?
+A: here's the link to them https://www.amazon.com/dp/B0BM62KF6M
+
+Q: How is the suction hose routed to the head?
+A: From above
+
+Mar 16
+Got it — LM20UU bearings on 20mm rods. That's a beefy X axis, which is good since we're hanging a stepper off the carriage. Let me check those bearings to confirm dimensions.
+
+
+Searched the web
+Searched the web
+So the 42mm was the bearing length, not the OD. LM20UU bearings: 20mm bore, 32mm OD, 42mm long. That gives me everything I need.
+
+Let me put together a design for the carriage. Here's what I'm working with:
+
+Two 20mm smooth rods, LM20UU bearings (32mm OD, 42mm long)
+NEMA 17 stepper mounted on the carriage driving a rack and pinion for ~35-40mm vertical travel
+Suction hose coming from above, passing through to the spring-loaded suction head below
+Limit switch at top of vertical travel for homing
+Second limit switch on the spring-loaded head for contact sensing
+Let me know one more thing — how far apart are your two X-axis rods, center to center? I need that to set the carriage width. If you're not sure, measure it and I can adjust later — I'll start with a reasonable default and make it parametric so it's easy to change.
+
+i don't know off hand but I'll figure that out later
+
+Mar 16
+No problem. Let me design this as a parametric OpenSCAD model so you can just plug in that measurement later along with any other tweaks. That way you can adjust rod spacing, travel distance, gear sizing, etc. without having to redesign anything.
+
+Let me get the skill file first, then I'll build it out.
+
+
+Check available skills for 3D modeling
+Check available skills for 3D modeling
+No specific 3D modeling skill, so I'll just build the OpenSCAD file directly. Let me put this together.
+
+
+Created a file, ran a command, read a file
+Created a file, ran a command, read a file
+Here's a parametric OpenSCAD file for the carriage. The key thing you'll need to update is rod_spacing at the top — it's set to 150mm as a placeholder.
+
+The design has four printable parts: the main carriage plate with integrated bearing housings for your LM20UUs, a Z slider that carries the suction head and has rack teeth on one side, a guide channel that the slider rides in (mounts to the underside of the carriage plate), and a pinion gear that goes on the NEMA 17 shaft.
+
+A few things to note about the design choices:
+
+The rack teeth are integrated directly into the slider body rather than being a separate piece — fewer parts, more rigid. The guide channel keeps the slider from twisting under the gear engagement force. The hose passes straight through the center of everything vertically, so it shouldn't kink.
+
+I put mounting points for two limit switches — one at the top of the guide channel for homing, and one on the slider body near the bottom for contact sensing on the spring-loaded head.
+
+This is definitely a starting point rather than a finished design. The gear tooth profiles are simplified approximations that work fine for 3D printing but aren't true involutes. Open it in OpenSCAD, render the assembly view to see how it all fits together, then uncomment individual parts to export STLs. You'll almost certainly want to tweak dimensions once you measure your actual rod spacing and mock things up.
+
+
+Card sorter carriage
+SCAD 
+1773700766462_image.png
+that doesn't really look like it will work, but I like the idea of the rack teeth being integrated into the slider body rather than a separate piece, and the idea of a guide channel to keep it from twisting. the suction cup has these dimensions in the picture. I can also get you some information from fusion360 if that will help, as that's where I designed everything.
+
+Mar 16
+That suction cup picture is really helpful — I can see it's already got the spring built in between the two nuts, and the barb fitting on top for the hose. That's a nicely self-contained unit.
+
+Yeah, I'll be honest, that OpenSCAD file was more of a rough concept than something you'd actually want to print. The gear geometry especially is pretty hacky.
+
+If you're already working in Fusion 360, it would make way more sense for me to help you design this in a way that integrates with your existing model rather than giving you a standalone file that won't fit. Fusion's gear tools (or add-ins like GF Gear Generator) will give you way better tooth profiles than anything I can approximate in code.
+
+Also — looking at that suction cup, the 14mm barb at the top is what connects to the hose, and the spring gives you maybe 5-10mm of compliance. That's your contact sensing travel right there. The limit switch would mount so that the upper nut/body triggers it when the spring compresses. Do you know roughly how much the spring compresses before it bottoms out?
+
+Q: What would be most helpful for working with your Fusion 360 design?
+A: A detailed sketch/diagram I can follow in Fusion
+
+Q: Are you familiar with gear add-ins for Fusion 360 (like GF Gear Generator or SpurGear)?
+A: I haven't made gears in Fusion yet
+
+Mar 16
+Alright, let me put together a detailed diagram you can follow in Fusion, along with all the dimensions and design intent. Let me think through the design properly first given that suction cup.
+
+The suction cup is 60mm tall total, 30mm cup diameter, 14mm barb at top. The spring is built in. So the slider needs to hold this assembly and let the spring do its thing for contact sensing.
+
+Let me make a proper annotated diagram.
+
+Now let me create a detailed technical diagram showing the carriage assembly design with all the key dimensions and design intent.
+
+V
+
+Connecting to visualize...
+Here's the build plan to follow in Fusion 360, working through each component:
+
+Part 1 — Carriage plate. Start with a rectangular sketch on the XY plane. Width equals your rod spacing plus about 40mm on each side for bearing housings. Depth should be at least 50mm (enough for the bearing length plus walls). Extrude it 5-6mm thick. Then sketch two circles at your rod spacing, bore out holes sized to press-fit or clamp the LM20UU bearings (32mm + a small tolerance). Add clamp slots on one side of each bore with M3 bolt holes so you can tighten the bearings. On the right side of the plate, add the NEMA 17 mounting pattern — four M3 holes at 31mm spacing with a center clearance hole for the boss (22mm). The motor shaft needs to poke through the plate, so bore that out too. In the center area of the plate, cut a rectangular slot for the Z slider and guide channel to pass through.
+
+Part 2 — Z guide channel. This is a U-channel shape that bolts to the underside of the carriage plate. The inner dimensions need to fit the slider with about 0.3-0.5mm clearance on each side. One face of the channel is open (or has a slot) so the rack teeth can protrude and mesh with the pinion. Make it long enough for your full travel plus some extra for the slider body that stays inside at the extremes. Add mounting tabs at the top to bolt to the carriage plate. Put a microswitch mounting boss at the top of the channel for your home switch.
+
+Part 3 — Z slider. This is the piece that moves up and down inside the guide. It's basically a rectangular bar with rack teeth on one face. For the rack teeth, I'd recommend installing the GF Gear Generator add-in in Fusion — it's free and will generate proper involute rack geometry. Use module 1.5, which gives you teeth that are big enough to print reliably but small enough to keep the mechanism compact. The slider needs a bore through the center for the suction hose (about 10mm should work for your 14mm barb plus clearance), and a mounting feature at the bottom to hold the suction cup assembly. For that suction cup, a simple through-hole with a shoulder or set screw to clamp the body of the cup at the right height would work.
+
+Part 4 — Pinion gear. Use the same GF Gear Generator add-in. Match the module (1.5) and set it to 12 teeth, which gives you a pinion about 18mm in diameter. Add a D-shaft bore for the NEMA 17's 5mm shaft. Print this at the finest layer height you can tolerate — 0.12mm if you have the patience. PETG for wear resistance.
+
+For the gear add-in: In Fusion, go to the Utilities tab, click "Fusion App Store," and search for "GF Gear Generator." Install it, restart Fusion, and you'll find it under the Utilities tab. When you generate a rack, make sure the module matches the pinion (1.5mm), and the pressure angle matches (20 degrees). The add-in will create the tooth profile as a sketch you can extrude.
+
+The TPU flexure pieces from the side view mount to the guide channel or a bracket off the carriage, straddling the pickup point. The card rises up between them and gets a slight lateral bend. You can adjust their spacing and stiffness later once the main mechanism is working.
+
+Want me to detail any of these parts further, or work through the pick cycle G-code sequence?
+
+i don't see where the rack and pinion are interfacing
+
+Mar 16
+You're right, the cross-section doesn't show the mesh clearly at all. The pinion and rack are kind of floating in space without an obvious connection. Let me redo this with a better view that actually shows how the teeth engage.
+
+V
+
+Connecting to visualize...
+That should make the interface much clearer. The key thing is: the Z guide channel is a U-shaped trough that holds the slider, but one wall of the channel has a vertical slot cut in it. The rack teeth on the slider protrude through that slot, and the pinion (on the motor shaft) sits right outside the slot meshing with those teeth. The channel walls on the other three sides keep the slider from twisting or deflecting away from the pinion under load.
+
+So in Fusion, when you model the guide channel, you'd sketch the U-profile, extrude it to length, then cut a rectangular slot in the wall that faces the motor. The slot width matches the rack tooth depth plus a little clearance, and the slot runs the full travel length.
+
+Does this make more sense? And do you want me to adjust anything about the layout before you start building it?
+
+i feel like you don't quite understand where the gear is on a nema 17. its right off the body of it. that will change the design significantly.
+
+Mar 16
+You're absolutely right. The NEMA 17 shaft is only about 24mm long and comes right out of the motor face, so the pinion sits basically flush against the motor body. In my diagram I have the motor sitting on top of the plate with the shaft hanging way down — that doesn't work at all. The pinion needs to be right up against the motor face, which means the whole motor position and orientation needs to rethink.
+
+There are a few ways to handle this:
+
+The motor could mount vertically on the side of the guide channel rather than on top of the carriage plate, with the shaft pointing horizontally into the rack. But then you're converting rotation to linear motion at a right angle which is more complex.
+
+More likely, the motor mounts on the carriage plate facing downward, but offset to the side so the pinion on its short shaft directly meshes with the rack teeth. The motor face would be very close to the rack — maybe just a few mm of clearance between the motor body and the guide channel.
+
+Or the motor could mount underneath the plate, face-down, with the shaft pointing down and the pinion right there at the motor face engaging the rack.
+
+Let me make sure I'm thinking about this the right way for your setup:
+
+Also, how much clearance do you have above and below the carriage plate? If the motor hangs underneath, it adds a lot of bulk below the plate alongside the guide channel and suction assembly, so I want to make sure there's room.
+
+Q: Do you have a preference for where the NEMA 17 sits relative to the carriage plate?
+A: Motor on top of plate, and the shaft is horizontal so that the rack can move the suction cup vertically
+
+Mar 16
+That makes way more sense. The motor sits on top of the carriage plate with its shaft pointing horizontally, and the pinion on the shaft meshes with the rack teeth on the vertical slider right there at the motor face. The rack runs vertically, the pinion rotates on a horizontal axis, and that converts the rotation into vertical linear motion on the slider. Clean and simple.
+
+And since the shaft is so short, the pinion is basically right against the motor body, which means the slider/rack needs to run right next to the motor face. The guide channel would be directly adjacent to (or even partially integrated with) the motor mount.
+
+Let me redraw this properly.
+
+V
+
+Connecting to visualize...
+So now the motor sits on an L-bracket on top of the plate, shaft pointing horizontally toward the guide channel. The pinion sits right at the motor face where the shaft actually is, and meshes with the rack teeth on the left face of the slider. The guide channel is immediately adjacent — its left wall has a vertical slot so the teeth can protrude through to reach the pinion.
+
+The L-bracket is the key part here. It's basically a vertical plate that the motor bolts to (using the four M3 NEMA 17 face-mount holes) with a horizontal foot that bolts down to the carriage plate. You'd want this to be pretty rigid since it's taking the gear reaction forces — thicker print walls or even metal if you find it flexing.
+
+Does this match what you were picturing?
+
+yea this makes more sense. does it make sense to use metal guide rods instead of the u shaped guide? I bought some for this purpose originally when I started this project.
+
+Mar 16
+Yeah, that's a better choice. Metal guide rods will be smoother, more rigid, and more precise than a printed U-channel. You'd have two short rods running vertically, with the slider riding on small linear bearings or bushings on those rods. The rack teeth would still be on one face of the slider, meshing with the pinion.
+
+The rods also solve an alignment problem — a printed U-channel has to be really precise to keep the rack teeth at a consistent distance from the pinion. Any warping or tolerance issues in the print and the mesh gets sloppy. Metal rods with bearings keep the slider on a dead-straight path, so the gear engagement stays consistent.
+
+The mounting is straightforward — the rods would press-fit or clamp into a top plate (which could be part of the motor bracket) and a bottom plate, with the slider riding between them. Basically a miniature version of what your X-axis already does.
+
+Q: What diameter are the guide rods you have?
+A: 6mm, they're LM6UU
+
+Q: Do you have linear bearings to go with them?
+A: Yes, I have small ones (LM6UU, LM8UU, etc.)
+
+Mar 16
+Perfect — 6mm rods with LM6UU bearings. Those are 6mm bore, 12mm OD, 19mm long. Nice and compact for this application.
+
+Let me update the diagram to show the rods replacing the U-channel.
+
+V
+
+Connecting to visualize...
+Much cleaner. The two 6mm rods press into a top plate and a bottom plate, and the slider rides between them on four LM6UU bearings — two per rod, spaced apart for stability. The rack teeth are on the face of the slider closest to the motor, so they mesh directly with the pinion sitting right at the motor face.
+
+The top plate does double duty as both the rod holder and the motor mounting bracket. The L-shaped bracket from before is now just this top plate extending sideways with the vertical wall down to the carriage plate.
+
+For the rod spacing, 30mm center-to-center is a reasonable starting point — enough room for the slider body between them with the hose bore, and the LM6UU bearings at 12mm OD fit comfortably. But you can adjust that based on what feels right when you're laying it out in Fusion.
+
+Does this look closer to what you had in mind?
+
+your diagram doesn't show the rack and pinion interfacing at all. and wouldn't we really just need a bottom plate to mount the suction cup to, and the carriage to mount the stepper to? you have a giant z slider on there for no reason.
+
+Mar 16
+You're right on both counts. Let me rethink this much more simply.
+
+The slider doesn't need to be this massive block. It's really just a small plate or bracket that rides on the two guide rods via the LM6UU bearings, holds the suction cup, and has a rack on one edge. That's it. The rods mount to the carriage plate at the top, and a small bottom plate at the bottom just to keep the rods parallel. The suction cup hangs off the sliding bracket.
+
+And I keep failing to show the actual gear mesh clearly. Let me fix that — I'll zoom in on just the pinion-to-rack interface so there's no ambiguity about where teeth meet teeth.
+
+V
+
+Connecting to visualize...
+So the whole thing is really just five printed parts: a motor mount that attaches to the carriage plate and holds the two 6mm rods, a small bottom plate to keep the rods parallel, the sliding bracket with LM6UU bearing bores and a rack strip on one edge, the pinion gear, and whatever adapter holds the suction cup to the bracket. The rack teeth on the bracket face directly toward the pinion at the motor face, and the detail view at the bottom should now clearly show how those teeth interlock.
+
+Does this read better?
+
+you have a bottom plate and a sliding bracket, but what i'm imagining is that the botom plate has both an integrated rack running vertical off it, and a hole in it for the suction cup. i don't think it needs this sliding bracket. in fact, i don't think it even can have the sliding bracket, because the bottom needs to move up and down otherwise it won't be able to get the card out of the bin if the bottom part is fixed.
+
+Mar 16
+You're totally right, I've been overcomplicating this. Let me make sure I understand what you're describing:
+
+The bottom plate is the moving part. It rides on the LM6UU bearings on the two guide rods, has the rack integrated on one edge running vertically, and has the suction cup mounted through it pointing down. The guide rods are fixed to the carriage plate at the top. There is no separate bottom plate holding the rods — the rods just hang down from the carriage plate, and the moving bottom plate slides freely up and down them.
+
+So the only parts are: the carriage plate (which also mounts the motor and holds the tops of the guide rods), the pinion gear, and the moving plate with integrated rack and suction cup mount. Three printed parts plus the pinion.
+
+Is that right, or am I still missing something?
+
+no, the guide rods would be fixed to the bottom plate, and the bearings would be on the carriage. that allows the bottom plate to move up and down with the suction cup on it.
+
+Mar 16
+Oh, that makes much more sense. The rods are fixed to the bottom plate pointing up, and the carriage plate has the LM6UU bearings that the rods slide through. So the whole bottom plate — with the rods, the rack, and the suction cup — moves up and down as a unit, while the carriage plate stays fixed on the X axis.
+
+The motor and pinion are on the fixed carriage plate, and the rack on the moving bottom plate slides past the pinion as it goes up and down.
+
+So it's basically like an upside-down version of what I kept drawing. The carriage is the stationary part (rides on X), and everything below it moves vertically.
+
+V
+
+Connecting to visualize...
+Now the moving assembly is clear: the bottom plate, two 6mm rods pointing up, and the rack strip are all one rigid piece that moves up and down as a unit. The rods slide through the LM6UU bearings that are pressed into the fixed carriage plate. The rack slides past the pinion on the motor, which is also fixed to the carriage plate.
+
+The suction cup mounts through the bottom plate pointing down. When the motor turns, the whole bottom assembly drops down to pick up a card, then comes back up.
+
+Does this match what you're picturing?
+
+yea that's what I'm thinking of, but it will need to be wider to accommodate the suction cup.
+
+I'm also trying to figure out where the limit switch for card height should be since we don't really need it on the carriage anymore like my old design had. Since we're going to have a moving head that moves down with the rack and pinion, we don't need to be as high up in the bin. I'd like to keep it below the top edge simply because we want to keep the cards in the bin. how can i solve this without damaging the cards?
+
+Mar 18
+Good point on the width — the bottom plate needs to be wide enough to fit the suction cup (30mm cup diameter plus some clearance) between or around the two guide rods. Easy fix in the design, just space the rods wider.
+
+For the limit switch and card sensing — this is actually where the spring in your suction cup comes back in. You already have spring compliance built into the cup. When the bottom plate descends and the cup touches the top card, the bottom plate keeps moving a tiny bit further, the spring in the cup compresses, and that compression can trigger a limit switch mounted on the bottom plate itself.
+
+The switch lever would rest against the suction cup body or one of those nuts. When the spring compresses, the body shifts up relative to the bottom plate by a couple millimeters, and the switch clicks. The cards never feel anything but the soft silicone cup pressing down gently — all the sensing happens above, in the mechanical part of the suction assembly. No contact with the cards from any hard switch or lever.
+
+So the switch rides on the moving bottom plate, right next to where the suction cup body passes through. The suction cup's own spring is your compliant contact mechanism and your sensing trigger in one. You'd just need to set the switch so it triggers after maybe 1-2mm of spring compression — enough to confirm contact but not enough force to damage anything.
+
+The G38 probing move in Marlin would work the same way — drive the bottom plate down until that switch triggers, then you know you've touched the stack.
+
+Does that approach work, or are you worried about the spring not giving enough travel to reliably trip the switch?
+
+i think you're getting confused. I need to sense when the card stack is moved up enough for the suction head to move down to the card stack top and grab the card. right now my z limit switch for that is at the bottom so I know when the card stack is all the way down for loading.
+
+Mar 18
+Oh, I see. The Z axis moves the card bin up and down, and you need to know when the top of the stack has reached the right height for the suction head to grab from. The Z limit switch at the bottom is just for homing/loading position.
+
+So the question is: how do you sense when the top of the card stack is at the pickup height, without putting anything that could damage the cards at that height?
+
+Since you now have a moving suction head that can come down to the cards, do you actually need the stack to come up to a specific height anymore? You could just bring the stack up to a rough position and then use the suction head's downward travel to find the top of the stack — which is the G38 probing approach we talked about earlier. The suction cup is soft, so contact with the top card won't damage it.
+
+Or are you saying you still want the bin to bring the stack up to a known height so the suction head doesn't have to travel as far each time?
+
+Q: What's your preferred approach for getting the head to the card?
+A: Stack comes up partway, head comes down the rest
+
+Mar 18
+That makes sense — the bin Z brings the stack up to roughly the right zone, then the head drops down the last bit to make contact. That way the head travel stays short and fast, but you don't need the stack positioned perfectly.
+
+So the sensing question is really about knowing when the stack has come up far enough. You need something at or near the pickup height that detects the top of the stack without touching the card face in a way that could damage it.
+
+A few ideas:
+
+An optical sensor or IR break-beam mounted at the pickup height on the bin walls. A small emitter on one side, receiver on the other, and when the top of the stack rises into the beam it triggers. No physical contact with the cards at all. These are cheap and tiny — a simple slotted optical sensor would work.
+
+A limit switch with a lever that contacts the edge of the stack rather than the face. Cards are much more durable on their edges than their faces. Mount a microswitch at the pickup height so the lever rests against the side of the bin, and as the stack rises, the top card's edge pushes the lever. This only works well if the stack is reasonably neat though.
+
+Or since you're already tracking stack height in software — you know how many cards are in the bin, you know the card thickness (~0.3mm), and you know where the Z axis is. You could calculate approximately where the top of the stack should be, drive the bin Z up to that calculated position, and then let the suction head probe down the remaining distance. No sensor needed at the bin at all. The head's soft contact with the suction cup confirms the actual position. The calculated position just needs to be close enough that it's within the head's travel range.
+
+i guess it probably makes sense to redesign my motion a little bit rather than try and force it to work how it did before with this added change of adding the additional axis. i should probably just remove the z movement that I have now and change it to only move in the z direction from the suction head. that kind of solves all our issues, doesn't it?
+
+Mar 18
+Yeah, it really does. If the suction head has enough travel to reach down into any bin at any stack height, you don't need the bin to move at all. You eliminate an entire axis of motion, simplify the firmware, and remove all the stack height sensing problems in one go.
+
+The tradeoff is that the head needs more travel — instead of 40mm, you probably need enough to reach from clearance height all the way down to the bottom of a full bin. But a longer rack and longer guide rods are cheap and simple. The mechanism is identical, just taller.
+
+And you get the probing for free. G38 down until the suction cup touches the top card, pump on, retract up to clearance, move X to the destination bin, lower into that bin, pump off, retract. No need to track stack height, no need to calculate card count, no second Z axis. The suction cup finds the cards wherever they are.
+
+The one thing to think about is how deep your bins are. If you're storing a few hundred cards in a bin, that's maybe 60-70mm of stack height plus the bin walls plus clearance above. So you might be looking at 100-150mm of head travel. That's still totally reasonable for a rack and pinion on 6mm rods — you just need longer rods and a longer rack.
+
+Do you know roughly how deep your bins are, or how tall a stack you want to be able to pick from?
+
+right now the machine is adjustable so that I can sort out how deep to make the bins and everything later. lets say 100mm tall for now and I'll adjust later. I can pull the rods and linear bearings off an anet a8 3d printer for this if it helps. i'm not sure what size those are off hand, but theyre plenty thick. so I'd have 3 vertical pieces, the two rods and the rack (the rack being a 3d printed piece integrated with the moving head part), and the moving head would have a limit switch (with some hardware adjustability so I can get it in the right spot in relation to the suction cup) and the suction cup. we would move to the card til the limit switch activated, then turn on suction, then return to, what, another limit switch? how do we know how high we need to go to clear the bin?
+
+Mar 18
+For clearing the bin, you don't need a second limit switch — you just need to home the axis once at startup and then you always know where the head is by step counting, same as any 3D printer axis.
+
+Put one limit switch at the top of travel. On startup, home the head upward until it triggers — now Marlin knows that position is zero (or max, however you configure it). From that point on, every G1 move is to a known position. You'd set a "clearance height" in your software — a Z position you know is above all bin walls — and just command the head to that position after every pick and before every lateral move.
+
+So the cycle would be: home up to the top switch at startup to establish the reference, then for each card: G1 X to the source bin, G38 probe downward until the contact switch on the head triggers (now you've found the top card), pump on, G1 up to clearance height (a fixed coordinate you set once based on your bin wall height), G1 X to the destination bin, G1 down to a drop position (which can be a fixed depth into each bin, or you could probe again if you want neat stacks), pump off, G1 up to clearance height, repeat.
+
+The clearance height is just a number you measure once — how high does the head need to be to clear the tallest bin wall — and hardcode into your sorting script. Since you homed the axis, that position is always reliable.
+
+So you end up with exactly two switches total on this axis: the home switch at the top for establishing the reference position, and the contact switch on the moving head for finding the card stack. Everything else is just commanded moves to known coordinates.
+
+For the Anet A8 rods — those are 8mm smooth rods with LM8UU bearings, which would work great and are a bit more rigid than the 6mm ones for a longer travel distance like this.
+
+that sure sounds like 2 limit switches on that axis
+
+Mar 18
+Ha, you're right — it is two limit switches on that axis. I was contradicting myself. Two switches: one at the top for homing, one on the moving head for contact sensing. That's what we need and there's nothing wrong with that.
+
+So to recap the whole simplified design: the X axis moves the carriage between bins, this new axis (call it Y or E in Marlin, whatever output you wire it to) moves the suction head up and down with about 100mm of travel. Two 8mm rods from the Anet A8, a 3D printed rack integrated with the bottom plate that holds the suction cup, a pinion on a NEMA 17 mounted horizontally on the carriage plate, a home switch at the top, and a contact switch on the moving head. No more Z axis for the card bin at all.
+
+Want me to update the diagram to reflect this final version with the longer travel and the two switches, or do you feel like you have enough to start building it in Fusion?
+
+we'll call it z, because it will be our z axis.
+
+Mar 18
+Right — X for the carriage between bins, Z for the suction head up and down. Clean and simple. The old Z axis moving the bin is gone entirely.
+
+Want me to update the diagram with the final design, or are you good to start modeling in Fusion?
+
+it will replace our current z axis
+
+Mar 18
+Right, that's what I meant — Z was the bin movement, now Z is the head movement instead. Same axis letter in Marlin, just doing a different job now.
+
+Are you ready to start building this in Fusion, or would you like an updated diagram first?
+
+can you give me the most important measurements, like the size of rods, the size of steppers, the size of the hole I need for the suction cup, etc?
+
+Mar 18
+Here's everything you need:
+
+Rods and bearings (from Anet A8): 8mm smooth rods, LM8UU bearings (8mm bore, 15mm OD, 24mm long). You'll want two rods, and at least two bearings — one per rod. If the travel is long enough that you get wobble, you could double up to two per rod but probably not necessary.
+
+Stepper: NEMA 17, 42.3mm x 42.3mm face, mounting holes are M3 on a 31mm bolt pattern, shaft is 5mm diameter with a D-flat, shaft length about 24mm from the motor face, center boss is 22mm diameter and sticks out about 2mm.
+
+Suction cup passthrough: The cup body is about 14mm at the barb end. The threaded body with the nuts looks like it's around 10-12mm diameter. You'd want a hole in the bottom plate of about 16mm to give clearance for the barb and any adjustment of the nut position. The cup hangs below, the barb pokes up through the plate, and you clamp it in position with the two nuts sandwiching the plate.
+
+Rack and pinion: Module 1.5, pressure angle 20 degrees. Pinion at 12 teeth gives you about 18mm pitch diameter. The rack tooth pitch is 4.71mm (module × pi). For 100mm of travel you need at least 100mm of rack teeth, so about 22 teeth minimum — go longer to account for the teeth that are always above or below the mesh point.
+
+Rod spacing: Center-to-center needs to be wide enough that the suction cup (30mm cup diameter) fits between them with clearance. With 8mm rods and 15mm OD bearings, I'd go at least 50-60mm center-to-center. That gives plenty of room for the cup and the hose.
+
+Limit switches: Standard microswitches, M2 mounting holes typically 9.5mm apart. One at the top of the rod mount for homing, one on the bottom plate near the suction cup for contact sensing — with slotted mounting holes so you can adjust the trigger point.
+
+i'm working on modeling this in fusion now. how can i easily add teeth to the rack without having to do each tooth manually?
+
+Mar 18
+In Fusion 360, the easiest way is to model one tooth as a sketch and extruded body, then use the rectangular pattern feature. Sketch one tooth profile on the face of the rack, extrude it out, then go to Create → Pattern → Rectangular Pattern. Select the tooth body, set the direction along the length of the rack, set the spacing to one tooth pitch (4.71mm for module 1.5), and set the quantity to however many teeth you need. Fusion will copy it along the full length in one operation.
+
+For getting the actual tooth profile right, I'd really recommend installing the GF Gear Generator add-in rather than sketching teeth manually. It generates proper involute profiles. Go to the Utilities tab, click Fusion App Store (or Add-Ins), search "GF Gear Generator," and install it. Then you can generate both the rack and the pinion with matching profiles, and you know they'll mesh correctly. It'll save you a lot of trial and error versus trying to sketch trapezoidal approximations by hand.
+
+If you just want to get something quick and dirty to test with, a simple rectangular tooth works surprisingly well for 3D printed gears at this scale — sketch a rectangle that's about 2.25mm tall (1.5 × module) and 2.35mm wide (half the tooth pitch), extrude it, and pattern it at 4.71mm spacing. It won't be as smooth or efficient as involute teeth but it'll move the rack up and down.
+
+to make the rack, could i just have a straight piece and glue or fasten a piece of belt to it? would that have enough hold to move it?
+
+Mar 18
+That's a really clever idea. A GT2 belt glued to a flat surface is essentially a rack, and you already have GT2 pulleys and belt from the 3D printer world. The tooth profile is already designed for this kind of engagement and you can get belt by the meter for almost nothing.
+
+The hold would be fine for this application. You're not moving anything heavy — just a small plate with a suction cup. GT2 belt on a pulley has very little backlash and handles the forces involved in moving a card around with tons of margin.
+
+The one concern is the glue joint. If you're pulling the head down and it hits something, the shear force on the glue could peel the belt off. You could solve that by clamping the belt at both ends mechanically instead of relying on glue alone — a small screw-down clamp or even just wrapping the belt ends around the piece and pinching them. Or glue it with CA glue and add a mechanical clamp at each end as insurance.
+
+The big upside is that you already know GT2 pulleys work with your NEMA 17 steppers, you probably have pulleys sitting around, and you don't need to print any gear teeth at all. You'd just swap the pinion for a GT2 pulley on the motor shaft and the printed rack for a flat piece with belt stuck to it. Way simpler than trying to get printed involute teeth right.
+
+The steps per mm calculation is easy too — a 20 tooth GT2 pulley moves 40mm per revolution, same math as a 3D printer belt axis.
+
+id probably mechanically clamp it now that you mention it. but would it make sense to just use it kind of like a pulley, using the weight of the rods to push down with gravity, rather than actively pushing down?
+
+Mar 18
+That could work — belt attached to the moving plate, up and over a pulley on the motor shaft, and gravity pulls the head down. Like a tiny crane. You wouldn't even need the rack at all, just a straight run of belt from the moving plate up to the pulley.
+
+But I think you'd run into issues. The moving assembly — bottom plate, two 8mm steel rods, suction cup — has decent weight, but it's not a lot. If the suction cup catches on anything or there's any friction in the bearings, gravity alone might not give you consistent downward force or speed. And when you're probing down to find the card stack, you want controlled motion, not just letting it fall. With G38 probing you need the stepper actively driving in both directions so Marlin can control the feed rate and stop precisely when the switch triggers.
+
+Also, with a single belt over a pulley, if the motor ever loses position or power, the whole head just drops. On a 3D printer that's a failed print — on your machine that's the head slamming into whatever's below it, potentially scattering cards everywhere.
+
+The belt-as-rack approach with mechanical clamping gives you all the simplicity benefits of using belt instead of printed teeth, but keeps the motor in positive control of both directions. I'd stick with that — flat piece with belt clamped to it, GT2 pulley on the motor shaft, motor drives up and down actively.
+
+should the rack be centered on the moving head, or should the suction cup be centered on it instead?
+
+Mar 18
+The suction cup should be centered between the two rods. That way the weight of the card and the suction force are balanced between the bearings, and you don't get the moving plate trying to tilt or bind on the rods.
+
+The rack can be off to one side, next to one of the rods. The gear engagement force will create a small moment that wants to twist the plate, but with two rods spaced apart, the bearings resist that easily. This is exactly how a 3D printer Z axis works — the lead screw is off to one side and the smooth rods handle the torque.
+
+If you centered the rack instead, the suction cup would be offset, and every time you pick up a card you'd get an asymmetric load on the bearings. That's worse than the small side force from an offset rack.
+
+after doing an initial design and holding it with the 8mm rods, I'm realizing that they add so much unnecessary weight, which will slow things down long term. we need to rethink the design a bit to prevent needing that.
+
+Mar 20
+Yeah, two 8mm steel rods moving up and down adds a lot of inertia for what's essentially just carrying a suction cup. The heavier the moving assembly, the slower your accelerations and the longer each pick cycle takes — that adds up fast over hundreds of cards.
+
+What if you flipped it back around — rods fixed to the carriage plate, bearings on the moving head? Then the steel stays stationary and only the printed part plus bearings plus suction cup moves. The moving mass drops dramatically.
+
+Or you could ditch the dual rod setup entirely and use a single linear rail (MGN type) mounted vertically on the carriage plate. The rail is fixed, the carriage block moves, and it's way lighter than two rods plus bearings. You might even have one from the Anet A8 or another printer.
+
+Q: Which direction do you want to go to reduce moving mass?
+A: Go back to a printed guide channel since weight matters more now
+
+Mar 20
+That makes sense. A printed guide channel keeps all the heavy stuff stationary on the carriage and the moving part is just a lightweight printed slider with the belt strip and suction cup. No steel rods moving at all.
+
+The earlier concern about a printed channel was keeping the rack teeth aligned with the pinion, but now that you're using belt clamped to the slider instead of printed teeth, that's much more forgiving. The belt and GT2 pulley mesh is more tolerant of slight play in the channel than printed gear teeth would be.
+
+So the slider is just a simple printed piece that rides in the channel, with belt clamped to one face, suction cup mounted through the bottom, and the contact limit switch. That's almost nothing in terms of mass.
+
+For the channel itself, the main thing is making sure the slider doesn't wobble enough to disengage the belt from the pulley. A snug fit with maybe 0.3mm clearance on each side should be plenty. Print orientation matters here — print the channel so the sliding surfaces are flat layers rather than layer edges, you'll get a much smoother action.
+
+Do you want me to update the diagram to show this final version — printed channel, belt-on-slider, GT2 pulley on the motor?
+
+are we kinda just faking a linear actuator? is that a better way to do this?
+
+Mar 20
+Basically yes. What you're building is a belt-driven linear actuator — a GT2 pulley on a stepper, a belt, a slider on a guide, and something at the end of it. That's exactly what cheap linear actuators from Amazon or AliExpress are.
+
+And honestly, a premade one might be worth looking at. You can get small belt-driven linear actuators with 100-150mm travel, a built-in NEMA 17 mount, aluminum extrusion rail, and a sliding carriage for pretty cheap. The moving carriage is lightweight, the rail is rigid, the belt tension is adjustable, and it bolts right onto your existing setup. You'd just mount the suction cup to the carriage plate on the actuator.
+
+It would save you the trouble of designing and printing the guide channel, getting the tolerances right, dealing with the belt clamping, and all the iteration that comes with that. And it'll be smoother and more rigid than anything printed.
+
+Q: Want to look into a premade linear actuator instead of building one?
+A: my worry is that it creates a tall vertical weight that would be hard to stabilize.
+
+Mar 20
+That's a valid concern. A 100mm+ linear actuator standing vertically on top of the carriage is a tall lever arm, and every time the X axis accelerates or decelerates, that whole column wants to tip over. The higher the center of gravity, the more force on the carriage bearings and the more flex in the system. That could cause wobble, missed steps, or just inaccurate positioning.
+
+The printed guide channel actually helps here because you can design it to hug close to the carriage plate and keep the profile low and compact. A premade actuator is a fixed form factor that you can't really reshape.
+
+But the fundamental problem is the same either way — you have a vertical moving thing on top of a horizontal moving thing, and that's inherently a bit tippy.
+
+A few ways to deal with it: keep the actuator as short as possible — do you really need 100mm, or could you get away with less now that you don't need to reach the bottom of a deep bin? The shorter it is, the less leverage it has. You could also mount it below the carriage plate instead of above, hanging down between the X-axis rods, which lowers the center of gravity. Or you could angle it slightly rather than perfectly vertical, leaning it against something structural.
+
+How tall are your bin walls actually? That's really what sets the minimum travel — you just need enough to clear the walls and reach down to the cards.
+
+i would like to be able to load 500 cards in at a very minimum.
+
+Mar 20
+500 cards at roughly 0.3mm each is about 150mm of stack height, plus bin walls above that, plus clearance. So you're looking at probably 180-200mm of travel minimum. That's a tall column no matter how you build it.
+
+At that height the stability concern is real. Let me think about this differently — does the actuator actually need to be vertical on top of the carriage?
+
+What if the actuator was mounted horizontally, fixed to the frame rather than riding on the carriage, and you used a cable or belt to convert that horizontal motion to vertical motion on the suction head? Like a pulley redirect. The heavy motor and actuator stay low and stationary, and only a very lightweight head moves vertically on a simple printed guide.
+
+Or — what if the vertical actuator was fixed to the frame at the pickup position only, and doesn't ride on the X axis at all? The sequence would be: X carriage moves to the pickup station, the fixed vertical actuator lowers the head to grab a card, lifts it up and releases it onto the carriage, then the carriage carries it to the destination bin and just drops it in from above. The vertical motion only happens at one position so the weight never has to move laterally.
+
+Q: Which approach interests you for handling the height problem?
+A: does your horizontal actuator idea not just basically describe using a pulley like i thought about earlier?
+
+Mar 20
+Yeah, it pretty much does. I talked you out of the pulley approach earlier because of concerns about gravity-only downward drive and losing position on power loss. But those problems are solvable — you just run the belt in a loop instead of a single strand.
+
+A closed loop belt over two pulleys — one driven by the motor mounted low on the frame, one idler at the top — with the suction head clamped to one side of the belt. Motor turns one way, head goes down. Motor turns the other way, head goes up. Positive control in both directions, no relying on gravity, and the motor and stepper stay low and stationary on the frame rather than riding on the carriage.
+
+That's just a standard belt-driven Z axis, which is exactly what a lot of 3D printers use. The Ender 3's X axis gantry moves up and down on two vertical extrusions with a belt loop and the motor at the bottom.
+
+The only thing riding on the X carriage would be a lightweight printed guide for the head to slide in, and the head itself. All the heavy stuff — motor, pulleys — is on the frame. That solves the stability problem completely.
+
+The question becomes: does the vertical guide for the head need to move with the X carriage, or can it be fixed at one position? If it's fixed, the head only goes up and down at one spot and you use X to move the card after pickup. If it moves with the carriage, you need the vertical structure riding on X, but at least it's just a lightweight rail or printed channel with no motor on it.
+
+your fixed position idea sounds like a lot of moving complications. how can we do a belted z? right now my x axis rails are in the y axis, but hypothetically, I could move them to the z axis, then run a belted z between them. does that make sense? does that solve our problems? then its not an arm that goes down to pick up the card with the z axis sticking straight up with a high center of gravity, only a lightweight arm (probably 3d printed) would move.
+
+Mar 20
+That makes a lot of sense. So the two 20mm rods that are currently horizontal for the X axis would be reoriented vertically, and you'd run a belted Z between them. The carriage with the LM20UU bearings rides up and down on those vertical rods, driven by a belt loop. Then a lightweight printed arm extends horizontally off that carriage to hold the suction cup over the bins.
+
+The heavy rods and bearings are now the Z structure — rigid, stable, and the weight is low since the rods are fixed to the frame. The moving mass is just the carriage block, the printed arm, and the suction cup. The motor sits at the bottom or top of the vertical rods, fixed to the frame.
+
+But then you still need X motion to move between bins. So you'd need a new horizontal axis for that, and the lightweight arm would need to be on that axis.
+
+Let me make sure I'm understanding the full picture:
+
+Q: How do you handle the horizontal movement between bins with this new layout?
+A: no, the x axis we have now would still be the x axis, its just that instead the rods being in the y plane, they're in the z plane.
+
+Mar 20
+Oh I see — the rods serve double duty. They're vertical now, so the carriage rides up and down on them as the Z axis, but the carriage can also slide along them horizontally as the X axis. Same rods, same bearings, just oriented vertically instead of horizontally, and you drive two axes of motion on them.
+
+Wait, that doesn't work — the LM20UU bearings slide freely along the rods in one direction. If the rods are vertical, the carriage slides up and down but can't move horizontally along them. You'd need a second set of rails for the other axis.
+
+I think I'm overcomplicating what you're describing. Can you walk me through what moves on what? Like: the bins sit on _____, the X motion is driven by _____, the Z motion is driven by _____, and the arm connects to _____.
+
+two different sets of rods. the thick ones are the 20mm ones I mentioned before. those are for the x axis. one bar is at the top in the back, the other is at the bottom in the back. those two bars will have the second set of bars (8mm) running between them for the z axis.
+
+Mar 21
+Now I get it. The two 20mm rods run horizontally for X, one at the top and one at the bottom of the frame, both at the back. The carriage rides on those for left-right movement between bins. Then the two 8mm rods are mounted vertically between the X carriage at the top and the X carriage at the bottom, creating a vertical Z axis that moves with the X carriage. A small Z carriage rides up and down the 8mm rods, with a lightweight printed arm extending forward from it to hold the suction cup over the bins.
+
+So the 20mm rods and the frame handle all the structural load. The 8mm rods move horizontally with X but they're short and light. The only thing moving vertically is the little Z carriage, the arm, and the suction cup. The belt for the Z axis runs along the 8mm rods with the motor mounted on one of the X carriages.
+
+That's a really solid design. The heavy structure is all in the frame, the center of gravity stays low, and the moving mass on Z is minimal. It's essentially a CoreXZ type arrangement — like a gantry crane.
+
+And because the 8mm rods span between two X carriages that are both on the 20mm rods, the vertical structure is supported at both top and bottom, so it won't wobble or tip. Way more rigid than a single tall column sticking up from one carriage.
+
+Does the arm extend forward toward the user, with the bins arranged in a row underneath it?
+
+yes, that's exactly how it is laid out. i'm basically using the x axis from an old anet a8 as my z axis. an arm will extend forward from that with the limit switch and suction cup on it.
+
+Mar 21
+That's clean. You're reusing the Anet A8's X axis assembly — rods, bearings, belt, motor, everything — but mounted vertically between your two X carriages. So that's already a proven belt-driven linear axis, you just need to print the arm that extends forward from its carriage.
+
+So the final design is: two 20mm horizontal rods for X (moving between bins), the Anet A8 axis mounted vertically between the X carriages for Z (up and down), a printed arm extending forward from the Z carriage holding the suction cup and contact limit switch, and the A8's existing endstop at the top of Z for homing.
+
+The arm just needs to be stiff enough not to flex when the suction cup contacts a card, long enough to reach over the bins, and have a mount for the suction cup and the adjustable limit switch. Since it's the only printed structural piece that's moving, it's worth printing in PETG with decent infill.
+
+Want me to put together a diagram of this final layout, or are you good to keep building in Fusion from here?
+
+put together a diagram just so we can make sure we're on the same page
+
+Mar 21
+I'll do two views — a side view showing the overall machine layout, and a front view showing how the gantry works. Let me start with the side view since that shows the key spatial relationships.
+
+V
+
+Connecting to visualize...
+That's the side view. The two 20mm rods run horizontally into the page (X axis), the Anet A8 axis (8mm rods + belt) runs vertically between the top and bottom X carriages, and the printed arm extends forward from the Z carriage out over the bins.
+
+Now the front view showing how it all moves:
+
+V
+
+Connecting to visualize...
+So the full picture: the two 20mm rods run horizontally across the back of the machine for X. The Anet A8 axis (8mm rods, belt, motor) mounts vertically between the top and bottom X carriages, creating the Z axis. A printed arm extends forward from the Z carriage out over the bins, with the suction cup and contact switch at the end. X moves the whole gantry to any bin, Z lowers the arm in to pick or drop.
+
+Two axes, two motors, no bin movement at all. Does this match what you're building?
+
+yep! I'm trying to decide if I should just bolt the existing x carriage from the anet a8 i disassembled (its the old model where the frame was made of acrylic) to an adapter piece that screws to the bearings for the 20mm rods. I feel like that's a really easy way to get this moving.
+
+Mar 21
+That's the fastest path to getting it running. The Anet A8 X carriage already has the LM8UU bearing mounts, belt clamp, and everything sized correctly for the 8mm rods. Just print an adapter plate that bolts to your LM20UU bearing housings on one side and to the acrylic A8 carriage on the other. You'd need two of these — one for the top X carriage and one for the bottom.
+
+The acrylic carriage piece is fine structurally for this since it's not taking heavy loads — it's just holding 8mm rods and a belt. The main thing to watch is that the acrylic doesn't crack at the bolt holes if you overtighten. Use washers to spread the load and don't go crazy with the torque.
+
+The arm would then mount to the A8's existing carriage block (the piece that rides on the 8mm rods). That block already has some mounting holes or flat surfaces you can bolt to or design the arm to clamp onto.
+
+I'd say go for it — get it moving and test the concept, and you can always redesign the adapter or replace the acrylic pieces with printed parts later if something doesn't hold up. Getting a working prototype quickly is worth more than optimizing every part first.
+
+no i'm not using the acrylic at all, just the white plastic z carriage that the x axis is attached to. I guess my best attachment point would be where the anti-backlash nuts for the anet's z axis were. That's how we probably want to connect to our x axis adapters unless you have a better idea.
+
+Mar 21
+That makes sense — the A8's plastic X carriage piece has those anti-backlash nut mounting points which are already designed to take load in the vertical direction. Those bolt holes are a natural connection point to your adapter plate.
+
+I don't think there's a better option honestly. Those mounting points are already there, they're in a good structural position on the carriage, and they're meant to handle vertical forces. Drilling new holes risks weakening the part, and clamping solutions are fiddly. Just design your adapter plate with matching bolt holes and call it done.
+
+The adapter just needs to bridge from those bolt holes to your LM20UU bearing housings. Keep it simple — a flat plate with holes on both ends works. If you need to offset the Z axis forward or back relative to the X rods, you can make the adapter an L-shape, but if the geometry works with a flat plate, go with that.
+
+Are you at a point where you're going to start printing and assembling, or is there more to figure out on the design side?
+
+the only other option I can think of is a design that clamps together through the z rod holes. that might prevent twisting a little better.
+
+Mar 21
+That's a good idea. If you clamp through the Z rod holes, the 8mm rods themselves become the connection between the A8 carriage and your adapter. The rods are steel and rigid, so they resist twisting way better than bolting through the plastic anti-backlash nut holes would. The plastic carriage can't twist on the rods because the rods pass through the bearings — it's locked rotationally.
+
+And clamping around the rods means the adapter just needs to grip the rod ends where they stick out above and below the A8 carriage, which is mechanically cleaner than relying on the plastic bolt holes to take torque loads.
+
+So the adapter would be a clamp that grabs the 8mm rod ends and also bolts to your LM20UU bearing housings. The A8 carriage just sits on the rods between the top and bottom adapters like it normally does, held in place by the bearings and belt.
+
+You could even do a split clamp design — two halves that sandwich the rod end with a bolt pulling them together. Easy to print, easy to adjust, and you can make them as beefy as you want without worrying about the acrylic or plastic taking any structural load.
+
+I think that's the better option over the anti-backlash nut holes. Go with the clamp.
+
+how far apart are the screw holes on the anet step motor
+
+Mar 21
+
+Searched the web
+Searched the web
+It's a standard NEMA 17 stepper, so the mounting holes are on a 31mm bolt pattern (M3 screws, 31mm between hole centers in a square). The shaft is 5mm with a D-flat, and the center boss is 22mm diameter.
+
+If you're asking specifically about the holes on the A8's plastic carriage where the motor mounts to, those should match the same 31mm NEMA 17 pattern since that's what it was designed to hold. But if you mean the Z rod holes or the anti-backlash nut holes on the carriage, those would be specific to the A8's design — do you want me to look those up, or do you have the part in hand to measure?
+
+how big ae the screw holes?
+
+Mar 21
+M3 — 3mm diameter. The NEMA 17 standard uses M3 bolts for the face mounting holes. The holes in the A8 carriage should be 3mm or slightly larger for clearance.
+
+ok its time to design the arm that will hold the limit switch and suction head. what are the metal mounts with 4 holes on the anet a8 that ride on those 8mm rods? they look like they have the linear bearings integrated into them.
+
+Mar 21
+
+Searched the web
+Searched the web
+Those are the aluminum bearing blocks — they're SC8UU type linear bearing blocks. They're basically an LM8UU bearing pressed into an aluminum housing that has a flat mounting face with four bolt holes. The mounting holes are M4 (or sometimes M5) on a pattern that's typically about 30mm x 34mm. They're sometimes called "pillow blocks" or "shaft support blocks."
+
+The key dimension for your arm design is that the rod center-to-center spacing on the A8's X axis is 46mm. So the two SC8UU blocks on the Z carriage are 46mm apart, and your arm would bolt to the four mounting holes on one or both of those blocks.
+
+Do you have those SC8UU blocks in hand, or are you using the original plastic A8 carriage piece that has the LM8UU bearings pressed into it?
+
+what's the hole pattern for one of these for the screw holes?
+
+Mar 21
+
+Searched the web
+Searched the web
+The SC8UU / SCS8UU mounting hole pattern is 24mm x 18mm center-to-center, with four M4 threaded holes (8mm deep). The overall block dimensions are 34mm x 30mm x 22mm, and the rod center sits 11mm above the mounting surface.
+
+So for your arm, you'd design it with four M4 clearance holes (4.2mm) in a 24mm x 18mm rectangle to bolt to the SC8UU block on the Z carriage.
+
+and then how far apart would my sets of holes on each rail be? make a diagram please.
+
+Mar 21
+The two SC8UU blocks sit on the two 8mm rods which are 46mm apart center-to-center on the Anet A8. So you'd have two sets of four M4 holes, with the sets spaced 46mm apart.
+
+V
+
+Connecting to visualize...
+Wait — let me double check that math. The rod centers are 46mm apart. Each SC8UU block's holes are 24mm wide, centered on the rod. So from the rod center, the holes extend 12mm to each side.
+
+Left block right holes: 185 + 12 = 197 (12mm right of left rod)
+Right block left holes: 395 - 12 = 383 (12mm left of right rod)
+
+Distance between inner holes: 383 - 197 = 186mm... that can't be right at the scale I drew it, but the real-world dimension would be 46 - 12 - 12 = 22mm between the nearest holes of the two blocks.
+
+Let me correct that — the inner holes are only 22mm apart, and the outer holes are 46 + 12 + 12 = 70mm apart. My diagram had the blocks way too far apart visually. The blocks are actually almost touching each other at 46mm rod spacing. Want me to redraw it to scale, or are those numbers enough to work with in Fusion?
+
+redraw to scale
+
+Mar 21
+V
+
+Connecting to visualize...
+Now you can see how tight it actually is — the two SC8UU blocks only have about 12mm of gap between them at 46mm rod spacing. The arm plate bolts across both blocks with 8 total M4 holes, then extends forward toward the bins where the suction cup and limit switch mount.
+
+Those are the key numbers for Fusion: 24mm x 18mm per block, 46mm rod spacing, 22mm between inner holes, 70mm between outer holes. Does that give you what you need?
+
+that gives me what I need, just note that the suction cup hole is in the wrong direction.
+
+Mar 21
+You're right — the suction cup goes through the arm pointing down, not forward. The hole should be on the flat face of the arm plate (so the cup hangs below it), not toward the front edge. In the top-down view it would just show as a circle on the plate surface, which is actually how I drew it — but the label and context made it seem like it was facing forward. The cup passes vertically through the plate and hangs underneath.
+
+Good catch. Got everything you need to keep going in Fusion, or is there anything else to work through?
+
+ok so I'm working on the mount part, and I need to figure out how far apart the screws for the limit switch need to be. Can you figure that out for me? they're the ones that came with the anet a8
+
+Mar 21
+
+Searched the web
+Searched the web
+The Anet A8 endstop switches mount with M2 screws, and based on the various mounts people have designed, the hole spacing is 9.5mm apart. Several sources reference fitting switches with 10mm screw spacing as well, so yours might be right at 9.5 or 10mm — worth putting calipers on yours to confirm since there's slight variation between batches. But 9.5mm is the standard for those small microswitches that came with the A8.
+
+just a note after 3d printing and measuring, the hole for the suction cup mount should be 10mm, not 16. commit that to memory.
+
+Mar 22
+Got it — suction cup mount hole is 10mm. I don't have memory enabled so I won't be able to recall that in a future conversation, but I'll keep it in mind for the rest of this one. You can enable memory in your settings if you'd like me to retain details like this across sessions.
+
+Is the arm coming together well otherwise?
+
+what size should i make the bins to hold the cards so that they can be secure but also move easily?
+
+Mar 23
+MTG cards are 63mm x 88mm (2.5" x 3.5"), standard poker size. For the bins, you want enough clearance that cards drop in cleanly when released from the suction cup but not so much that they land crooked and make a messy stack.
+
+I'd go with about 66-67mm x 91-92mm internal dimensions — roughly 1.5-2mm of clearance on each side. That's enough that a card falling straight down won't catch on the walls, but tight enough that the stack stays neat. If you go much wider than that, cards will land at slight angles and the stack gets progressively messier, which makes future pickups harder.
+
+For depth, at 500 cards minimum that's about 150mm of stack. Add maybe 10-15mm above the stack for the suction cup to clear the walls when entering, so around 165mm internal depth.
+
+One thing to consider — slightly flared or chamfered top edges on the bins make it much more forgiving for the card to drop in, especially if the X positioning isn't perfect to the millimeter. Even just a 2-3mm chamfer at 45 degrees on the inner top edges acts as a funnel and helps guide the card in.
+
+You might also want to test whether sleeved cards need to fit. A card in a standard penny sleeve is about 66mm x 91mm, which would need slightly wider bins — maybe 69-70mm x 94-95mm. Worth deciding now whether you'll ever sort sleeved cards.
+
+Ok, so tell me where everything is supposed to be plugged in. I know I ran into a thing last time where I ended up having to use the heated bed connection for one of my micro vacuum pumps.
+
+Mar 23
+
+Searched the web
+Searched the web
+I need to know which specific BTT board you have to give you accurate pin assignments. There are quite a few different ones — SKR 1.3, SKR 1.4, SKR Mini, Octopus, etc. — and they all have different layouts.
+
+Can you check the board? It should have the model printed on the PCB silkscreen. If you can't look at it right now, do you remember roughly when you bought it or what size it is?
+
+In the meantime, the general mapping for your machine would be something like: X stepper output for the X axis motor (carriage between bins), Z stepper output for the Z axis motor (head up and down via belt), X endstop for X homing, Z endstop for Z homing at the top, and then the Z probe pin (or a spare endstop pin) for the contact limit switch on the arm. The vacuum pump on the heated bed output like you had before. But the exact connector locations depend on which board it is.
+
+Q: Do you remember which BTT board you have?
+A: skr v1.4 turbo
+
+Mar 23
+
+Searched the web
+Searched the web
+Good, the SKR 1.4 Turbo has 5 stepper driver slots (X, Y, Z, E0, E1) and 3 endstop connectors (X, Y, Z min) plus a few extra pins that can be repurposed. Here's how everything maps for your card sorter:
+
+Steppers:
+
+X motor slot → X axis stepper (carriage between bins)
+Z motor slot → Z axis stepper (head up and down, the Anet A8 belt axis)
+Y and E0/E1 slots are free for future use
+Endstops:
+
+X-min endstop connector → X home switch
+Z-min endstop connector → Z home switch (top of travel)
+For the contact limit switch on the arm, you have a couple options. The SKR 1.4 has a Z probe pin (P0.10) that works well for this — it's what you'd use for G38 probing moves in Marlin. Alternatively, the board has E0DET and E1DET filament runout sensor pins that can be repurposed as extra endstop inputs.
+Vacuum pump:
+
+Heated bed output (HB) like you had before — it's a high-current MOSFET output that you can switch on and off with M140/M190 commands, which works fine for a pump.
+Important wiring note for the endstops: since you're using Anet A8 switches with this board, the endstop pin order is different between the two. The A8 uses pin 1 as ground and pin 2 as 5V, while the SKR uses pin 1 as 5V and pin 2 as ground. 
+Caggius Interweb
+ The SKR 1.4 has clamping circuitry that protects it 
+Caggius Interweb
+, but you should still swap the wires to be safe — just move the red wire from pin 1 to pin 2 on the board end of the connector.
+
+Do you remember which stepper drivers you have installed on the board?
+
+i got that sorted out with another instance. I want to go back to talking about physical design. what I need to figure out is how to add the piece of tpu to flex the card. I think I can put it on top of my arm, secured by the nut that holds the suction cup on. there shouldn't  be much force ont it so I'm not too worried about that. I could even glue it or screw it on. whatever. the main thing I wanted to ask about is how thick it needs to be and what kind of shape to get the right deflection of the card reliably without damaging it or ruining the suction seal.
+
+Mar 24
+The key is that the card needs to flex just enough to break the surface tension between it and the card below — maybe 2-3mm of deflection across the width of the card. Too little and doubles still stick, too much and you crease the card or break the suction seal.
+
+For the shape, I'd go with two narrow fingers or prongs rather than one solid piece. They'd straddle the suction cup, one on each side, so the cup grabs the center of the card and the fingers contact near the edges. As the head lifts the card, the edges catch on the finger tips and flex slightly while the center gets pulled up by suction. This naturally creates a slight U-shape across the card which is exactly what you want for separation.
+
+For thickness, TPU at 95A shore hardness (which is what most standard TPU filaments are) at about 1.5-2mm thick would give you enough stiffness to deflect the card but enough flex that if the card catches harder than expected, the TPU gives before the card does. You don't want it so thick that it's rigid — the whole point is that it's a compliant contact.
+
+The finger tips that actually touch the card should be rounded or have a slight chamfer so there's no sharp edge that could mark or catch the card surface. Print them so the layer lines run along the length of the finger, not across the tip — that way the contact surface is smooth rather than stepped.
+
+For width, each finger should be about 8-10mm wide at the tip. Narrow enough that it's not fighting the suction for too much of the card surface, wide enough to make reliable contact.
+
+The gap between the two fingers needs to be wide enough for the suction cup (30mm) plus a few mm clearance on each side — so about 36-40mm between the inner edges of the fingers. The overall span from outer edge to outer edge should be less than 63mm (card width) so the fingers land on the card and not beside it — something like 55-58mm total would put the contact points about 5-8mm in from each card edge.
+
+For how far the fingers extend below the arm, this is where it gets tunable. The tips need to sit at a height where the card contacts them as the head lifts up. If the fingers extend too far below the arm, the card bends too much before clearing them. If too little, they don't engage at all. I'd start with the finger tips sitting about 3-4mm below the bottom of the suction cup at rest. That way as the head rises with a card, the card has to flex past the fingers, and the 3-4mm of offset determines the maximum deflection. Print a few versions with different extensions — 2mm, 4mm, 6mm — and test which one reliably separates singles without breaking the suction seal. This is the dimension you'll tune the most.
+
+Mounting it with the suction cup nut is the simplest approach. The TPU piece would be a flat plate that sits on top of the arm with a center hole matching the suction cup body, clamped down by the nut. The two fingers extend out from the edges of this plate and curve down below the arm. Since it's TPU, the whole thing is one printed piece — plate, fingers, and the curved tips — and it just flexes as needed.
+
+can you look at my Code chat and figure out how I've updated the machine and how it works?
+
+Mar 25
+
+Searched memory
+Searched memory
+I'm not finding any conversations about the card sorter code or firmware. The search is only turning up your Ubuntu image migration project and an immigration form.
+
+Could you share the chat title or a few keywords from that Code conversation? Or if you can find the chat, you could paste the key parts here. It's possible it was in a different project, an incognito chat, or with Claude Code directly (which I can't search through from here).
+
+ok well I'll just update you manually then:
+
+we're going to change the design a little bit. rather than trying to can in the bin, which doesn't work reliably, we're going to pick the cards up, move them to a scanning area we're calling the staging area, put them down, move the head away, scan the card, then pick up the card from the staging area and move it to the correct bin. This improved my scanning accuracy by a ton. 
+
+The two questions I'm thinking about now are:
+
+how can I mechanically raise the to be sorted stack up to minimize the distance the z arm needs to travel down to pick up a card, without it going over a certain maximum height, without any sort of power or sensors if possible (i'm not adding another axis)? is there some clever mechanical way to do this? springs maybe?
+
+Additionally, the fingers to bend the cards slightly didn't work well and ended up getting in the way of everything, so we're going to need to scrap them. to deal with that, I thought about the cards getting grabbed by the suction head then having to flex slightly to go past some, for lack of a better term, "nubs" in order to pull out of the bin. Is this possible without damaging the cards? my other thought was like if they went by something with the consistency of toothbrush or paintbrush bristles on each side of the card if that would work without damaging the cards edges. alternatively, some tpu flaps that can flex just enough to knock other cards off without damaging an edge.
+
+Show more
+Mar 25
+For the stack raising mechanism — a spring under the stack is exactly the right idea. You'd have a platform at the bottom of the bin that sits on a compression spring. As you remove cards from the top, the stack gets lighter, and the spring pushes the remaining cards upward. The spring naturally keeps the top of the stack at roughly the same height throughout the sorting process.
+
+The trick is choosing the right spring rate. A full 500-card stack weighs roughly 500 × 1.8g = 900g. You want a spring that's compressed enough under 900g to sit at the bottom of the bin, but that extends enough under zero load to push the last few cards up near the top. A light compression spring with maybe 0.05-0.1 N/mm rate and a free length close to your bin depth would do it. The top of the stack won't stay at exactly the same height — it'll rise gradually as cards are removed — but it'll keep the stack in a reasonable zone so the Z arm doesn't have to travel the full bin depth every time.
+
+For the maximum height limit, just put a physical lip or ledge inside the bin that the platform can't pass. The platform has a flange or tab that hits the ledge and stops. Simple, no sensors, no power.
+
+You could also use a counterweight on a string over a small pulley instead of a spring — the advantage being perfectly constant force regardless of position, unlike a spring where force varies with compression. But a spring is simpler and probably good enough.
+
+For the card separation — I think your TPU flap idea is the strongest option of the three. Here's why:
+
+Nubs are rigid contact points, and they create a very specific deflection requirement. If the nub sticks out too far, you risk creasing the card or breaking the suction seal. Too little and it doesn't separate doubles. And the exact right amount varies with card condition — foils are stiffer, old cards are more flexible. There's no single setting that works for everything.
+
+Bristles (toothbrush/paintbrush style) are interesting but the concern is card edges. MTG cards aren't sealed on the edges — they're layered cardboard. Stiff bristles rubbing against the edge could delaminate or fray the card over thousands of cycles. Soft bristles might not provide enough separation force.
+
+TPU flaps are the best of both worlds. They provide a compliant force that adapts to the card — stiffer cards push through with more force, flexible cards with less. They contact the face of the card rather than the edge, so no delamination risk. And if a double card comes through, the flap provides enough drag on the second card to knock it loose without a hard stop that could damage either card.
+
+For the design, I'd put two small TPU flaps on opposite sides of the bin exit path, angled slightly inward. Maybe 15-20mm tall, 2mm thick at the base tapering to about 1mm at the tip, printed in 95A TPU. The tips overlap the card path by maybe 3-4mm on each side. As the card gets pulled up by the suction cup, it pushes through the flaps which flex out of the way, but any second card stuck to it gets wiped off by the flaps springing back.
+
+Mount them at the top of the to-be-sorted bin, or at the entrance to the staging area — wherever the card transitions from "in the stack" to "being carried." They'd just clip or screw onto the bin wall.
+
+Want me to work through the spring sizing more specifically, or focus on the TPU flap geometry?
+
+lets focus on the TPU flap geometry. can you draw it out for me?
+
+Mar 25
+I'll do two views — a front view showing the flaps on the bin walls and the card passing through them, and a side cross-section showing the flap profile and dimensions.
+
+V
+
+Connecting to visualize...
+That shows the front view — two flaps mounted on the inner bin walls near the top, angling inward so their tips overlap the card path by 3-4mm on each side. The gap between tips is about 55-56mm, so the 63mm card has to push the flaps aside to pass through.
+
+Now the side cross-section showing the flap profile and how the card interacts with it:
+
+V
+
+Connecting to visualize...
+The key dimensions to start with: each flap is about 20mm long from the bin wall to the tip, 2mm thick at the base tapering to about 1mm at the tip, and 8-10mm wide. The tip overlaps the card path by 3-4mm. The slight downward angle means the rising card naturally pushes the flap up and away rather than fighting it head-on.
+
+I'd print 3-4 sets with slightly different overlaps — 2mm, 3mm, 4mm — and test which one reliably strips doubles without breaking suction. The 20mm length gives the flap enough leverage to be compliant, and the taper means the tip is flexible while the base stays anchored. If you find them too stiff, go thinner at the base (1.5mm). If too floppy, go shorter (15mm) which makes them stiffer for the same thickness.
+
+what would it look like from the top?
+
+Mar 25
+V
+
+Connecting to visualize...
+From the top you can see the flaps are actually pretty subtle — they're thin strips mounted on the long walls of the bin, with just the tips extending 3-4mm inward over the card face. The dashed area shows the overhang zone where the flap tip sits over the card.
+
+I put them on the long walls (the 88mm sides) rather than the short walls because the bin is only about 2mm wider than the card on each side — there's barely any room for a flap base on the short walls. On the long walls you have more room for the flap to mount solidly, and the tips wipe across the wider dimension of the card which gives a better separation action.
+
+The suction cup grabs the center, the card lifts, and the flap tips catch any second card's edges as it passes. Since the flaps are only 8-10mm wide, they're not contacting a huge area of the card face — just enough to create the wiping action at the edges.
+
+Does this make sense with how your bin is set up?
+
+so these would attach to the outside of the bin, right?
+
+Mar 25
+Right — the base of the flap would be on the outside of the bin wall, and the tip would curl over the top edge of the wall and hang down slightly on the inside. That way the flap is anchored to the outside where there's plenty of room, and only the thin flexible tip is inside the bin contacting the card.
+
+That's actually a much better mounting approach than what I was drawing. You could clip them over the bin wall or screw them to the outside, and the tip just drapes over the top edge. The wall itself becomes the fulcrum that the flap bends around, which gives you really predictable flex behavior. And if you need to adjust or swap them out, they're accessible from the outside without reaching into the bin.
+
+Want me to redraw the side profile showing this over-the-wall mounting?
+
+what if we basically made our own band out of the same TPU that went around the edge of the bin on the outside so that the flaps didn't have to attach to anything, you just stretched it around the bin after you filled it and off you went
+
+Mar 25
+That's a really clever idea. A TPU band that stretches around the bin like a rubber band, with the flap portions integrated into it. You'd print it as one piece — a rectangular loop with two flap tabs molded into opposite sides that curl over the bin walls. Stretch it on, the tension holds it in place, and the flaps are automatically positioned.
+
+No screws, no clips, no permanent mounting. You take the band off to load cards, put it back on, and go. If a flap wears out or you want to try different geometry, you just print a new band. And you could have a few different bands with different flap aggressiveness for different card conditions.
+
+The band would be sized slightly smaller than the bin perimeter so it's under tension when installed — that's what keeps it from sliding around. TPU at 95A has plenty of stretch for that. The flap tabs would be on the long sides of the bin, extending up and over the wall edge.
+
+For printing, you'd lay it flat as a rectangular frame with the flaps folded out flat. The flaps would be printed as part of the frame and you'd just bend them up after printing. TPU is flexible enough that they'd stay in whatever orientation you bend them to, and the memory of the material would keep them pressing inward over time.
+
+Want me to draw this version?
+
+how much smaller would I need to print it?
+
+Mar 25
+It depends on how stretchy your specific TPU is, but for 95A TPU you generally want about 5-10% smaller than the bin perimeter for a snug fit that won't slip but also won't be a fight to get on.
+
+Your bin is roughly 67mm x 92mm outside (assuming 2mm wall thickness on each side of the 63mm x 88mm internal dimensions, so more like 67 x 92mm). The perimeter is about 318mm. So you'd print the band with a perimeter of roughly 286-302mm — that's the 5-10% range.
+
+I'd start at about 5% smaller and see how it feels. If it's too loose and slides around, go to 8-10%. If it's too tight and distorts the bin walls or is hard to get on, back off to 3-4%.
+
+The easy way to test is to just print a simple rectangular TPU loop at a few sizes — no flaps, just the band — and try stretching each one around the bin. Takes five minutes to print each one and you'll immediately know which tension feels right. Then add the flaps to whichever size works.
+
+One thing to keep in mind — the band will stretch more over the corners than the flat sections, so the tension won't be perfectly uniform. That's fine, it just means the flaps (which are on the flat sections of the long walls) will have consistent pressure while the corners take up the extra stretch.
+
+how thick should the band be?
+
+Mar 25
+For the band itself, about 1.5-2mm thick and maybe 8-10mm tall (the height that wraps around the bin wall). You want it thick enough that it doesn't roll or twist when you stretch it on, but thin enough that it's still flexible and easy to install.
+
+The flap portions would be thinner than the band — tapering from the band thickness down to about 1mm at the tips, like we discussed before. So the band is the structural part that holds everything in place, and the flaps are the thin compliant parts that contact the cards.
+
+If you go too thin on the band (under 1mm), it'll behave like a rubber band and want to roll up on itself and won't stay flat against the bin wall. Too thick (over 3mm) and it's hard to stretch on and puts too much inward pressure on the bin walls, which could squeeze the bin and make the cards bind.
+
+Print one layer height worth of test bands (just the loop, no flaps) at 1.5mm and 2mm and see which one sits nicely on the bin without rolling. That'll tell you immediately.
+
+nevermind, that won't work, because the z arm extends out past the bin in the back.
+
+Mar 25
+Right — the band would wrap around the back of the bin where the arm comes down. It would either block the arm's path or get caught on it.
+
+So we're back to mounting the flaps directly. Since the arm only interferes on the back side, you could do clip-on flaps that attach to just the two long walls individually rather than wrapping all the way around. Two separate TPU clips, each one hooks over the top edge of one long wall — kind of like a binder clip but printed in TPU. The clip grips the wall, the flap extends inward over the card.
+
+Or if you want even simpler, just friction-fit them. Print a small TPU channel that's slightly undersized for the bin wall thickness, slide it onto the top edge of the wall, and the flap extends from there. The TPU grips the wall by friction and you can pop them on and off.
+
+Either way they'd only be on the two long walls, no band going around the back where the arm operates.
+
+Does that work with your layout?
+
+what if it was just two nubs that stick out just far enough where they're maybe 1mm smaller than the card on each corner? would they even have to be flexible if they just deflect the card a little bit
+
+Mar 25
+That's way simpler. Four small nubs, one at each corner of the bin opening, each sticking inward about 1mm less than the card edge. So the card has to flex maybe 1-2mm total to squeeze past them. That tiny amount of deflection is enough to break the surface tension between two cards — the top card flexes, the second one doesn't follow, and it falls back.
+
+And no, they probably don't need to be flexible at all. 1-2mm of card deflection is nothing — you can bend an MTG card way more than that without any damage. The card itself is the compliant member, not the nub. You could print them in PLA, PETG, whatever. Just round the edges so there's no sharp corner that could scratch or catch the card face.
+
+You could even integrate them directly into the bin walls — just add four small bumps to the bin model in Fusion at the top corners. No separate parts, no mounting, no TPU, no clips. They're just part of the bin.
+
+The only thing to tune is how far they stick out. Too little and doubles still pass. Too much and the suction cup can't pull the card past them. Start with about 1.5mm of overlap on each side (so the gap between opposite nubs is about 60mm, versus the 63mm card width) and adjust from there. Since they'd be part of the bin print, you'd just tweak the dimension in Fusion and reprint the bin if you need to change it.
+
+This is probably the simplest solution we've discussed for card separation. Want to go with this?
+
+could we even just basically have triangles in the corners so each corner flexes down a hair while going up out of the bin?
+
+Mar 25
+Yeah, that's even better. Triangles in the corners act as ramps — as the card rises, the corners ride up the angled surface and get pushed inward slightly. The card naturally flexes into a very slight bowl shape, which is exactly what breaks the adhesion between two cards. And once the card clears the top of the triangles, it springs back flat.
+
+The beauty of this is there's no abrupt edge the card has to pop past. It's a gradual deflection in, then a gradual release. Way gentler on the cards, and the suction cup doesn't have to fight a sudden resistance that could break the seal.
+
+And just like the nubs, you'd model these directly into the bin corners in Fusion. Each one is just a small triangular wedge — flat on the bin wall side, angled surface facing inward. Maybe 5-6mm tall and sticking out 1.5-2mm at the widest point, tapering to zero at the top. The card enters the narrow part of the wedge at the bottom, gets gradually deflected as it rises, and releases cleanly at the top.
+
+Print them with a slight fillet or chamfer on the inner edge so there's no sharp line contacting the card. And since the deflection is spread across all four corners evenly, each corner only needs to push in a fraction of a millimeter — the total adds up to enough flex to separate doubles without stressing any one spot on the card.
+
+how much smaller than the card should it be? i decided to just bend it in the longest direction
+
+Mar 25
+That makes more sense — bending along the 88mm length is easier since the card is more flexible across its longer dimension. So you'd put the triangles on the two short walls (the 63mm sides), one on each end, and they'd push the card inward slightly as it rises, bowing it along its length.
+
+For how much smaller — you really don't need much. The card only needs to deflect maybe 1-2mm total across its length to break the surface tension between two cards. So each triangle would push in about 0.5-1mm from the card edge.
+
+I'd start with the gap between the two triangle peaks at about 86mm — so 1mm smaller than the 88mm card length on each side. That gives you 1mm of deflection per end, 2mm total bow. That's barely noticeable if you held the card but it's enough to separate doubles.
+
+If that's not enough separation, go to 85mm (1.5mm per side). I wouldn't go much tighter than 84mm (2mm per side) because at that point you're fighting the suction cup noticeably and the card might crease if it's already got a slight curve to it.
+
+So in Fusion: two triangular wedges on the short walls, peaks sticking out 1mm from the wall surface, tapering to zero at the top of the wedge. Start with 1mm and test.
+
+ok i printed that bin with the staging platform next to it. My next thing is making my x axis more rigid between the top and bottom. I have pillow blocks that came with the 20mm rails I'm using for my x, so I'm thinking of using those instead of the bearings. The problem is the way I adapted as of now is that I just made some rods that go through the z rod holes to hold it in place, so I don't know a good way to actually connect the two. there's not really a good hole pattern for me to use, and I'm not super interested in completely redoing my x axis if I don't have to.
+
+Mar 26
+So you have pillow blocks (SC20UU type, with four bolt holes and a flat mounting face) for the 20mm rods, and you want to connect them to the Anet A8 Z carriage, but the only connection points you've been using are the Z rod holes which the clamping rods go through.
+
+A few ideas that don't require redoing the X axis:
+
+You could make an adapter plate that bolts to the pillow block's four mounting holes on one side, and on the other side has two holes that the clamping rods pass through — essentially replacing the current clamp connection with a plate that's rigidly attached to the pillow block. The plate would be aluminum or a thick printed piece, and the rods would press-fit or clamp through it just like they clamp through the current setup. This keeps your existing Z rod hole connection method but adds the rigidity of the pillow block.
+
+Or you could print a bracket that wraps around the pillow block and has integrated sleeves for the Z rods. No bolting to the pillow block at all — it just captures it mechanically. The Z rods would still go through the bracket, and the pillow block sits in a pocket in the bracket. Friction and the weight of the assembly keep it together.
+
+The third option — could you drill and tap holes into the Anet A8 carriage piece itself to match the pillow block pattern? If the plastic is thick enough in the right spots, you could just bolt the pillow block directly to the carriage face. It's a bit hacky but it would be very rigid.
+
+What are the pillow blocks you have — SC20UU? And how much space do you have between the Z rods and the 20mm X rods? That'll help figure out what fits.
+
+Q: Which approach sounds most practical for your setup?
+A: i absolutely want to bolt to the pillow blocks. I don't think the plastic is thick enough to drill through and maintain any sort of structural integrity. maybe it is better to just design something from scratch.
+
+Mar 26
+Honestly yeah, if you're going for rigidity, designing a new connection piece from scratch that bolts directly to the pillow blocks is probably the cleanest path. The A8 carriage was designed to hold an extruder, not to be a structural gantry connection — you're always going to be fighting its geometry trying to adapt it.
+
+The new piece would basically be a plate or bracket that bolts to two SC20UU pillow blocks (one for the top 20mm rod, one for the bottom), and also holds the two 8mm Z rods and the Z belt clamp. Everything that the A8 carriage currently does, but designed specifically for this machine.
+
+Also, how far apart vertically are your top and bottom 20mm rods? That determines whether a single plate is practical or if two separate brackets with the 8mm rods spanning between them makes more sense.
+
+Q: What model are your 20mm pillow blocks?
+A: SCS20UU (different pattern)
+
+Q: What do you want to make the new connection piece from?
+A: i'm still going to need some metal hardware like the bearing and stuff that I'm going to take from the existing x carriage from the anet a8, but the rest should be 3d printed.
+
+Q: Do you have a preference for the overall shape?
+A: Two separate brackets (one per pillow block) with rods between
+
+Mar 26
+Good — two separate brackets keeps each print small enough to be rigid and accurate, and the 8mm rods spanning between them provide the structural connection. Each bracket bolts to an SCS20UU pillow block and holds the 8mm Z rods, plus the top one holds the Z motor and idler pulley, and the bottom one holds the belt tensioner or the other pulley.
+
+Let me get the SCS20UU dimensions so the brackets fit right.
+
+
+Searched the web
+Searched the web
+Here are the SCS20UU dimensions for your brackets:
+
+Mounting hole pattern: 40mm x 40mm center-to-center, four M6 threaded holes. The block itself is 54mm wide x 50mm long x 41mm tall. The rod center sits 21mm above the mounting surface.
+
+So each bracket needs four M6 clearance holes (6.5mm) in a 40mm x 40mm square pattern to bolt to the pillow block, plus two 8mm holes for the Z rods (at 46mm spacing to match the A8 X axis), plus whatever you need for the belt and motor/idler.
+
+The top bracket would hold: the pillow block mounting, the two 8mm rod tops, the Z motor (or idler pulley), and the belt anchor point. The bottom bracket holds: the pillow block mounting, the two 8mm rod bottoms, the other pulley (or motor), and the other belt anchor.
+
+Before I help design these, I need to know a couple things:
+
+Also — how far apart are the top and bottom 20mm rods? That sets the length of the 8mm Z rods you'll need.
+
+Q: Where is the Z motor going — top or bottom bracket?
+A: Motor at top, idler at bottom
+
+Q: How do you want the 8mm Z rods secured to the brackets?
+A: Press fit into the bracket
+
+Mar 26
+Good choices. Motor at top keeps the heavy part high which isn't ideal for center of gravity, but it means the belt runs cleanly downward and the motor wiring stays up away from the moving parts. And press fit keeps things simple — just make the holes in the printed bracket slightly undersized (like 7.8-7.9mm) and press the rods in with a vise or mallet.
+
+For the vertical distance between rods — take a rough measurement when you can. In the meantime, do you want me to start drawing up the bracket designs? I have all the key dimensions now:
+
+For the top bracket: SCS20UU bolt pattern (4x M6, 40x40mm), two 8mm rod press-fit holes at 46mm spacing, NEMA 17 motor mount (4x M3, 31mm pattern), and a belt path through or past the bracket.
+
+For the bottom bracket: SCS20UU bolt pattern, two 8mm rod press-fit holes at 46mm spacing, idler pulley mount (probably just a bolt and bearing for a GT2 idler), and the belt path.
+
+Want me to draw these up, or are you at a point where you'd rather just model them yourself in Fusion with these dimensions?
+
+the rods are adjustable so I can make them whatever distance apart I want, but I don't want to have to cut down the 8mm rods at all. 
+
+I need to see roughly what this will look like because I have to also attach the x belt to the x carriage, as well as as the z max endstop limit switch and the camera, which should be affixed more permanently than I have it now where its just zip-tied.
+
+Mar 26
+Good point — there's a lot that needs to live on this assembly. Let me draw up the full top and bottom brackets with everything attached so you can see how it all fits together and whether there's room for everything.
+
+How long are the 8mm rods you have?
+
+Also, for the X belt — is it a GT2 belt running horizontally, and does it attach to the top bracket, the bottom bracket, or both?
+
+Q: How long are the 8mm rods from the Anet A8?
+A: a cursory google tells me that they're 436, but that shouldn't matter at all since we just need the two separate plates that connect to the two rods on either end.
+
+Q: What kind of camera are you using for scanning?
+A: Something else
+
+Q: Where does the camera need to point?
+A: its attached to the x carriage and looks at a slight angle under the carriage, but this needs to be adjustable for now so I can get the right angle with the camera.
+
+Mar 26
+And you're right about the rods — the bracket design doesn't depend on rod length at all. The two brackets just clamp onto the ends.
+
+Q: What camera specifically? I need to know the size/shape for the mount.
+A: ASUS ROG Eye (probably gen 1)
+
+Q: Where does the X belt attach to this assembly?
+A: Top bracket
+
+Mar 26
+
+Searched the web
+Searched the web
+The ROG Eye (gen 1) is roughly 81mm wide x 17mm deep x 29mm tall, and importantly it has a standard 1/4"-20 tripod mount on the aluminum base. That's great because it means you can use a 1/4"-20 bolt in the bracket for the camera mount, and have an adjustable ball joint or hinge between the bolt and the camera. You wouldn't need to design a custom cradle — just a 1/4"-20 threaded insert or nut pocket in the bracket.
+
+Now let me draw the full assembly showing both brackets with everything mounted.
+
+V
+
+Connecting to visualize...
+That's the full assembly from the side. The top bracket is doing most of the work — it holds the SCS20UU pillow block for the top 20mm X rod, the Z motor with GT2 pulley, the X belt clamp, the Z home endstop, and the camera on a 1/4"-20 adjustable mount that hangs below looking at an angle toward the staging area. The bottom bracket is simpler — just the SCS20UU mount and the idler pulley.
+
+The 8mm rods press into both brackets, and the Z carriage (with the arm and suction cup) rides between them on the belt.
+
+For the camera mount, since you need angle adjustability, I'd suggest a 1/4"-20 bolt through the bracket into the camera's tripod mount, with a wing nut you can hand-tighten. That lets you loosen it, angle the camera, and re-tighten without tools. Once you find the right angle you could lock it down permanently.
+
+Does the layout work with your machine, or does anything need to move?
+
+1774538488285_image.png
+there's no aluminum base for the camera. its basically a plastic box thats 8.1 x 2.88 x 1.66 cm roughly. there's no 1/4 20 mount on it.
+
+Also my z arm looks roughly like the picture attached
+
+Mar 26
+Good to know about the camera — so it's just a bare plastic box that needs a cradle or clamp to hold it. And I can see your arm design — it's a U-shaped bridge that spans between the two 8mm rods with a flat mounting plate on one side that has the SC8UU bolt pattern holes, and the arm extends forward.
+
+For the camera mount, since there's no tripod thread, you'd need either a clip/cradle that the camera snaps into, or a pocket that it friction-fits into. Given that you want angle adjustability, I'd suggest printing a simple box cradle sized to the camera (roughly 81mm x 29mm x 17mm internal, with a little clearance) that the camera slides into, and then hinge-mounting that cradle to the bracket with a single bolt as a pivot. Tighten the bolt to lock the angle, loosen to adjust. You could also add a few teeth or serrations on the mating faces so it doesn't slip under its own weight when loosened.
+
+Also, looking at your arm — the mounting plate on the right side with the row of holes, are those the SC8UU bolt holes, or is that for something else?
+
+Q: Where do you want the camera mounted?
+A: on the top bracket, looking down, but offset from the carriage so that its looking down at an angle.
+
+Q: What mounting style for the camera?
+A: Just a pocket it slides into, zip tie for now and design permanent later
+
+Mar 26
+Simple and practical. A pocket on the top bracket, offset to one side so the camera naturally looks down at the staging area at an angle. Zip tie slots in the pocket to hold it for now, and you can always design a proper locking mechanism later once you know the exact angle you need.
+
+The pocket would just be a rectangular recess in the bracket — 82mm x 30mm x 17mm (camera dims plus about 1mm clearance), with a couple of slots on each side for zip ties to pass through. The offset from the carriage centerline determines the viewing angle — the further you offset it, the steeper the angle. You can figure out the exact offset by holding the camera in roughly the right spot and seeing what gives you a good view of the staging area.
+
+I have everything I need to draw the full brackets now. Let me put together the top bracket showing all the features — SCS20UU mount, 8mm rod press-fits, Z motor mount, X belt clamp, Z endstop, and the camera pocket offset to one side. Does the camera need to look toward the front of the machine (toward the bins), or off to one side?
+
+Q: Which direction does the camera need to look from the top bracket?
+A: when looking at the front of the machine, I had it to the right of the suction head looking down and under the suction head as much as possible.
+
+Mar 26
+Got it — so the camera pocket sits on the right side of the top bracket, offset outward, angled to look down and inward toward the staging area underneath the suction head. That way the camera can see the card on the staging platform without the arm or suction cup blocking the view.
+
+Let me draw the top bracket from above so you can see the layout of everything on it.
+
+V
+
+Connecting to visualize...
+That shows everything on the top bracket from above. The camera pocket is on the right side of the machine (left in this top-down view since we're looking at the back), offset from the carriage so it naturally looks down and inward toward the staging area under the suction head. The pocket has zip tie slots on all four sides so you can secure it however works best.
+
+The SCS20UU sits at the back, the Z motor is in the middle area, the 8mm rods press-fit near the front, the X belt clamp is on one side, and the Z endstop is on the other side.
+
+Does this layout match what you're envisioning? And is there enough room between the camera and the motor, or does anything need to shift?
+
+I think we need to step back and redesign this bracket from scratch, one step at a time.
+
+Mar 26
+You're right. Let's start clean and build it up piece by piece so each decision is intentional.
+
+First thing first — the bracket's primary job is connecting the SCS20UU pillow block on the 20mm X rod to the two 8mm Z rods. Everything else is secondary and gets added after that core structure works.
+
+So let me start with just that: where is the 20mm X rod relative to the 8mm Z rods? The pillow block sits on the X rod, and the 8mm rods need to hang down from this bracket in front of it.
+
+Q: Where do the 8mm Z rods sit relative to the 20mm X rod?
+A: 8mm rods are in front of the 20mm rod (toward the bins)
+
+Mar 26
+Good. So the bracket extends forward from the pillow block to hold the 8mm rods. Basically an L-shape or a shelf — pillow block bolted to the back, rods press-fit into the front portion.
+
+Next question — how far forward do the 8mm rods need to be from the 20mm rod? This is driven by clearance — the pillow block is 50mm deep and the arm needs to clear it when moving up and down.
+
+i think i'm just going to design this in fusion myself.
+
+Mar 26
+That makes sense — you know your machine's geometry better than I can guess at from here, and iterating in Fusion with the actual parts in front of you is going to be way faster than going back and forth on dimensions.
+
+You've got all the key numbers: SCS20UU bolt pattern is 4x M6 at 40mm x 40mm, 8mm rod press-fits at 46mm spacing, NEMA 17 mount is 4x M3 at 31mm, SC8UU bolt pattern is 4x M4 at 24mm x 18mm, camera is 81 x 29 x 17mm, endstop holes are 9.5mm apart with M2 screws, and the suction cup hole is 10mm.
+
+If you get stuck on any specific part of the design or want to sanity check something, just come back and ask. Good luck with it!
+
+can you give me all the sizes and bolt patterns for the parts you know I'm using? the steppers, the pillow blocks (both sizes), the endstop switches, etc?
+
+Mar 26
+Here's everything in one place:
+
+NEMA 17 stepper motor: 42.3 x 42.3mm face, 4x M3 mounting holes on a 31mm square pattern, 5mm shaft with D-flat, 22mm center boss diameter, boss protrudes ~2mm, shaft length ~24mm.
+
+SCS20UU pillow block (for 20mm X rods): 54mm wide x 50mm long x 41mm tall, 4x M6 threaded holes on a 40mm x 40mm pattern, rod center sits 21mm above mounting surface.
+
+SC8UU pillow block (for 8mm Z rods): 34mm wide x 30mm long x 22mm tall, 4x M4 threaded holes on a 24mm x 18mm pattern, rod center sits 11mm above mounting surface, rods are 46mm center-to-center on the Anet A8.
+
+Anet A8 endstop switches: M2 mounting screws, 9.5mm hole spacing.
+
+Suction cup: 10mm passthrough hole, 30mm cup diameter, 60mm total height, 14mm barb at top.
+
+GT2 belt/pulley system: 2mm tooth pitch. A 20-tooth GT2 pulley gives 40mm travel per revolution.
+
+LM8UU linear bearings (in the SC8UU blocks): 8mm bore, 15mm OD, 24mm long.
+
+LM20UU linear bearings (in the SCS20UU blocks): 20mm bore, 32mm OD, 42mm long.
+
+ROG Eye camera: roughly 81 x 29 x 17mm, no tripod mount.
+
+8mm Z rods: 436mm long (from Anet A8), 46mm spacing.
+
+20mm X rods: length depends on your frame, spacing is whatever you set.
+
+Is there anything else you need dimensions for?
+
+I'd prefer them as diagrams.
+
+Mar 26
+I'll do a series of dimensioned diagrams for each part. Starting with the NEMA 17 stepper:
+
+V
+
+Connecting to visualize...
+Now the SCS20UU pillow block:
+
+V
+
+Connecting to visualize...
+Now the SC8UU for the 8mm rods:
+
+V
+
+Connecting to visualize...
+And the endstop switch and suction cup:
+
+V
+
+Connecting to visualize...
+That's all the key parts dimensioned out. You've got the NEMA 17 face and bolt pattern, SCS20UU top and side with the 40x40mm M6 pattern, SC8UU with the 24x18mm M4 pattern (plus the paired layout at 46mm spacing), the endstop switch with 9.5mm M2 holes, the suction cup with the 10mm mount hole, and the ROG Eye camera body size for the pocket.
+
+Is there any other part you need dimensions for?
+
+i can't seem to wrap my head around the right way to design this so that its sturdy and won't flex or break. the only solid connection point I have between the two axes is the 4 bolts holding the NEMA 17 to the anet's old x axis that I'm using as my z axis. so I have to attach the scs20uu to some piece that has that connection, a pair of slots 40mm apart center to center for the x belt (I think they're 4mm wide slots) that allow me to adjust it in the y direction (there's no y axis, I just need to get it in the right spot), and i think that's it. I just can't think of a design that does this sturdy and clean.
+
+Mar 26
+So the NEMA 17 motor face is your structural bridge — it's bolted to the A8's X carriage (which holds the 8mm Z rods and belt), and whatever you design bolts to the other side of that same motor. The motor body itself becomes a rigid structural member connecting the Z axis assembly to the X axis pillow block.
+
+That actually simplifies things a lot. The piece you need is basically a plate that sandwiches between the motor face and the A8 carriage, or bolts to the back of the motor, with the SCS20UU mount and belt slots on it.
+
+Let me think about the geometry. The NEMA 17 has four M3 holes on a 31mm pattern. The motor body is 42.3mm square and about 40mm deep. The SCS20UU has four M6 holes on a 40mm pattern.
+
+Also — when you say the NEMA 17 bolts are your only solid connection, does that mean the M3 bolts go all the way through the motor's mounting holes and into the A8 carriage? So you could use longer bolts that also pass through a bracket on the other side?
+
+Q: Which side of the NEMA 17 faces the A8 carriage (the side with the shaft, or the back)?
+A: The bracket sits between the motor and the A8 carriage
+
+Mar 26
+That's the key. The bracket is a plate that sits between the motor face and the A8 carriage. The M3 bolts go through the A8 carriage, through the bracket, and into the motor face — clamping everything together. The bracket gets squeezed between two rigid things, so it doesn't need to be a cantilever or overhang — it's structurally supported across the bolt pattern.
+
+Then the bracket extends outward (toward the back of the machine) to hold the SCS20UU pillow block and has the belt slots on it.
+
+So the shape is basically: a central area with four M3 holes matching the NEMA 17 pattern (31mm) that gets sandwiched, then an extension off one side or the back with the four M6 holes for the SCS20UU (40mm) and the two belt slots (40mm apart, 4mm wide, slotted in Y for adjustment).
+
+And how thick can this bracket be? The thicker the plate, the more rigid it is, but it also adds spacing between the motor and the A8 carriage which means you need longer M3 bolts. What's the maximum gap you can tolerate there?
+
+Q: Which direction does the SCS20UU need to be relative to the motor?
+A: Below the motor
+
+Q: Where do the X belt slots need to be relative to the motor?
+A: On the opposite side of the motor
+
+Mar 26
+Now I've got a clear picture. The bracket is a plate sandwiched between the motor and A8 carriage, with the SCS20UU hanging off the bottom and the belt slots extending off the top. Let me draw this.
+
+V
+
+Connecting to visualize...
+The bracket is one plate — the motor area in the middle gets sandwiched between the A8 carriage and the NEMA 17 by the four M3 bolts. The SCS20UU bolts to the back of the bracket below the motor with its own M6 bolts. The belt slots sit above the motor.
+
+The critical area for stiffness is the neck between the motor bolt pattern and the SCS20UU bolt pattern. That's where all the X-axis forces transfer through. Add triangular gussets (ribs perpendicular to the plate) on both sides of that neck, and make the plate itself at least 6-8mm thick in that zone. The whole 20mm rod load hangs off those four M3 bolts through the motor, so the path between the M6 holes and the M3 holes needs to be as beefy as possible.
+
+Does this match what you're trying to build? And how thick can the plate be before it causes clearance issues between the motor and the A8 carriage?
+
+SCS20UU use what size screw again?
+
+Mar 27
+M6, threaded 8mm deep into the block.
+
+its ok if the screw is longer than that right? and that m6x1 right?
+
+Mar 27
+Yeah, the holes are through-holes in your bracket and threaded into the pillow block, so the bolt just needs to be long enough to go through your bracket thickness plus engage into the block. As long as the bolt doesn't bottom out in the 8mm deep thread, you're fine — so bracket thickness plus 6-7mm of engagement, leaving a mm or two of room at the bottom.
+
+And yes, M6x1 is standard metric coarse pitch for M6. That's what these blocks are tapped for.
+
+ok so that part is all done. 
+
+The next thing I need to do is design 3 things:
+
+first, a camera mount for the camera on the x carriage. The purpose of this is so that I can set it up and then use its position to calibrate the position of the bins and save that to be used for where the cards are dropped. This automatic calibration should help us a lot since then I don't have to manually reposition bins as things are coming down like I do now. I have a set of 4mm slots in the x carriage that run in the y direction (remember there is no y axis, but I'm just using this to define where they are for you) that are 40mm apart in the x axis. we can use this to attach things to the x carriage without having to do any redesign.
+
+second, we need a cable chain. I need to have a cable chain that holds the stepper driver wiring for the z axis, the suction tubing, the z max and z probe limit switches wiring, and the usb cable for the camera eventually.
+
+third, I need to design a mount for the control board. I probably will just mount it to the far left side of the 4080 extruded aluminum profile that makes up the frame with some t slot nuts.
+
+Show more
+Apr 7
+Those are three solid tasks. Let me take them one at a time.
+
+Starting with the camera mount — you want it attached to the x carriage via those 4mm slots that are 40mm apart, with the camera looking down at the bins so it can identify bin positions for calibration.
+
+For the cable chain — do you have a preferred size or style of cable chain, or should I suggest one based on what needs to fit through it?
+
+Q: Which direction does the camera need to look from this mount?
+A: Adjustable so I can do both
+
+Q: How permanent should the camera mount be?
+A: Removable so I can take the camera off
+
+Q: Is this the same camera you use for card scanning, or a separate one?
+A: The same ROG Eye that does card scanning
+
+Apr 7
+So the camera moves between the scanning position (on the top bracket, looking at the staging area) and this calibration position (on the X carriage, looking at bins). You need a pocket or cradle on both mounts that the camera slides in and out of easily, ideally the same design so it's interchangeable.
+
+For the angle adjustability, a simple friction hinge would work — the cradle holds the camera, and it pivots on a bolt through the mounting arm. Tighten to lock the angle, loosen to adjust. Since the camera is light (under 120g), a single M4 bolt as the pivot with a wing nut would hold it fine.
+
+The mounting arm attaches to the X carriage via the 4mm slots with M4 bolts and T-nuts or regular nuts, 40mm apart.
+
+For the cable chain, let me figure out what size you need.
+
+Q: Do you already have cable chain, or are you buying new?
+A: I'll buy whatever size you recommend
+
+Q: Where does the cable chain need to run?
+A: Both
+
+Q: What diameter is your suction tubing?
+A: Not sure
+
+Apr 7
+OK so you need two cable chains — one from the frame to the X carriage carrying the X motor wiring and power, and one from the X carriage (top bracket) down to the Z carriage carrying the Z motor wiring, suction tube, limit switch wires, and USB cable.
+
+Before I recommend sizes, let me figure out what's in each chain.
+
+The X chain (frame to X carriage) carries: X stepper motor cable (4 wires), Z stepper motor cable (4 wires, passing through to the Z chain), suction tubing (passing through to Z chain), limit switch wires (passing through), USB camera cable, and power for the vacuum pump if it's on the carriage.
+
+The Z chain (X carriage to Z carriage) carries: Z stepper motor cable (4 wires), suction tubing, Z max endstop wires (2 wires), Z probe/contact switch wires (2 wires).
+
+Actually wait — the Z stepper motor is on the top bracket, not on the Z carriage. So its wires go in the X chain only, not the Z chain.
+
+Q: Where is the vacuum pump mounted?
+A: On the frame
+
+Q: Does the suction tubing need to go through the Z cable chain?
+A: Not sure yet
+
+Apr 7
+OK so the suction tubing runs from the pump on the frame, through the X chain to the carriage, then somehow down to the Z carriage/arm. Whether that last bit goes through the Z cable chain or just hangs freely is something you can figure out once it's running.
+
+Let me work out what's in each chain:
+
+X chain (frame to X carriage): Z stepper cable (4 wires), vacuum pump tubing, Z max endstop wires (2 wires), Z probe wires (2 wires), USB camera cable, vacuum pump power wires (2 wires). That's a decent bundle — USB cable alone is about 5mm diameter, the tubing is probably 4-6mm, plus the wire bundles.
+
+Z chain (X carriage top bracket to Z carriage): Z probe/contact switch wires (2 wires), suction tubing (if routed through chain). The Z max endstop is on the top bracket so those wires don't need to go in the Z chain. This is a much lighter chain.
+
+For the X chain I'd recommend 10x20mm internal. That gives you enough room for the USB cable, tubing, and wire bundles side by side without cramming. For the Z chain, 10x10mm internal is plenty since it's just a couple of thin wires and maybe the tube.
+
+Both are standard sizes, cheap on Amazon — look for "10x20 drag chain" and "10x10 drag chain" and you'll find plenty of options. Get the snap-open type so you can easily add or remove cables later.
+
+For the control board mount on the 4080 extrusion — that's straightforward. A flat plate with holes matching the SKR 1.4 Turbo's mounting holes, and a couple of M4 bolts with T-nuts for the 4080 slot. Do you know the mounting hole pattern on the SKR 1.4 Turbo, or do you need me to look that up?
+
+Q: Do you know the SKR 1.4 Turbo mounting hole positions?
+A: No, please look it up
+
+Apr 7
+
+Searched the web
+Searched the web
+The SKR 1.4 / 1.4 Turbo board is 110 x 85mm overall, with mounting holes 102 x 76mm apart. 
+3DWork
+ The mounting holes are M3, and they're positioned 4mm in from each edge (110-102=8, divided by 2 = 4mm per side, same for the 85mm dimension).
+
+So for your mount: a plate with four M3 holes in a 102 x 76mm rectangle, plus two M4 holes (or slots) spaced to match the 40mm slot spacing on your 4080 extrusion for T-nuts. Print it flat, PETG, with a few mm of standoff built in so the bottom of the board doesn't short against anything.
+
+Here are all three tasks summarized with the dimensions you need:
+
+Camera mount: Pocket sized 82 x 30 x 18mm internal (camera plus 1mm clearance), zip tie slots, friction pivot on an M4 bolt for angle adjustment, mounts to X carriage via 4mm slots at 40mm spacing with M4 bolts.
+
+Cable chains: 10x20mm internal for the X chain (frame to carriage), 10x10mm internal for the Z chain (top bracket to Z carriage). Snap-open type. You'll need end brackets printed for both — one fixed to the frame, one fixed to the carriage for the X chain, and one on the top bracket, one on the Z carriage for the Z chain.
+
+Board mount: Plate with 4x M3 holes at 102 x 76mm for the SKR, plus M4 bolt holes with T-nuts for the 4080 extrusion. Add 3-4mm standoffs to keep the board off the plate surface.
+
+is there a better way to get the function of a cable chain than a cable chain for my use case? I just don't want the wires getting where they shouldn't
+
+Apr 7
+For your machine, cable chains might be overkill honestly. Your X travel is relatively short and slow compared to a 3D printer, and the Z movement is vertical so gravity helps keep things organized.
+
+A few simpler alternatives:
+
+Braided cable sleeve (the expandable mesh kind) bundling all the wires and tubing together, with a few zip tie anchor points along the path. It's flexible, lightweight, cheap, and you can add or remove cables easily by just expanding the braid. It doesn't constrain the path as rigidly as a chain, but combined with a couple of P-clips or zip tie mounts screwed to the frame at key points, it keeps everything tidy and out of the way.
+
+Another option is just a spiral cable wrap — the plastic spiral you wind around a bundle. Even simpler than braided sleeve, and you can unwrap sections to add cables.
+
+Or the simplest approach: just run the wires and tubing as a bundle with zip ties every 50-60mm, anchor one end to the frame and the other to the carriage, and leave enough slack for a service loop that follows the motion. This is how a lot of DIY CNC machines handle it. A piece of flexible conduit or even a length of pool noodle slit down one side can act as a guide if the bundle needs to follow a specific curve.
+
+The main advantage of a real cable chain is that it forces a specific bend radius and prevents the cables from catching on anything. If your machine doesn't have anything nearby that cables could snag on, you probably don't need that level of control.
+
+[User dismissed — do not proceed, wait for next instruction]
+
+Apr 7
+No worries — take your time. Let me know what you want to tackle next.
+
+uh my x travel is up to like 1100mm or something.... that's not short, that's huge compared to a 3d printer.
+
+Apr 7
+You're right, that's a big machine! At 1100mm of X travel you absolutely need proper cable management — a loose bundle would be a mess and likely snag on something over that distance. Cable chain is the right call here.
+
+Stick with the 10x20mm for the X chain and 10x10mm for the Z chain. At 1100mm travel you'll need the X chain to be at least half that length plus some extra — roughly 600-700mm of chain. Make sure you get the type with end brackets that can mount flat to the frame on one end and flat to the carriage on the other.
+
+For a run that long, you'll also want to make sure the chain has somewhere to rest when the carriage is at one end of travel. Usually it sits in a channel or just lays on a surface below the X rods. Do you have a flat surface along the bottom of the frame where the chain can fold back on itself as the carriage moves?
+
+see that's why I'm second guessing using a cable chain. I don't really have somewhere for it to lay out of the way. is there a better way to solve this?
+
+Apr 8
+At that length, an overhead cable carrier setup might work better. Run a wire or cord along the top of the frame from one end to the other, and hang the cable bundle from it with sliding rings or clips — like a shower curtain rod. The bundle hangs in a catenary (a loose drape) that slides along as the carriage moves. No rigid chain, no surface needed for it to rest on, and the cables just follow the carriage through the air.
+
+Industrial gantry machines use this approach a lot — they call them festoon systems or cable trolleys. You can DIY one with a length of fishing line or thin steel wire stretched tight between the two ends of the frame, and a few small carabiner clips or printed hooks that slide along it carrying the cable bundle.
+
+Another option for that distance is an energy chain mounted vertically on the back of the frame rather than horizontally. The chain hangs down from the carriage and the bottom folds back up along the back wall of the frame. Since your frame has a 4080 extrusion, you could run a channel or guide on the back face for the chain to ride against. But this still needs space behind the machine.
+
+The simplest version though: just run the cables from a fixed point at the center of the X travel, up and over the top of the frame, then down to the carriage. Use enough slack that the carriage can reach both ends, and a couple of zip ties to the top rail to keep the bundle from drooping into the work area. It's not pretty but it works and costs nothing.
+
+What does the top of your frame look like — is there a horizontal member running the full length that you could hang cables from?
+
+the only thing running along the top is the round 20mm rod for the x carriage, but i have some extra pieces that were used for an earlier design that aren't necessary anymore that I might be able to use for this. maybe I can just bungie it up with a piece of TPU tied to the ceiling for now or something.
+
+Apr 8
+That's honestly a perfectly fine solution for now. A piece of TPU or even just a bungee cord anchored above the machine that holds the cable bundle up and lets it follow the carriage. The elasticity takes up the slack as the carriage moves back and forth, and it keeps everything out of the work area.
+
+Lots of DIY CNC machines use exactly this approach — a retractable cord or elastic hanging from above. It's ugly but it works, it's free, and it lets you focus on getting the machine running instead of engineering a perfect cable management system. You can always add something cleaner later once you know exactly how the cables behave during operation and where they need to go.
+
+Just make sure whatever you use has enough stretch to cover the full 1100mm travel without going taut at either end, and bundle your wires and tubing together so you're managing one bundle, not six individual cables flopping around.
+
+Ready to move on to the camera mount and board mount, or is there something else to sort out first?
+
+ok I designed the mount for the camera and the mount for the skr 1.4 turbo. I'll implement this whole cable management thing once some longer cables arrive later today. what else did I need to design?
+
+Apr 8
+Based on our conversation, I think the main mechanical design tasks are done. Let me run through what you've built and see if anything's missing:
+
+X carriage brackets (top and bottom) with SCS20UU mounts — done
+Z axis using Anet A8 X carriage with belt drive — done
+Z arm with suction cup and contact limit switch — done
+Input bin with spring platform and corner triangles for card separation — done
+Staging area for scanning — done
+Sorting bins — done
+Camera mount on X carriage — done
+SKR 1.4 Turbo board mount on 4080 extrusion — done
+Cable management — waiting on longer cables
+Is there anything else mechanical that needs designing, or are you at the point where it's firmware and software work now? Things like getting the Marlin config right for the new axis layout, writing the pick/stage/scan/sort cycle in G-code, and the camera calibration routine for bin positions.
+
+how can i figure out why my machine is skipping in the x direction? the mount is nice and sturdy, the belts may have been over tightened but I think i fixed that, the stepper has the right current.
+
+Apr 8
+There are a few common causes for skipping on a belt-driven axis. Let me walk through them.
+
+First, check if it's actually the stepper skipping steps or the belt skipping teeth on the pulley. You can tell the difference — if the stepper is skipping, you'll hear a clicking or clunking sound from the motor. If the belt is skipping on the pulley, you'll hear a higher-pitched snapping or chattering. Watch the pulley while it moves and see if the belt teeth are riding up over the pulley teeth.
+
+Also — over 1100mm of travel, even a tiny amount of binding can cause skipping. Can you push the carriage by hand along the full travel with the motor unpowered? Does it feel smooth the whole way, or does it get tight or sticky in certain spots?
+
+Q: What does the skipping sound like?
+A: It's intermittent and hard to catch
+
+Q: When does it skip?
+A: Random, happens at any speed
+
+Q: Does the carriage lose its position after skipping (end up in the wrong spot)?
+A: Yes, it drifts over time
+
+Apr 8
+Drifting over time with random skipping points toward a few things. Let me go through the most likely causes:
+
+Mechanical binding: Push the carriage by hand with the motor off across the full 1100mm. Feel for any spots where it gets tight. Over that distance, even a slight bow in the rods or misalignment between the top and bottom rods can create binding at certain positions. The SCS20UU pillow blocks have some self-aligning ability but if the rods aren't parallel enough, the carriage will fight.
+
+Belt tension: You mentioned you may have over-tightened and then backed off. On a 1100mm run, belt tension is tricky — too loose and you get slop, too tight and you're adding load to the stepper that eats into your torque margin. The belt should deflect about 5-6mm when you press on it midway with moderate finger pressure.
+
+Stepper current: You said it's set right, but double check — what current are you running and what driver are you using? On a long heavy axis the Anet A8 steppers (0.9A rated) might be marginal. The carriage assembly is heavier now than a 3D printer extruder.
+
+Acceleration too high: Even if the speed is fine, if your acceleration is set high, the instantaneous torque demand during direction changes or speed ramps can exceed what the stepper can deliver and it skips a step or two. Try halving your acceleration in Marlin and see if the skipping stops.
+
+Q: How does the carriage feel when pushed by hand with motor off?
+A: Generally stiff but moves
+
+Q: What stepper is driving the X axis?
+A: Using the original Anet A8 stepper (0.9A)
+
+Apr 8
+That's your problem, or at least the biggest contributor. "Generally stiff" means the stepper is fighting friction the entire time, eating into its available torque. Combined with a 0.9A stepper on a 1100mm axis with a heavy carriage, you're right on the edge of what the motor can handle. Any small additional load — a slight misalignment, belt tension, acceleration — pushes it over and it skips.
+
+The stiffness needs to be fixed first, because even a bigger motor will just mask the problem. There are a few likely causes over that distance:
+
+The top and bottom 20mm rods probably aren't perfectly parallel. Even half a millimeter of misalignment over 1100mm creates binding as the pillow blocks try to ride on diverging or converging rails. Loosen all the pillow block bolts and the rod mounts, let the carriage sit in the middle of its travel, then retighten everything starting from the center and working outward. This lets the system find its natural alignment.
+
+Also check that the two rods are the same distance apart at both ends. Measure the gap between rods at the far left, the middle, and the far right. They should be identical.
+
+The pillow blocks themselves might be over-constrained. If you have two pillow blocks per rod (four total), that's a lot of constraints on the system. Any twist in the frame shows up as binding. Try loosening one pillow block slightly and see if the carriage suddenly moves freely — if it does, that tells you the frame has a twist that's locking things up.
+
+Once the carriage moves freely by hand, reassess the skipping. If it's still happening, then you probably need a beefier stepper for that axis length. A NEMA 17 with 1.5-1.7A rating would give you a lot more torque margin. But fix the mechanical binding first.
+
+would it make sense to use two steppers, one on each side?
+
+Apr 8
+That could work but it adds a lot of complexity for what might not be needed. Dual steppers on one axis means you either run them off the same driver (which Marlin supports but they have to stay perfectly in sync) or off separate drivers with dual endstops for alignment (which is how dual Z works on a lot of printers, but it's more wiring and firmware config).
+
+The bigger issue is that dual steppers won't fix the binding — they'll just overpower it. You'd have more torque to push through the tight spots, but that extra force is going into the bearings and rods at weird angles, which wears things out faster and could make the binding worse over time.
+
+I'd really focus on getting the carriage to slide freely first. If you can get it to where it moves smoothly by hand with just a light push, the single 0.9A stepper might even be enough. The fact that it's "generally stiff" means there's something mechanically wrong that needs fixing regardless of how many motors you throw at it.
+
+After you fix the binding, if the single stepper still isn't enough — which is possible given the 1100mm travel and the mass of the carriage — I'd upgrade to one beefier stepper (1.5-1.7A NEMA 17) rather than doubling up. Simpler wiring, simpler firmware, no sync issues.
+
+Have you tried loosening the pillow blocks and retightening to let things self-align like I described?
+
+when you say that it should move smoothly without too much force, do you mean with or without the belt on
+
+Apr 8
+Both, actually — but test without the belt first to isolate the problem.
+
+Without the belt, the carriage should glide freely with very light finger pressure. If it's stiff without the belt, the issue is rod alignment, pillow block constraint, or bearing problems. Fix that first.
+
+Then put the belt back on and test again. If it was smooth without the belt but gets stiff with it, the belt is either too tight or the belt path isn't straight — maybe the motor pulley or idler isn't aligned with the belt, causing it to ride at an angle and bind. Over 1100mm even a slight misalignment between the motor pulley and the idler creates significant side-loading on the belt.
+
+So start by taking the belt off and seeing how the carriage feels. That'll tell you immediately whether this is a rod/bearing problem or a belt problem.
+
+what kind of current would an older anet a8 (the one that came with the old acrylic frame) want? I want to make sure I'm not giving it too little currernt on accident.
+
+Apr 8
+
+Searched the web
+Searched the web
+There were actually two different steppers used in Anet A8s depending on when it was made. Earlier A8s (around 2016) used the SL42STH40-1684A which is rated at 1.68A. 
+3DPrint.Wiki
+ Later A8s (2018 onward) used the 42SHDC3025-24B which is rated at 0.9A. 
+3DPrint.Wiki
+
+If yours is the older acrylic frame model, you might actually have the 1.68A steppers. Check the label on the back of the motor — if it says SL42STH40-1684A, you should be running it at around 1.2-1.5A (about 70-90% of rated), not 0.9A. If you've got it set to 0.9A and the motor actually wants 1.68A, you're significantly under-powering it, which would absolutely cause random step skipping.
+
+If it says 42SHDC3025-24B, then 0.9A is correct and the problem is purely mechanical binding.
+
+What does the label on your motor say?
+
+would they have used all the same throughout the printer, or would different ones have been used for, for example, the extruder vs an axis?
+
+Apr 8
+All the same. Both generations of the A8 used identical motors for all four positions — X, Y, Z, and extruder. So whichever one you pull off, it's the same as the others.
+
+shoot, its the lower current ones
+
+Apr 8
+So 0.9A is correct and you're not under-powering it. That means the skipping is mechanical — fix the binding first, and if it still skips after that, you'll probably want to upgrade to a beefier stepper for the X axis given the 1100mm travel and the weight of the carriage assembly.
+
+Did you try pushing the carriage with the belt off yet?
+
+could the issue be caused by me using an extra toothed gear for the belt around a 6mm rod for the other side of the belt from the stepper rather than an actual bearing? it seems to spin pretty freely.
+
+Apr 8
+That could definitely contribute. Even if it spins freely by hand, under belt tension a gear on a plain rod creates a lot more friction than one on a proper bearing. The belt is pulling the gear into the rod with all the tension force, and that contact area is just steel on steel (or steel on plastic if it's a printed gear) with no rolling elements to reduce friction.
+
+Over 1100mm the belt tension needed to prevent slop is significant, and all that tension is loading into that friction point. It might spin freely with no belt on it, but under tension it could be eating a noticeable chunk of your stepper's available torque.
+
+A proper idler with a bearing — even just a GT2 idler pulley on a 5mm bolt with a 625 bearing (they're a couple dollars) — would eliminate that friction almost entirely. That's a cheap and easy thing to try before buying a new stepper.
+
+i think i'm using a 6mm rod for it right now. what kind of bearing should i get for that?
+
+Apr 8
+A 686ZZ bearing — that's 6mm inner bore, 13mm outer diameter, 5mm thick. They're tiny, cheap (a few dollars for a pack), and would drop right onto your 6mm rod. Put one on each side of the pulley gear to keep it centered and spinning freely.
+
+Or if you want to simplify, just switch the rod to a 5mm bolt and use a 625ZZ bearing (5mm bore, 16mm OD, 5mm thick) — those are extremely common in 3D printer builds and you might already have some from the Anet A8 parts. A GT2 idler pulley that fits on a 5mm bolt with bearings already built in costs maybe $2-3 on Amazon and would be the easiest drop-in fix.
+
+i found a 6mm one, and it looks like i have a 6mm belt so that works.
+
+Apr 8
+Wait — a 6mm belt is the belt width, not the tooth pitch. You should be using GT2 belt which has a 2mm tooth pitch. The 6mm is just how wide it is, which is standard for GT2 belt on 3D printers. Make sure the idler pulley you found has GT2 teeth (2mm pitch) to match your belt, or is a smooth/toothless idler if it's on the non-driven side.
+
+Either toothed or smooth works for the idler side, but if you're using a toothed idler make sure it's GT2 and the teeth engage properly with the belt. A mismatched tooth profile will chew up the belt.
+
+Did you find a toothed or smooth idler?
+
+smooth idler. and the tooth pitch is still 2mm. just the belt is 6mm wide
+
+Apr 8
+That's fine — smooth idler works great on the non-driven side. As long as your smooth idler is wide enough for the 6mm belt, you're good. Swap it in and see if the skipping improves.
+
+How's the binding feel with the belt off? Did you get a chance to test that?
+
+looks like the rails aren't quite parallel. I think I resolved that now though. it wasn't getting STUCK stuck, it was just kind of binding for a second. I do want to design a better bracket for the bottom but I don't know what kind of attachment points are available on that bottom part.
+
+Apr 9
+Can you take a photo of the bottom bracket area? That would be the fastest way for me to see what you're working with and suggest attachment options.
+
+
+X_Idler_Right_V1.1_Leo_N.stl
+stl
+
+here's a 3d model of a version of it someone made that's pretty close. its not the exact thing I'm using but its pretty much the same shape.
+
+Apr 9
+
+Check the STL file to understand the part geometry
+Check the STL file to understand the part geometry
+That's a binary STL so I can't read the geometry directly. Let me try to render it so I can see the shape.
+
+
+Viewed 3 files, ran a command
+Viewed 3 files, ran a command
+OK I can see the shape. It's about 60mm x 45mm x 34mm overall. It's the typical A8 X idler bracket — a block with two 8mm rod holes going through it horizontally, a slot or hole in the top for the belt idler bearing/bolt, and the bottom has a flat base with triangular gussets. The front face has the rounded section where the idler bolt sits.
+
+So for attachment points you have: the two 8mm rod holes (which the Z rods pass through), the idler bolt hole at the top, and the flat base that could be bolted to something.
+
+For connecting this to the SCS20UU pillow block on the bottom 20mm X rod, the same approach as the top bracket would work — a plate that bolts to the SCS20UU on one side, and connects to this idler piece on the other. The simplest connection would be through the 8mm rod holes — the same rods that pass through the idler also pass through or clamp into the bracket plate.
+
+Or since this is the bottom and doesn't need to hold a motor, could you just design a new piece from scratch that combines the SCS20UU mount and the idler function into one part? It would just need the M6 bolt pattern for the pillow block, two 8mm rod holes, and a spot for the idler bearing bolt. Simpler than trying to adapt the existing A8 piece.
+
+what would a new piece that used teh scs20uu pillow block look like?
+
+Apr 9
+V
+
+Connecting to visualize...
+Pretty simple piece. It's basically a flat plate with a gusset, combining three functions: the SCS20UU bolts to the back portion (four M6 holes at 40x40mm), the two 8mm Z rods press-fit into the front portion (46mm apart), and the idler pulley mounts on an M5 bolt between the rods, hanging below the plate.
+
+The gusset between the SCS20UU section and the rod section is important since that's where the plate would want to flex. Print it in PETG with the flat face on the bed, 50%+ infill, and the gusset will make it plenty rigid.
+
+The whole thing is just one printed piece plus the idler on a bolt. Much cleaner than trying to adapt the old A8 idler bracket. Does this work for your setup?
+
+could i just drill into the existing piece for the screws that go to the pillow block?
+
+Apr 9
+Yeah, that would work and it's even simpler. The existing A8 idler piece is already designed to hold the 8mm rods and the belt idler — you just need to attach it to the SCS20UU pillow block. Drill four M6 clearance holes (6.5mm) through the flat base of the idler piece in the 40mm x 40mm pattern, bolt it to the pillow block, and you're done.
+
+The A8 idler piece is plastic so it drills easily. Just measure carefully and mark the hole positions before drilling — the 40mm pattern needs to be centered so the 20mm X rod lines up where you want it relative to the 8mm Z rods. A drill press would be ideal for keeping the holes perpendicular, but even a hand drill works if you're careful.
+
+One thing to watch — the base of that piece is probably only about 5-6mm thick. M6 bolts through 5mm of plastic will hold fine since they're clamping the piece against the pillow block face, not threading into the plastic. Use washers on the bolt heads to spread the load and avoid crushing the plastic.
+
+if i do a custom block, how would I keep the rods in there? just friction? and I would just need to have the pulley, the 8mm holes, and the 40mm pattern for mounting the pillow block right?
+
+Apr 9
+For the rods, friction (press fit) works if you size the holes right — about 7.8-7.9mm so the 8mm rods are tight going in. But over time and with vibration, press fits in printed plastic can loosen. A couple of better options: add a small set screw hole on the side of each rod bore that lets you lock the rod with an M3 grub screw, or add a clamp slot (a thin slit from the bore to the outside edge) with a bolt that pinches it tight, like how the bearing housings on the A8 work.
+
+The set screw is probably the easiest — just a small M3 threaded hole perpendicular to each rod bore. Tighten the grub screw against the rod and it's not going anywhere.
+
+And yes, that's all the piece needs: two 8mm rod bores, the M5 hole for the idler pulley bolt, and the four M6 clearance holes in the 40mm x 40mm pattern for the SCS20UU. Keep it as simple as possible — just a rectangular block with those features and a gusset if needed for stiffness.
+
+also, could my binding be coming from the fact that my x axis motor is right by one of the rails and not in the center or something?
+
+Apr 9
+Yes, that can definitely cause binding. If the motor and drive pulley are at one end near one rod, the belt pulls unevenly on the carriage. The belt tension creates a torque that wants to twist the carriage — pulling one side forward and the other side back. The pillow block bearings resist this twist, which shows up as friction/binding, especially at certain positions along the travel.
+
+Over 1100mm this effect is amplified because the belt angle changes as the carriage moves. When the carriage is near the motor end, the belt is pulling almost straight. When it's at the far end, the long belt run can pull at a slight angle that loads the bearings sideways.
+
+The ideal belt path has the belt running parallel to and centered between the two rods, so the pull force goes straight through the carriage's center of mass with no twisting moment. If you can't move the motor to the center, you can minimize the effect by making sure the belt attachment point on the carriage is centered between the two rods, even if the motor itself is off to one side. That way the belt creates a slight side-load but not a twisting moment on the carriage.
+
+Where is your motor relative to the rods — is it above one rod, below, or off to the side? And where does the belt attach to the carriage?
+
+no its over the 200-something mm between the two z rods
+
+Apr 9
+Oh wait — do you mean the motor is mounted between the two 20mm X rods, spanning the vertical gap between the top and bottom rod? So the belt is running vertically between the rods rather than off to one side?
+
+If so, that's actually centered and shouldn't cause twisting. The belt force would be pulling evenly between the two rods.
+
+Or do you mean the motor is at one end of the X travel (left or right side of the machine) rather than in the center of the 1100mm span? That's normal for a belt-driven axis — the motor is always at one end with the idler at the other. That shouldn't cause binding either, it just means the belt is longer on one side of the carriage than the other, which is how every belt-driven printer axis works.
+
+Can you clarify what you meant?
+
+one end of the x travel, at the top, while the other x rod is at the bottom.
+
+Apr 9
+That's a standard layout and shouldn't cause binding on its own. The belt runs from the motor at the top of one end, across to the carriage, and back to the idler at the other end. The fact that one rod is at the top and one at the bottom with the motor at the top is fine.
+
+If the binding is better now after fixing the rod parallelism, I'd swap in that proper idler bearing next and see where you're at. Those are the two biggest friction sources we identified — misaligned rods and the bearingless idler. Fix both and then reassess whether the 0.9A stepper has enough torque or needs upgrading.
+
+How's it feeling after the rod alignment fix?
+
+it definitely moves more freely after the rod alignment, but I've still got some work to do to get it perfectly aligned. I think that was most of our issue.
+
+Apr 10
+That makes sense. Over 1100mm even a tiny misalignment gets magnified. Take your time getting the rods parallel — it'll pay off more than any other single change you could make. Once those are dialed in and you swap in the proper idler bearing, the 0.9A stepper might be perfectly fine for this application since you're not moving fast or accelerating hard like a 3D printer would.
+
+Is there anything else you need to work on for the machine right now, or are you at the point of getting it running and tuning?
+
+I have the new idler pulley and stepper on their way regardless. Is it worth swapping them in regardless?
+
+Apr 10
+The idler pulley, absolutely — swap that in as soon as it arrives. There's no downside and it eliminates a known friction source.
+
+The stepper, I'd hold off and test with the current one first after the rod alignment and new idler are in. If it works fine, keep the new stepper as a spare. If it's still skipping, then swap it in. No point adding a variable while you're still dialing in the mechanical stuff — if something goes wrong you won't know whether it's the new motor or something else.
+
+Ok everything seems to be working well, but I'm getting some squeaking because my stepper and belt isn't in line with my x rails, but it's only off by maybe an inch. Would adding a third connection to the rail, like another pillow block near the top by the belt connection, fix that? I can't really move the belt more in line because of the way the machine lays out. 
+
+Also, I need to get some more light onto the staging platform. I was thinking of some low angle diffused led bars. How can I mount those to the extruded aluminum frame? Or should I make them part of the staging platform itself?
+
+Apr 16
+For the squeaking — a third pillow block near the top by the belt would definitely help. Right now the belt is pulling at a point that's offset from your two support points, which creates a sideways force that the two pillow blocks have to resist. Adding a third one near where the belt attaches gives the carriage a support point right where the force is being applied, so instead of the carriage trying to twist between two distant supports, it's constrained at the load point. That should kill the squeak.
+
+For the lighting — mounting it to the staging platform itself is the better option. If you put it on the frame, the light angle and intensity change as the X carriage moves the staging platform relative to the lights. If the lights are part of the platform, the lighting is always consistent regardless of carriage position. That's important for scanning — you want identical lighting conditions for every card so the camera sees consistent colors and contrast.
+
+For diffused low-angle lighting, LED strip inside a small printed channel with a diffuser works well. You can use a strip of white translucent PETG or even a piece of parchment paper as a diffuser. Mount the channels on two or three sides of the staging area, angled inward at maybe 30-45 degrees so the light hits the card surface at a low angle. Low angle lighting reduces glare and reflections off foil cards, which helps with scanning accuracy.
+
+Q: What kind of LEDs are you thinking of using?
+A: Not sure what type
+
+Q: How many sides of the staging area do you want lit?
+A: Two sides (left and right of card)
+
+Apr 16
+For card scanning, plain white LED strips are the way to go. Addressable RGB strips like WS2812B can do white, but it's a bluish cold white that's not great for color accuracy. A dedicated warm white or neutral white (4000-5000K) LED strip gives you much better color rendition for identifying card art and set symbols. Look for strips with a high CRI (Color Rendering Index) of 90+ if you can find them — that means the colors they illuminate look closer to how they'd look in daylight.
+
+A simple 12V or 5V white LED strip cut to length is cheap, doesn't need a controller, and you can power it from your existing power supply. You just need an on/off switch or tie it to one of the fan outputs on the SKR board so you can turn it on and off in G-code.
+
+For mounting on the staging platform, print two small channels — one for each side of the card — that hold a short piece of LED strip (maybe 80-100mm long, enough to span the card length). Angle them inward at about 30-45 degrees and add a thin diffuser strip over the top. The channels bolt or clip to the edges of the staging platform.
+
+Two sides (left and right) is a good starting point. If you get shadows on one end of the card you can always add a third strip later, but two opposing sides usually gives pretty even illumination across the card face.
+
+Want me to help figure out what output on the SKR board to use for switching the LEDs?
+
+The staging platform doesn't move. Having it on the staging platform means my staging platform is required to be connected to power which sounds like a pain. I think I want to have it attached to the frame.
+
+Apr 16
+You're right, that's way simpler. Fixed to the frame, wired once, done. And since the staging platform doesn't move, the lighting will be consistent anyway — the card always goes to the same spot and the lights are always in the same position relative to it. My concern about changing light angles only applies if the staging area moved, which it doesn't.
+
+Mount the LED strips to the frame on either side of the staging platform, aimed inward and downward at the card. A couple of small printed brackets with T-slot nuts to attach to the 4080 extrusion, each holding a short strip of LED angled toward the staging area. Simple, no wiring to moving parts, and easy to adjust the angle by loosening the T-nuts and rotating the bracket.
+
+For powering them, you could run them off one of the fan outputs on the SKR board (HE1 or one of the fan headers) so you can turn them on and off with G-code. Or just wire them to your power supply with a manual switch if you want them always on during operation. Since they're just fixed lights, they don't really need firmware control — a simple toggle switch is fine.
+
+The only problem is that I need to span about a meter.
+
+Apr 16
+A meter of wire run to get power to the LEDs isn't really a problem — LED strips run on low voltage (12V or 5V) and draw very little current for a short strip. Just run a pair of thin wires from the power supply along the frame to the LED brackets. You can tuck the wires into the T-slot channel on the 4080 extrusion to keep them tidy. It's just a one-time wiring job.
+
+Or did you mean the LED strips themselves need to span a meter? If so, why would they need to be that long? They only need to be as long as the card — about 90-100mm of strip on each side of the staging area. The rest of the meter is just the wire getting power there.
+
+No I have a meter of space between uprights, plus this should help with out aruco auto calibration for bin location
+
+Apr 16
+Oh that changes things — you want LED bars spanning the full meter between the uprights so that the whole work area is lit, not just the staging platform. That helps with both card scanning at the staging area and the camera being able to see ArUco markers on the bins for auto-calibration regardless of where the carriage is positioned along X.
+
+In that case, just get a meter-long LED strip, mount it to the 4080 extrusion running horizontally along the front or back of the frame, and put a diffuser over it. You could mount it in the T-slot channel of the extrusion itself with some 3D printed clip-in holders, or just stick it to the face of the extrusion with the adhesive backing that most LED strips come with.
+
+One strip across the top front of the frame pointing down would light both the bins and the staging area evenly. If you need more even lighting, do two strips — one on each side of the work area (front and back) — but one is probably enough to start.
+
+For the diffuser, a strip of white acrylic or polycarbonate over the LEDs softens the light and eliminates hot spots. You can also just buy LED channel/profile — it's aluminum U-channel with a snap-in diffuser cover, comes in meter lengths, and mounts easily to extrusion with a couple of screws or T-nuts. That would look clean and give you good diffusion without printing anything.
+
+I don't have extrusion running horizontally on the top of the frame at the moment
+
+Apr 16
+Could you add a piece? Even a cheap length of 2020 extrusion spanning between your two uprights would give you a horizontal rail to mount the LED strip and diffuser on. It would also add rigidity to the frame — a horizontal cross member between the uprights stiffens everything.
+
+Or if you don't want to add extrusion, you could just run the LED strip along the underside of the top 20mm X rod. It's already spanning the full distance. A few printed clips that snap around the rod and hold the strip pointing downward would work. Not as clean as a proper channel with a diffuser, but it gets light where you need it quickly.
+
+Another option — mount the LED strip to a simple printed or aluminum bar that spans between the uprights, attached at each end with brackets that bolt to the existing frame. Doesn't need to be extrusion, just something straight and rigid enough to not sag over a meter. Even a piece of aluminum angle from the hardware store would work.
+
+What's easiest for your setup?
+
+Well I need it to not get in the way of the x carriage so I'll need to offset it from the frame a bit. I probably need a printed bracket then some sort of rigid piece of plastic to stick the LED strips to. I'd like it to be somewhat adjustable at least for the angle so I can tune that, and also diffuse the light nicely. What's my best option that's easy and cheap?
+
+Apr 16
+The cheapest option that does all of that: get a meter-long piece of LED aluminum channel with a snap-in diffuser cover. They're specifically made for this — a U-shaped aluminum channel that the LED strip sticks into, with a frosted plastic cover that diffuses the light. They cost maybe $5-10 for a meter length on Amazon, and they're rigid enough to not sag over that span.
+
+Then print two brackets, one for each upright, that hold the channel offset from the frame far enough to clear the X carriage. Each bracket would be an L-shape or arm that bolts to the frame on one end (T-nuts into the 4080 extrusion) and clamps the LED channel on the other end. For angle adjustment, use a single bolt as a pivot where the channel meets the bracket — loosen to rotate the channel, tighten to lock the angle. Same principle as the camera mount.
+
+So the total parts list is: one meter LED aluminum channel with diffuser (bought), one meter warm white LED strip (bought), two printed brackets with pivot bolts (printed), and a couple of T-nuts and bolts to attach to the frame. Wire it to your power supply and you're set.
+
+Search Amazon for "LED aluminum channel 1m diffuser" — you'll find tons of options. Get one with a milky/frosted cover rather than a clear one for better diffusion.
+
+Should I use v shaped or no?
+
+Apr 16
+For your use case, the V-shaped (45 degree angle) channel is actually a good choice. It naturally aims the light at an angle rather than straight down, which is what you want for low-angle lighting on the cards. You'd mount it with the V pointing downward and the light coming out at an angle toward the staging area and bins. That gives you the low-angle illumination that reduces glare on foil cards without having to tilt a flat channel.
+
+The flat U-channel would also work but you'd have to angle the whole thing with your bracket, which means the bracket design is doing more work. With the V-channel, even if you mount it relatively flat, the light is already coming out at 45 degrees.
+
+Go with the V-shaped. It solves the angle problem for free.
+
+
+
+
+

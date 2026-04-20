@@ -41,7 +41,7 @@ Everything an implementation agent needs to build the plan in `../web_enrichment
 - Backup: git init + `backup/` snapshots (both)
 - Moxfield v1: public-only (no auth)
 - Collection tab layout: hybrid (filter sidebar + Inventory/Locator/Sync sub-views)
-- Tab consolidation: done in Phase 0A (7 → 4 tabs)
+- Tab consolidation: done in Phase 0A (7 → 5 tabs; Calibration restored as top-level after user feedback 2026-04-19)
 - Motion Preview: hidden, not deleted
 - Refresh cadence: weekly enrichment, daily prices
 - Enrichment storage: `enrichment.db` covers full Scryfall corpus, not just owned cards

@@ -104,7 +104,7 @@ Blocks everything else. Cannot be parallelized.
 3. Define shared interfaces (`EnrichmentRepo` class signatures, emit callback contract)
 4. Add `python-dotenv` + `.env.example`
 5. Wire APScheduler into `web_server.py`
-6. Tab consolidation in `index.html` (4 tabs, Calibration → modal, Database → subsection)
+6. Tab consolidation in `index.html` (5 tabs; Database → subsection/modal. Calibration was briefly a modal but restored as a top-level tab after user feedback 2026-04-19)
 7. Hide Motion Preview tab
 8. Scaffold test directories (`tests/enrichment/`, `tests/probes/`, `tests/fixtures/`, `tests/probe_snapshots/`)
 

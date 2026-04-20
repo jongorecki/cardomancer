@@ -2064,14 +2064,14 @@ function startSession() {
     const notes = document.getElementById('session-notes')?.value?.trim();
     if (notes) payload.notes = notes;
 
+    // Phase 0B-1: storage plan is required before Start is enabled.
     const plan = typeof getStoragePlan === 'function' ? getStoragePlan() : null;
-    if (plan) payload.storage_plan = plan;
-
-    const resortToggle = document.getElementById('resort-mode-toggle');
-    const sourceSelect = document.getElementById('resort-source-select');
-    if (resortToggle && resortToggle.checked && sourceSelect && sourceSelect.value) {
-        payload.source_box = sourceSelect.value;
+    if (!plan) {
+        addLog('⚠️ Set storage box + starting divider before starting');
+        if (typeof onStoragePlanChange === 'function') onStoragePlanChange();
+        return;
     }
+    payload.storage_plan = plan;
 
     console.log('[startSession] payload:', JSON.stringify(payload));
     apiPost('/api/session/start', payload);
@@ -4548,18 +4548,21 @@ async function deleteCurrentUserPreset() {
     }
 }
 
-function onStoragePlanChange() {}
+// Storage plan gating — Start Session disabled until both fields set.
+function onStoragePlanChange() {
+    const box = document.getElementById('storage-box-select');
+    const div = document.getElementById('storage-divider-input');
+    const btn = document.getElementById('btn-start-session');
+    const hint = document.getElementById('storage-plan-hint');
+    if (!box || !div || !btn) return;
+    const ready = !!(box.value && div.value && parseInt(div.value, 10) >= 1);
+    btn.disabled = !ready;
+    if (hint) hint.style.display = ready ? 'none' : '';
+}
 
 function getStoragePlan() {
     const box = document.getElementById('storage-box-select');
     const div = document.getElementById('storage-divider-input');
     if (!box || !div || !box.value || !div.value) return null;
     return { box: box.value, starting_divider: parseInt(div.value, 10) };
-}
-
-function onResortToggle() {
-    const toggle = document.getElementById('resort-mode-toggle');
-    const row = document.getElementById('resort-source-row');
-    if (!toggle || !row) return;
-    row.style.display = toggle.checked ? '' : 'none';
 }

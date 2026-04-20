@@ -39,58 +39,119 @@ The **gantry** picks a card from the staging tray, moves it into the camera's vi
 
 ## Hardware
 
-### Gantry
+### Frame
 
-A custom X/Y/Z motion platform driven by stepper motors, closer in design to a small 3D printer or CNC than a pick-and-place. Movements:
+- 4080 aluminum extrusion uprights, ~1 m clear span between them.
+- X-axis travel: 1100 mm.
+- Build heavily reuses parts from a donor Anet A8 3D printer.
 
-- **X** — traverses across the bin row
-- **Y** — reaches between staging and bins
-- **Z** — lifts and lowers the card-handling head
+### Linear motion
 
-Homing order and travel speeds live in [config.py](config.py) and the Marlin firmware build. Sensorless homing is intentionally off — the machine uses physical endstops wired active-LOW.
+**X axis** — Two 20 mm smooth steel rods running horizontally between the uprights, carriage riding on LM20UU linear bearings in SC8UU/SCS8UU pillow blocks (4-hole M6 pattern, 40×40 mm). GT2 belt drive.
+
+**Z axis** — The donor Anet A8's entire X-axis assembly, reoriented vertically between the top and bottom X-carriages. Two 8 mm rods (~436 mm long, LM8UU bearings, 46 mm center-to-center). GT2 belt loop, motor on top, idler on bottom. Z travel target ~180–200 mm (enough to reach the bottom of a full 500-card bin).
+
+**Y axis** — Not a motion axis in the usual sense. Only X and Z move; the card-handling head reaches over from a fixed Y position.
+
+Design decision: the original Z design used a rack-and-pinion on the moving carriage; it was rejected for center-of-gravity reasons. Reorienting the A8's X assembly keeps the heavy rods fixed to the frame and makes the moving Z mass just the carriage block + printed arm + suction cup.
+
+### Motors + drivers
+
+- **X stepper**: Anet A8 original, NEMA 17, 0.9 A (42SHDC3025-24B). On the edge of capable given the 1100 mm travel and carriage mass — a 1.5–1.7 A replacement is on order as a fallback if step-skipping persists after mechanical fixes land.
+- **Z stepper**: Anet A8 original X-axis stepper, NEMA 17, reused with the rest of the A8 X assembly.
+- **Drivers**: TMC2209 on all used slots. Sensorless homing was tried and disabled — using wired endstops wired active-LOW.
+
+### Control board + firmware
+
+- **Board**: BTT SKR 1.4 Turbo (NXP LPC1769, 110×85 mm, mounting holes 102×76 mm).
+- **Firmware**: Marlin 2.1.3-b1, built with PlatformIO.
+- **Key Marlin settings** documented below.
+- **Pin repurposing**:
+  - Heated bed output (HB) — switches the vacuum pump.
+  - HE0 — drives a pressure-release pump that pushes the card off the suction cup at drop.
+  - Z-probe pin (P0.10) — G38 contact sensing for the suction-cup landing switch.
+  - E0DET / E1DET filament-runout inputs — spare endstop inputs if needed.
+- **Configuration.h / pins_*.h customisations** are not in this repo (the firmware project is separate). Rebuilding from stock Marlin won't boot correctly — start from the project's build notes.
 
 ### Card-handling head
 
-The head mounts to the Z axis and picks/places cards one at a time. Cards are moved from the staging tray → scan position → destination bin.
+- One spring-loaded vacuum suction cup on the Z carriage. 60 mm tall total, 30 mm cup diameter, 14 mm barb on top, ~5–10 mm of spring compliance.
+- **Two vacuum pumps** on the frame: one for suction (pick-up), one for positive pressure (release / blow-off). Hoses route through the X cable chain to the Z carriage.
+- A contact limit switch on the suction cup assembly lets the machine use G38.2 to lower Z until the cup touches the card, rather than moving blind to a fixed depth.
+- Workflow: pick card from source bin → move to staging platform → camera scans from its fixed position → gantry routes to destination bin → drop.
 
 ### Camera
 
-A single USB camera is fixed above the scan position, pointed down. The card is paused under the camera for identification. Key constant: `CROP_SIZE = 745` pixels — this matches Scryfall's PNG art export width, and the whole hash database depends on it. Don't change it.
+- **Model**: ASUS ROG Eye (gen 1), ~81×17×29 mm.
+- **Current mount**: fixed, pointed at the staging platform.
+- **Planned second mount**: on the X carriage with a friction-pivot (single-bolt adjust) for ArUco marker sweeps across bins.
+- Stream native resolution is rotated 90° by the camera manager so the UI receives a portrait-oriented 720×1280 JPEG stream.
+- `CROP_SIZE = 745` px in `config.py` — this matches Scryfall's PNG art width and the whole hash database depends on it. Do not change.
 
 ### Bins + dividers
 
-Cards drop into numbered bins. Inside each bin, 3D-printed numbered dividers subdivide storage so each physical card has a repeatable post-sort address: **box N, divider M**. The web UI's Locator sub-view uses this to find a specific card later without rescanning.
+- 3D-printed open-top bins. Internal footprint ~66–67 × 91–92 mm (1.5–2 mm clearance per side over a 63 × 88 mm MTG card).
+- Capacity ≈ 500 cards (~150 mm stack at ~0.3 mm per card).
+- Cards drop in from above when vacuum releases — no moving ramp, no ejection mechanism. An earlier design with a moving bin platform was discarded.
+- **Double-feed prevention**: simple corner wedges/nubs printed into each bin's inner walls. The picked card flexes past the nubs and any duplicate card underneath stays put. Alternatives considered and rejected: brush bristles (risk of edge delamination), TPU bands (tuning nightmare across card conditions), separate clip-on TPU flaps (too fiddly).
+- Numbered 3D-printed dividers inside each bin subdivide storage for the post-sort Locator sub-view — every card gets a repeatable "box N, divider M" address.
+- Bin fullness is tracked purely in software (count vs. configured limit). No hardware limit switches on bins, none planned.
 
-Bin fullness is tracked in software (count of cards routed there this session vs. a configured capacity) — there are no hardware limit switches on the bins themselves, and none planned.
+### Lighting
+
+- Planned: a ~1 m warm-white LED strip in a V-shaped aluminum channel with a snap-in diffuser, mounted on printed brackets offset from the 4080 uprights so it clears the X carriage.
+- High-CRI (90+), neutral or warm white (4000–5000 K) — better color rendition than bluish-cold addressable strips.
+- Spans the full working area so both the staging-platform scan point and the bin row's ArUco markers are lit evenly. ArUco detection quality is the primary driver.
+- Wired to the PSU directly (simple on/off switch) or optionally to an SKR fan header for G-code control. Not yet installed at time of writing.
 
 ### Calibration markers
 
 Calibration uses ArUco markers:
 
-- IDs **0–9** — source-side markers (staging tray reference)
+- IDs **0–9** — source-side markers (staging tray reference, input bin positions)
 - IDs **10–49** — destination-side markers (bin positions)
+- ID **49** — staging platform reference marker
 
-Printable marker PNGs are in [aruco_markers/](aruco_markers/). A calibration sweep in the web UI drives X across the bin row, detects markers frame-by-frame, and records each bin's absolute X coordinate. A future improvement puts a camera on the X carriage so this can happen fully unattended.
+Printable marker PNGs are in [aruco_markers/](aruco_markers/). A calibration sweep drives X across the bin row, detects markers frame-by-frame, and records each bin's absolute X coordinate. Once the X-carriage camera mount is wired in, this becomes fully unattended.
+
+### Known mechanical issues (in progress)
+
+- **X-axis step skipping**: root cause trace in progress — rod non-parallelism over 1100 mm, over-constrained pillow blocks, an idler running on a gear instead of a bearing, and a motor/belt line offset ~25 mm from the rod centerline. Mechanical fixes (rod alignment, proper idler bearing 686ZZ or 625ZZ) come first; the new stepper is a fallback.
+- **X-carriage squeaking**: belt pulls the carriage at a point that's offset from its two pillow-block supports. Planned fix: third pillow block near the belt attachment.
 
 ### Parts & sourcing
 
-Intentionally unspecified here — build is custom. See hardware notes / build log (not in this repo) for BOM details.
+- Donor machine: Anet A8 3D printer (X assembly, both X and Z steppers, belts, bearings).
+- Control board: BigTreeTech SKR 1.4 Turbo.
+- Frame: 4080 and (possibly) 2020 aluminum extrusion.
+- Linear hardware: LM20UU and LM8UU bearings, SC8UU/SCS8UU pillow blocks, 20 mm and 8 mm smooth rods, GT2 belt.
+- Vision: ASUS ROG Eye (gen 1).
+
+Build log / BOM with exact vendor links lives outside this repo.
 
 ---
 
 ## Firmware (Marlin)
 
-The machine runs a modified Marlin configuration. The firmware source itself is not in this repo (it's built separately with PlatformIO), but the **configuration choices that matter** are documented here because they interact with the host software:
+The machine runs a modified Marlin 2.1.3-b1 build targeting the SKR 1.4 Turbo (NXP LPC1769, `env:nxp_lpc1769` in PlatformIO). The firmware project itself is not in this repo, but the configuration choices that matter for the host software are:
 
 | Setting | Value | Why |
 |---|---|---|
+| `MOTHERBOARD` | `BOARD_BTT_SKR_V1_4_TURBO` | Match the control board |
 | `EXTRUDERS` | `0` | No hotend; this isn't a 3D printer |
 | `Z_SAFE_HOMING` | off | Not applicable — no bed |
-| `SENSORLESS_HOMING` | off | Physical endstops are more reliable for this build |
+| `SENSORLESS_HOMING` | off | Physical wired endstops are more reliable here |
 | Endstop logic | active-LOW | Matches the wired switches |
-| `HOST_ACTION_COMMANDS` | on | Lets the host recover from errors cleanly |
+| Stepper drivers | TMC2209 (TMCStepper 0.8.0) | UART control, standstill current reduction |
+| `HOST_ACTION_COMMANDS` | on | Lets the host recover cleanly from errors |
 
-Custom pin mappings: handled in the board's `pins_*.h` file. Recorded in the build notes (external). If rebuilding firmware, start from those notes — Marlin defaults do not work.
+Custom pin mappings live in `pins_BTT_SKR_V1_4.h` overrides (not in this repo):
+- **HB** (heated bed output) → suction vacuum pump
+- **HE0** → release / positive-pressure pump
+- **Z-probe input (P0.10)** → suction-cup contact limit switch for G38.2 probes
+- **E0DET / E1DET** → available as spare endstop inputs
+
+Rebuilding from stock Marlin will not boot correctly. Start from the project's build notes.
 
 ### Host ↔ firmware protocol
 

@@ -12,7 +12,8 @@
 - [ ] Deleting "Load custom from file" removes only the button; backing logic for loading from `sort_configs/*.txt` still works (now auto-imported as read-only presets on startup).
 - [ ] Legacy preset names (`color`, `price`, etc.) still resolve to their expected bin layouts.
 - [ ] Estimated card count per bin populates within 500ms for a 10-bin preset against a 10k-card inventory.
-- [ ] Storage plan controls (box dropdown, starting divider) appear on the session start panel and are required before Start becomes enabled.
+- [ ] Destination box dropdown and starting divider appear on the session start panel as **optional** fields (user-feedback revision 2026-04-19 — do NOT gate Start behind them).
+- [ ] "Re-sorting an existing box" checkbox exposes a **Source box** selector only when checked; the payload carries `source_box` when set. Not required for fresh sorts.
 
 ### enrichment.db schema + migrations
 - [ ] New file `enrichment.db` created alongside `collection.db`.
@@ -36,13 +37,13 @@
 - [ ] Running `run_all.py` fresh after `git clone` + install succeeds for every source marked ✅ or 🟡 (Tagger may require adjustment if GraphQL shape changed since probes were pinned).
 
 ### Motion Preview hidden
-- [ ] Navbar tab list shows 4 tabs: Dashboard, Bin Setup, Sort Session, Collection.
+- [ ] Navbar tab list does NOT include Motion Preview.
 - [ ] Motion Preview JS/HTML files remain in the repo, unmodified.
 - [ ] A commented block in `index.html` indicates where to re-insert the tab.
 
 ### Tab consolidation
-- [ ] Calibration tab content moved into a modal launched from Dashboard; all existing calibration endpoints still work unchanged.
-- [ ] Database tab content moved into Dashboard "Data & Sources" card; all existing DB update endpoints still work.
+- [ ] Navbar shows 5 tabs: Dashboard, Bin Setup, Sort Session, **Calibration**, Collection (user-feedback revision 2026-04-19 — Calibration restored from modal to top-level tab because it's used too often to live behind a button).
+- [ ] Database tab content lives in a modal launched from the Dashboard "Data & Sources" card; all existing DB update endpoints still work.
 - [ ] Collection tab shows sub-view pills for Inventory / Locator / Sync.
 
 ---
