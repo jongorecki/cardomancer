@@ -1066,6 +1066,7 @@ class SortWorker:
             self.log(f"No card detected on staging "
                      f"(attempt {self._no_detect_retries}/"
                      f"{self._max_no_detect_retries})")
+            self._save_no_detect_image(frame)
             self.emit('card_detected', {'recognized': False,
                                         'reason': 'no_card_in_frame'})
 
@@ -1507,6 +1508,24 @@ class SortWorker:
             filepath = os.path.join(self._scan_images_dir, filename)
             cv2.imwrite(filepath, frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
         except Exception as e:
+            pass  # Don't fail sorting over image save errors
+
+    def _save_no_detect_image(self, frame):
+        """Save the camera frame when no card contour was detected.
+
+        Stored in a no_detect/ subdirectory so the user can review what
+        the camera saw when detection failed.
+        """
+        if frame is None or self.tracker is None:
+            return
+        try:
+            nd_dir = os.path.join(self.tracker.session_dir, "no_detect")
+            os.makedirs(nd_dir, exist_ok=True)
+            filename = (f"nodet_{self.scan_count + 1:04d}"
+                        f"_attempt{self._no_detect_retries}.jpg")
+            filepath = os.path.join(nd_dir, filename)
+            cv2.imwrite(filepath, frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        except Exception:
             pass  # Don't fail sorting over image save errors
 
     def _save_card_crop(self, card_img):

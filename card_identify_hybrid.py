@@ -5,13 +5,15 @@
 # Decision rules (applied in order):
 #   1. Both agree on the same card name  ->  trust phash
 #   2. phash distance <= 82              ->  trust phash  (confident)
-#   3. phash #1-to-#2 gap >= 5           ->  trust phash  (clear winner)
+#   3. phash dist <= 85 AND gap >= 5     ->  trust phash  (near-confident + clear winner)
 #   4. Otherwise                         ->  trust DINOv2
 #
-# The gap rule (3) catches cases where phash has the right card at a high
-# absolute distance (e.g. foils, lighting variation) but a decisive lead
-# over #2.  On the 362-scan regression set, phash-correct cases always
-# show gap >= 5.3 while phash-wrong cases always show gap <= 4.0.
+# The gap rule (3) catches cases where phash has the right card at a
+# slightly-elevated distance (e.g. foils, lighting variation) but a
+# decisive lead over #2.  Capped at dist <= 85 because at higher
+# distances (90+), even large gaps just mean "least bad noise match"
+# (e.g. Common Curve Filler's all-black art matched dark cards at 90+
+# with gap 7+ but was completely wrong).
 #
 # Drop-in replacement for card_identify.py — same API:
 #   identify_card(card_img, threshold) -> (card_id, distance, rotated, results)
@@ -44,9 +46,12 @@ from cards import CARD_DATA_BY_ID
 PHASH_CONFIDENCE_THRESHOLD = 82
 
 # Gap between phash rank #1 and #2.  When phash has a decisive lead
-# (gap >= 5), it's correct even at high absolute distance (e.g. foils).
+# (gap >= 5) at moderate distance (<=85), it's correct even above the
+# main confidence threshold (e.g. foils).
 # Calibrated on 362-scan set: correct high-dist gap >= 5.3, wrong gap <= 4.0.
+# Capped at 85 to prevent false positives from blank-art trap cards (90+).
 PHASH_GAP_THRESHOLD = 5.0
+PHASH_GAP_MAX_DIST = 85
 
 
 def _get_name(card_id):
@@ -105,9 +110,10 @@ def identify_card(card_img, threshold=None):
     if p_dist <= PHASH_CONFIDENCE_THRESHOLD:
         return p_id, p_dist, p_rot, p_results
 
-    # Case 3: Phash has a decisive lead over #2 -> trust phash even at
-    # high absolute distance (catches foils, lighting variation, etc.)
-    if len(p_results) >= 2:
+    # Case 3: Phash has a decisive lead over #2 at moderate distance ->
+    # trust phash (catches foils, lighting variation).
+    # Only applies at dist <= 85; at 90+ a big gap just means noise.
+    if p_dist <= PHASH_GAP_MAX_DIST and len(p_results) >= 2:
         gap = p_results[1][1] - p_results[0][1]
         if gap >= PHASH_GAP_THRESHOLD:
             return p_id, p_dist, p_rot, p_results

@@ -38,6 +38,7 @@ SCAN_LOGS_DIR = os.path.join(SCRIPT_DIR, "scan_logs")
 EXCLUDED_SETS = {
     "30a", "lea", "leb", "fbb", "ced", "cei", "4bb", "ptc", "sum",
     "cmb1", "cmb2",  # Mystery Booster playtest cards — too visually similar to each other
+    "unk",           # Unknown Event — dummy placeholders (Common Curve Filler etc.)
 }
 
 # --- Hardware / G-code ---

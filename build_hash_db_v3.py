@@ -127,6 +127,10 @@ def should_exclude_card(card):
         return True
     if card.get('layout', '') in EXCLUDED_LAYOUTS:
         return True
+    # Set-level exclusions (dummy sets, promos with no real cards)
+    from config import EXCLUDED_SETS
+    if card.get('set', '').lower() in EXCLUDED_SETS:
+        return True
     type_line = card.get('type_line', '')
     name = card.get('name', '')
     set_type = card.get('set_type', '')
