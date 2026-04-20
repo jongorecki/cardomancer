@@ -29,6 +29,8 @@ scan_logs/
 test_logs/
 debug_crops/
 debug_warps/
+/debug_*.png
+/debug_*.jpg
 diag_*/
 *.log
 sim_debug.log
