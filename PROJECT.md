@@ -8,32 +8,32 @@ A ground-up build: hardware, firmware, and software for automatically sorting a 
 
 ```
     ┌─────────────────┐   ┌─────────────────────┐   ┌──────────────────┐
-    │  Staging tray   │   │  Host PC (Windows)  │   │  Web browser     │
+    │  Source bin     │   │  Host PC (Windows)  │   │  Web browser     │
     │  (input cards)  │   │                     │   │  localhost:5000  │
     └────────┬────────┘   │  ┌──────────────┐   │   └─────────┬────────┘
              │            │  │ web_server.py│◄──┼─────────────┘
              │            │  │ Flask + IO   │   │
    ┌─────────▼───────┐    │  └──────┬───────┘   │
-   │    Gantry X/Y/Z │    │         │           │
-   │   + vacuum head │    │  ┌──────▼───────┐   │
+   │   Gantry X/Z    │    │         │           │
+   │  + vacuum head  │    │  ┌──────▼───────┐   │
    │                 │◄───┼──┤ web_worker   │   │
    │  Marlin FW      │ USB│  │ state machine│   │
    │  (serial G-code)│    │  └──────┬───────┘   │
    └────────┬────────┘    │         │           │
             │             │  ┌──────▼───────┐   │
    ┌────────▼────────┐    │  │ detection +  │   │
-   │   USB camera    │◄───┼──┤ hashing      │   │
-   │  (fixed above   │    │  └──────┬───────┘   │
-   │   scan point)   │    │         │           │
-   └─────────────────┘    │  ┌──────▼───────┐   │
-                          │  │ collection.db│   │
-   ┌─────────────────┐    │  │ enrichment.db│   │
-   │  Numbered bins  │◄───┤  └──────────────┘   │
-   │  + dividers     │    │                     │
+   │ Staging platform│    │  │ hashing      │   │
+   │  + USB camera   │◄───┼──┤              │   │
+   │  (on X carriage)│    │  └──────┬───────┘   │
+   └────────┬────────┘    │         │           │
+            │             │  ┌──────▼───────┐   │
+   ┌────────▼────────┐    │  │ collection.db│   │
+   │  Numbered bins  │◄───┤  │ enrichment.db│   │
+   │  + dividers     │    │  └──────────────┘   │
    └─────────────────┘    └─────────────────────┘
 ```
 
-The **gantry** picks a card from the staging tray, moves it into the camera's view, the host identifies it via perceptual hash, computes a destination bin from the active sort rule, and the gantry drops it there.
+The **gantry** picks a card from the source bin, drops it on the staging platform, moves the X-carriage-mounted camera over the platform, the host identifies the card via perceptual hash, computes a destination bin from the active sort rule, and the gantry picks it back up and drops it there.
 
 ---
 
@@ -51,7 +51,7 @@ The **gantry** picks a card from the staging tray, moves it into the camera's vi
 
 **Z axis** — The donor Anet A8's entire X-axis assembly, reoriented vertically between the top and bottom X-carriages. Two 8 mm rods (~436 mm long, LM8UU bearings, 46 mm center-to-center). GT2 belt loop, motor on top, idler on bottom. Z travel target ~180–200 mm (enough to reach the bottom of a full 500-card bin).
 
-**Y axis** — Not a motion axis in the usual sense. Only X and Z move; the card-handling head reaches over from a fixed Y position.
+**No Y axis.** Only X and Z move. The card-handling head and camera both reach over from a fixed Y offset; the source bin, staging platform, and destination bins are all arranged along a single X line.
 
 Design decision: the original Z design used a rack-and-pinion on the moving carriage; it was rejected for center-of-gravity reasons. Reorienting the A8's X assembly keeps the heavy rods fixed to the frame and makes the moving Z mass just the carriage block + printed arm + suction cup.
 
@@ -78,13 +78,13 @@ Design decision: the original Z design used a rack-and-pinion on the moving carr
 - One spring-loaded vacuum suction cup on the Z carriage. 60 mm tall total, 30 mm cup diameter, 14 mm barb on top, ~5–10 mm of spring compliance.
 - **Two vacuum pumps** on the frame: one for suction (pick-up), one for positive pressure (release / blow-off). Hoses route through the X cable chain to the Z carriage.
 - A contact limit switch on the suction cup assembly lets the machine use G38.2 to lower Z until the cup touches the card, rather than moving blind to a fixed depth.
-- Workflow: pick card from source bin → move to staging platform → camera scans from its fixed position → gantry routes to destination bin → drop.
+- Workflow: pick card from source bin → drop on staging platform → X carriage moves the camera over the platform to capture a scan → gantry picks the card back up and routes to destination bin → drop.
 
 ### Camera
 
 - **Model**: ASUS ROG Eye (gen 1), ~81×17×29 mm.
-- **Current mount**: fixed, pointed at the staging platform.
-- **Planned second mount**: on the X carriage with a friction-pivot (single-bolt adjust) for ArUco marker sweeps across bins.
+- **Mount**: on the **X carriage**, on a friction-pivot (single-bolt adjust). Moves horizontally with the head. This is what makes automatic ArUco-based bin-position calibration possible — the camera sweeps along the bin row and records each marker's X position as it passes underneath.
+- **Scanning**: after the head drops a card on the staging platform, X moves the camera over the platform and the host captures a frame for perceptual-hash identification.
 - Stream native resolution is rotated 90° by the camera manager so the UI receives a portrait-oriented 720×1280 JPEG stream.
 - `CROP_SIZE = 745` px in `config.py` — this matches Scryfall's PNG art width and the whole hash database depends on it. Do not change.
 

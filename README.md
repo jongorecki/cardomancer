@@ -1,6 +1,6 @@
 # Card Sorter
 
-An automated Magic: The Gathering card sorting robot. A Marlin-controlled gantry moves cards from a staging area past a fixed camera, identifies each card by perceptual hash, and drops it into a user-configured bin.
+An automated Magic: The Gathering card sorting robot. A Marlin-controlled X/Z gantry picks cards from a source bin, places each on a staging platform to be scanned, identifies the card by perceptual hash, and drops it into a user-configured destination bin.
 
 Private project. Runs on the workshop PC that drives the hardware.
 
@@ -8,7 +8,7 @@ Private project. Runs on the workshop PC that drives the hardware.
 
 ## What it does
 
-- **Scans** cards one at a time from a staging tray.
+- **Picks** cards one at a time from a source bin with a vacuum suction cup, places each on a staging platform, and captures a scan.
 - **Identifies** each card via perceptual-hash match against a local Scryfall-derived hash database (~30k oracle IDs). No OCR in the primary path — hashing is faster and more reliable.
 - **Sorts** into physical bins based on a user-chosen rule: by color, by price tier, by set, by custom Scryfall query, or by user-authored presets (e.g. "EDH staples", "bulk vs keeper").
 - **Logs** every scan to `collection.db` (SQLite) with timestamp, bin assignment, and enrichment metadata.
@@ -20,8 +20,8 @@ A web UI on `http://localhost:5000` drives the whole thing — live camera feed,
 
 ## Hardware
 
-- Custom Marlin-firmware gantry (X/Y/Z). Endstops LOW, EXTRUDERS 0, `Z_SAFE_HOMING` off, sensorless homing off — see `config.py` for the working pin map.
-- USB camera fixed above the scan position; `CROP_SIZE = 745` matches Scryfall PNG art size (do not change).
+- Custom Marlin-firmware gantry. Two motion axes only: **X** (horizontal, along the bin row) and **Z** (vertical, the vacuum head). No Y axis — the head reaches over from a fixed Y offset. Endstops LOW, EXTRUDERS 0, `Z_SAFE_HOMING` off, sensorless homing off — see `config.py` for the working pin map.
+- USB camera mounted on the **X carriage** (moves with X). Drives ArUco-marker sweeps for automatic bin-position calibration and captures the staging-platform scan. `CROP_SIZE = 745` matches Scryfall PNG art size (do not change).
 - 3D-printed numbered bin dividers for post-sort tracking.
 
 **This repo doesn't include firmware builds or CAD** — it's the host-side software only (motion control, vision, web UI, data).
@@ -91,12 +91,13 @@ Secrets (Moxfield creds, Discord webhook, ntfy topic) go in a local `.env` file 
 
 ## Web UI tabs
 
-After the Phase 0A consolidation, four tabs:
+Layout is still evolving as features land. Current post-Phase-0A (with the 2026-04-19 Calibration revision) is five tabs:
 
-1. **Dashboard** — camera feed, live scan status, hash DB refresh, calibration entry points.
-2. **Sort Session** — pick a preset (every preset shows its per-bin Scryfall query so the mapping is never opaque), start/pause/resume, live per-card info overlay.
-3. **Collection** — Inventory (filterable grid over scanned cards), Locator (find a card by name → which box + divider), Sync (Moxfield deck import → "pull these from the collection").
-4. **Bin Setup** — physical bin configuration (count, labels, box assignments).
+1. **Dashboard** — camera feed, live scan status, hash DB refresh, data-sources modal.
+2. **Bin Setup** — physical bin configuration (count, labels, box assignments).
+3. **Sort Session** — pick a preset (every preset shows its per-bin Scryfall query so the mapping is never opaque), start/pause/resume, live per-card info overlay.
+4. **Calibration** — ArUco-based automatic bin position calibration, offset baselines, before/after overlay on the live feed.
+5. **Collection** — Inventory (filterable grid over scanned cards), Locator (find a card by name → which box + divider), Sync (Moxfield deck import → "pull these from the collection").
 
 Motion Preview is hidden, not deleted.
 
