@@ -1,16 +1,20 @@
 # web_enrichment/edhtop16.py
 # ---------------------------------------------------------------------------
-# EDHTop16Source: pulls cEDH staples from edhtop16.com/api/graphql.
+# EDHTop16Source: pulls cEDH staples from edhtop16.com/api/graphql using a
+# 6-month rolling window of actual tournament top-16 decklists.
 #
-# The `staples` GraphQL query returns a flat list of cards that appear in
-# the cEDH meta (based on top-16 tournament finishes over the past year).
-# Each card has `oracleId` and `playRateLastYear` (0–1 float).
+# Approach (2026-04-20):
+#   1. Query tournaments(filters: {timePeriod: SIX_MONTHS, minSize: 16})
+#      paginated in batches of 50. Cap at MAX_TOURNAMENTS tournaments.
+#   2. For each tournament, fetch top-16 entries (maxStanding: 16) with their
+#      maindeck (oracleId + type).
+#   3. For each card, count how many distinct top-16 decks included it.
+#   4. play_rate = deck_count / total_top16_entries; cards above
+#      CEDH_THRESHOLD (15%) → staple:cedh tier.
+#   5. Basic lands excluded by type-line check.
 #
-# Threshold: playRateLastYear >= 0.15 → staple:cedh tier.
-# Basic lands are explicitly excluded by type check.
-#
-# The endpoint requires no authentication. It is a public GraphQL API
-# intended for external query (edhtop16.com runs it for their own UI).
+# Fallback: if tournament deck data returns empty, falls back to the
+# `staples` query which provides playRateLastYear (annual).
 # ---------------------------------------------------------------------------
 
 from __future__ import annotations
@@ -28,21 +32,41 @@ from web_enrichment.base import EmitFn, EnrichmentSource, RefreshResult
 logger = logging.getLogger(__name__)
 
 ENDPOINT = "https://edhtop16.com/api/graphql"
-TIMEOUT_S = 45
+TIMEOUT_S = 60
 USER_AGENT = "card-sorter-enrichment/0.1 (+https://example.invalid)"
 
-# Threshold for cedh staple tier (15% appearance in top-16 decklists)
-CEDH_THRESHOLD = 0.15
+CEDH_THRESHOLD = 0.15        # 15% appearance rate → staple:cedh
+MAX_TOURNAMENTS = 500        # cap on tournaments fetched per refresh
+MIN_TOURNAMENT_SIZE = 16     # minSize filter for tournaments query
+TOP_CUT = 16                 # maxStanding for entries per tournament
+PAGE_SIZE = 50               # tournaments per GraphQL page
 
-# Card type strings that indicate basic lands — excluded from staples.
-_BASIC_LAND_TYPES = frozenset({
-    "Basic Land", "Basic Snow Land",
-    "Basic Land \u2014 Plains", "Basic Land \u2014 Island",
-    "Basic Land \u2014 Swamp", "Basic Land \u2014 Mountain",
-    "Basic Land \u2014 Forest",
-})
+SIX_MONTH_QUERY = """
+query ($after: String) {
+  tournaments(
+    first: %(page_size)d,
+    after: $after,
+    filters: {timePeriod: SIX_MONTHS, minSize: %(min_size)d}
+  ) {
+    edges {
+      node {
+        TID
+        entries(maxStanding: %(top_cut)d) {
+          maindeck {
+            oracleId
+            type
+          }
+        }
+      }
+    }
+    pageInfo { hasNextPage endCursor }
+  }
+}
+""" % {"page_size": PAGE_SIZE, "min_size": MIN_TOURNAMENT_SIZE,
+       "top_cut": TOP_CUT}
 
-STAPLES_QUERY = """
+# Fallback: annual staples when tournament data is unavailable
+STAPLES_FALLBACK_QUERY = """
 query {
   staples {
     name
@@ -56,7 +80,7 @@ query {
 
 
 class EDHTop16Source(EnrichmentSource):
-    """Pull cEDH staple data from edhtop16.com."""
+    """Pull cEDH staples from edhtop16.com using 6-month tournament data."""
 
     name = "edhtop16"
 
@@ -78,77 +102,88 @@ class EDHTop16Source(EnrichmentSource):
             return RefreshResult(source=self.name, success=False,
                                  duration_ms=_ms(start), errors=errors)
 
-        _emit_progress(emit, 0, 3, "Querying edhtop16 staples …")
+        _emit_progress(emit, 0, 4,
+                       "Fetching 6-month tournament decklists …")
 
         try:
-            staples = self._fetch_staples()
+            card_counts, total_entries = self._fetch_tournament_decks(
+                emit, warnings)
         except Exception as exc:
-            msg = f"GraphQL fetch failed: {type(exc).__name__}: {exc}"
-            logger.exception("edhtop16 fetch error")
+            msg = f"Tournament fetch failed: {type(exc).__name__}: {exc}"
+            logger.exception("edhtop16 tournament fetch error")
             errors.append(msg)
             _record(self.name, False, msg)
             return RefreshResult(source=self.name, success=False,
                                  duration_ms=_ms(start), errors=errors)
 
-        _emit_progress(emit, 1, 3,
-                       f"Processing {len(staples)} staple candidates …")
+        # Fallback to annual staples if tournament data came back empty
+        if not card_counts or total_entries == 0:
+            warnings.append(
+                "Tournament deck data empty; falling back to playRateLastYear.")
+            try:
+                staples = self._fetch_staples()
+                card_counts = {}
+                total_entries = 1  # denominator placeholder
+                for s in staples:
+                    oid = s.get("oracleId")
+                    rate = s.get("playRateLastYear") or 0.0
+                    if oid and rate >= CEDH_THRESHOLD:
+                        # Store synthetic count so downstream math works
+                        card_counts[oid] = int(rate * 10000)
+                total_entries = 10000
+            except Exception as exc2:
+                msg = f"Fallback staples fetch failed: {exc2}"
+                errors.append(msg)
+                _record(self.name, False, msg)
+                return RefreshResult(source=self.name, success=False,
+                                     duration_ms=_ms(start), errors=errors)
+
+        _emit_progress(emit, 2, 4,
+                       f"Computing staples from {total_entries} decks …")
 
         ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
         rows: list[dict] = []
-        skipped_land = 0
         skipped_threshold = 0
 
-        for card in staples:
-            oracle_id = card.get("oracleId")
-            if not oracle_id:
-                continue
-
-            # Exclude basic lands
-            card_type = (card.get("type") or "").strip()
-            if _is_basic_land(card_type):
-                skipped_land += 1
-                continue
-
-            rate = card.get("playRateLastYear") or 0.0
+        for oracle_id, count in card_counts.items():
+            rate = count / max(1, total_entries)
             if rate < CEDH_THRESHOLD:
                 skipped_threshold += 1
                 continue
-
             rows.append({
                 "oracle_id": oracle_id,
                 "tier": "cedh",
                 "source": "edhtop16",
-                "score": float(rate),
+                "score": round(rate, 6),
                 "archetypes_json": None,
                 "last_updated": ts,
             })
 
-        if skipped_land:
-            warnings.append(
-                f"Excluded {skipped_land} basic lands from cEDH staples.")
         if skipped_threshold:
             warnings.append(
-                f"Excluded {skipped_threshold} cards below {CEDH_THRESHOLD:.0%} threshold.")
+                f"Excluded {skipped_threshold} cards below "
+                f"{CEDH_THRESHOLD:.0%} threshold.")
 
-        _emit_progress(emit, 2, 3,
+        _emit_progress(emit, 3, 4,
                        f"Writing {len(rows)} cEDH staples to DB …")
 
         conn = enrichment_db.get_connection()
         rows_changed = 0
+        coverage_pct = 0.0
         try:
             rows_changed = self._write(conn, rows)
-            total = conn.execute(
+            total_stored = conn.execute(
                 "SELECT COUNT(*) FROM staples WHERE source='edhtop16'"
             ).fetchone()[0]
-            coverage_pct = float(total) / max(1, len(staples)) * 100
+            coverage_pct = float(total_stored) / max(1, len(rows)) * 100
             enrichment_db.record_sync_attempt(
                 conn, self.name, success=True,
                 coverage_pct=coverage_pct,
-                version_hash=str(len(staples)),
+                version_hash=f"{len(rows)}:{total_entries}",
             )
             enrichment_db.record_coverage(
                 conn, self.name, key_name="cedh_staples",
-                expected=len(rows), actual=total,
+                expected=len(rows), actual=total_stored,
             )
         except Exception as exc:
             msg = f"DB write error: {type(exc).__name__}: {exc}"
@@ -160,8 +195,9 @@ class EDHTop16Source(EnrichmentSource):
         finally:
             conn.close()
 
-        _emit_progress(emit, 3, 3,
-                       f"Done. {rows_changed} cEDH staple rows written.")
+        _emit_progress(emit, 4, 4,
+                       f"Done. {rows_changed} cEDH staple rows, "
+                       f"{total_entries} decks sampled.")
         return RefreshResult(
             source=self.name,
             success=True,
@@ -179,7 +215,8 @@ class EDHTop16Source(EnrichmentSource):
                 (self.name,)
             ).fetchone()
             cedh_count = conn.execute(
-                "SELECT COUNT(*) FROM staples WHERE source='edhtop16' AND tier='cedh'"
+                "SELECT COUNT(*) FROM staples "
+                "WHERE source='edhtop16' AND tier='cedh'"
             ).fetchone()[0]
             return {
                 "source": self.name,
@@ -191,11 +228,102 @@ class EDHTop16Source(EnrichmentSource):
 
     # -- Internals -----------------------------------------------------------
 
+    def _fetch_tournament_decks(
+        self,
+        emit: Optional[EmitFn],
+        warnings: list[str],
+    ) -> tuple[dict[str, int], int]:
+        """Paginate 6-month tournament top-16 decklists.
+
+        Returns ({oracle_id: deck_count}, total_entries) where deck_count is
+        the number of distinct top-16 decks that included each card.
+        """
+        card_counts: dict[str, int] = {}
+        total_entries = 0
+        processed = 0
+        cursor: Optional[str] = None
+
+        with httpx.Client(
+            timeout=TIMEOUT_S,
+            headers={
+                "User-Agent": USER_AGENT,
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+        ) as client:
+            while processed < MAX_TOURNAMENTS:
+                variables: dict = {}
+                if cursor:
+                    variables["after"] = cursor
+
+                try:
+                    r = client.post(
+                        ENDPOINT,
+                        json={"query": SIX_MONTH_QUERY,
+                              "variables": variables},
+                    )
+                    r.raise_for_status()
+                    data = r.json()
+                except Exception as exc:
+                    warnings.append(
+                        f"Tournament page fetch error (processed={processed}): {exc}")
+                    break
+
+                if "errors" in data:
+                    warnings.append(
+                        f"GraphQL errors: {data['errors'][:1]}")
+                    break
+
+                conn_data = (data.get("data") or {}).get("tournaments", {})
+                edges = conn_data.get("edges") or []
+
+                for edge in edges:
+                    if processed >= MAX_TOURNAMENTS:
+                        break
+                    node = edge.get("node", {})
+                    processed += 1
+                    entries = node.get("entries") or []
+
+                    for entry in entries:
+                        maindeck = entry.get("maindeck") or []
+                        if not maindeck:
+                            continue
+                        total_entries += 1
+                        seen_in_deck: set[str] = set()
+                        for card in maindeck:
+                            oid = card.get("oracleId")
+                            type_line = card.get("type") or ""
+                            if not oid:
+                                continue
+                            if _is_basic_land(type_line):
+                                continue
+                            if oid not in seen_in_deck:
+                                seen_in_deck.add(oid)
+                                card_counts[oid] = card_counts.get(oid, 0) + 1
+
+                if processed % 100 == 0 and processed > 0:
+                    _emit_progress(
+                        emit, 1, 4,
+                        f"Processed {processed} tournaments, "
+                        f"{total_entries} top-16 decks …")
+
+                page_info = conn_data.get("pageInfo", {})
+                if not page_info.get("hasNextPage") or not edges:
+                    break
+                cursor = page_info.get("endCursor")
+
+        logger.info(
+            "edhtop16: %d tournaments, %d top-16 decks, %d unique cards",
+            processed, total_entries, len(card_counts),
+        )
+        return card_counts, total_entries
+
     @staticmethod
     def _fetch_staples() -> list[dict]:
+        """Fallback: annual staples from the edhtop16 `staples` query."""
         r = httpx.post(
             ENDPOINT,
-            json={"query": STAPLES_QUERY},
+            json={"query": STAPLES_FALLBACK_QUERY},
             timeout=TIMEOUT_S,
             headers={
                 "User-Agent": USER_AGENT,
