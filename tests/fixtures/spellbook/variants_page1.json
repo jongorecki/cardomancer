@@ -1,0 +1,667 @@
+{
+  "count": null,
+  "next": "https://backend.commanderspellbook.com/variants/?limit=5&offset=5",
+  "previous": null,
+  "results": [
+    {
+      "id": "513-5034--46",
+      "of": [
+        {
+          "id": 26516
+        }
+      ],
+      "uses": [
+        {
+          "card": {
+            "id": 513,
+            "name": "Hullbreaker Horror",
+            "spoiler": false,
+            "oracleId": "d4a84e78-d9b9-4c67-8a4b-4329e65f0f15",
+            "typeLine": "Creature \u2014 Kraken Horror",
+            "imageUriBackPng": null,
+            "imageUriFrontPng": "https://cards.scryfall.io/png/front/1/3/137acb70-a1fd-4ea9-a5d9-f4b438eb5e82.png?1736467749",
+            "imageUriBackLarge": null,
+            "imageUriBackSmall": null,
+            "imageUriBackNormal": null,
+            "imageUriFrontLarge": "https://cards.scryfall.io/large/front/1/3/137acb70-a1fd-4ea9-a5d9-f4b438eb5e82.jpg?1736467749",
+            "imageUriFrontSmall": "https://cards.scryfall.io/small/front/1/3/137acb70-a1fd-4ea9-a5d9-f4b438eb5e82.jpg?1736467749",
+            "layoutRotationFront": null,
+            "imageUriFrontNormal": "https://cards.scryfall.io/normal/front/1/3/137acb70-a1fd-4ea9-a5d9-f4b438eb5e82.jpg?1736467749",
+            "imageUriBackArtCrop": null,
+            "imageUriFrontArtCrop": "https://cards.scryfall.io/art_crop/front/1/3/137acb70-a1fd-4ea9-a5d9-f4b438eb5e82.jpg?1736467749"
+          },
+          "quantity": 1,
+          "zoneLocations": [
+            "B"
+          ],
+          "exileCardState": "",
+          "mustBeCommander": false,
+          "libraryCardState": "",
+          "graveyardCardState": "",
+          "battlefieldCardState": ""
+        },
+        {
+          "card": {
+            "id": 5034,
+            "name": "Sol Ring",
+            "spoiler": false,
+            "oracleId": "6ad8011d-3471-4369-9d68-b264cc027487",
+            "typeLine": "Artifact",
+            "imageUriBackPng": null,
+            "imageUriFrontPng": "https://cards.scryfall.io/png/front/8/7/870ec754-a76c-40ea-9b81-81b3dca1f62c.png?1775940518",
+            "imageUriBackLarge": null,
+            "imageUriBackSmall": null,
+            "imageUriBackNormal": null,
+            "imageUriFrontLarge": "https://cards.scryfall.io/large/front/8/7/870ec754-a76c-40ea-9b81-81b3dca1f62c.jpg?1775940518",
+            "imageUriFrontSmall": "https://cards.scryfall.io/small/front/8/7/870ec754-a76c-40ea-9b81-81b3dca1f62c.jpg?1775940518",
+            "layoutRotationFront": null,
+            "imageUriFrontNormal": "https://cards.scryfall.io/normal/front/8/7/870ec754-a76c-40ea-9b81-81b3dca1f62c.jpg?1775940518",
+            "imageUriBackArtCrop": null,
+            "imageUriFrontArtCrop": "https://cards.scryfall.io/art_crop/front/8/7/870ec754-a76c-40ea-9b81-81b3dca1f62c.jpg?1775940518"
+          },
+          "quantity": 1,
+          "zoneLocations": [
+            "B"
+          ],
+          "exileCardState": "",
+          "mustBeCommander": false,
+          "libraryCardState": "",
+          "graveyardCardState": "",
+          "battlefieldCardState": ""
+        }
+      ],
+      "notes": "",
+      "prices": {
+        "tcgplayer": "7.09",
+        "cardmarket": "3.64",
+        "cardkingdom": "9.78"
+      },
+      "status": "OK",
+      "spoiler": false,
+      "identity": "U",
+      "includes": [
+        {
+          "id": 26301
+        },
+        {
+          "id": 26516
+        }
+      ],
+      "produces": [
+        {
+          "feature": {
+            "id": 11,
+            "name": "Infinite colorless mana",
+            "status": "S",
+            "uncountable": true
+          },
+          "quantity": 1
+        },
+        {
+          "feature": {
+            "id": 17,
+            "name": "Infinite storm count",
+            "status": "H",
+            "uncountable": true
+          },
+          "quantity": 1
+        }
+      ],
+      "requires": [
+        {
+          "quantity": 1,
+          "template": {
+            "id": 46,
+            "name": "Permanent that can be cast using {C}",
+            "scryfallApi": "https://api.scryfall.com/cards/search?q=%28mv%3C%3D1+%28mana%3D%7B0%7D+or+mana%3D%7B1%7D+or+mana%3D%7BC%7D%29+is%3Apermanent%29+legal%3Acommander",
+            "scryfallQuery": "mv<=1 (mana={0} or mana={1} or mana={C}) is:permanent"
+          },
+          "zoneLocations": [
+            "H"
+          ],
+          "exileCardState": "",
+          "mustBeCommander": false,
+          "libraryCardState": "",
+          "graveyardCardState": "",
+          "battlefieldCardState": ""
+        }
+      ],
+      "legalities": {
+        "brawl": false,
+        "predh": false,
+        "legacy": false,
+        "modern": false,
+        "pauper": false,
+        "pioneer": false,
+        "vintage": true,
+        "standard": false,
+        "commander": true,
+        "premodern": false,
+        "oathbreaker": false,
+        "pauperCommander": false,
+        "pauperCommanderMain": false
+      },
+      "popularity": 302510,
+      "bracketTag": "E",
+      "description": "Activate Sol Ring by tapping it, adding {C} {C}.\nCast the permanent that can be cast using {C} by paying its mana cost.\nHullbreaker Horror triggers, returning Sol Ring from the battlefield to your hand.\nCast Sol Ring by paying {1}. \nHullbreaker Horror triggers, returning the permanent cast in step 2 from the battlefield to your hand.\nRepeat.\nIf the permanent can be cast by paying {0}, this combo nets infinite colorless mana.",
+      "manaNeeded": "",
+      "variantCount": 1,
+      "manaValueNeeded": 0,
+      "easyPrerequisites": "",
+      "notablePrerequisites": ""
+    },
+    {
+      "id": "742-1295",
+      "of": [
+        {
+          "id": 355
+        }
+      ],
+      "uses": [
+        {
+          "card": {
+            "id": 742,
+            "name": "Demonic Consultation",
+            "spoiler": false,
+            "oracleId": "9a1412db-45ad-46ea-8f12-a85d203113d8",
+            "typeLine": "Instant",
+            "imageUriBackPng": null,
+            "imageUriFrontPng": "https://cards.scryfall.io/png/front/1/d/1d779f19-3068-4976-b96b-8f93d156900b.png?1610146869",
+            "imageUriBackLarge": null,
+            "imageUriBackSmall": null,
+            "imageUriBackNormal": null,
+            "imageUriFrontLarge": "https://cards.scryfall.io/large/front/1/d/1d779f19-3068-4976-b96b-8f93d156900b.jpg?1610146869",
+            "imageUriFrontSmall": "https://cards.scryfall.io/small/front/1/d/1d779f19-3068-4976-b96b-8f93d156900b.jpg?1610146869",
+            "layoutRotationFront": null,
+            "imageUriFrontNormal": "https://cards.scryfall.io/normal/front/1/d/1d779f19-3068-4976-b96b-8f93d156900b.jpg?1610146869",
+            "imageUriBackArtCrop": null,
+            "imageUriFrontArtCrop": "https://cards.scryfall.io/art_crop/front/1/d/1d779f19-3068-4976-b96b-8f93d156900b.jpg?1610146869"
+          },
+          "quantity": 1,
+          "zoneLocations": [
+            "H"
+          ],
+          "exileCardState": "",
+          "mustBeCommander": false,
+          "libraryCardState": "",
+          "graveyardCardState": "",
+          "battlefieldCardState": ""
+        },
+        {
+          "card": {
+            "id": 1295,
+            "name": "Thassa's Oracle",
+            "spoiler": false,
+            "oracleId": "1de1b591-a73f-4974-b507-8c63e07a0868",
+            "typeLine": "Creature \u2014 Merfolk Wizard",
+            "imageUriBackPng": null,
+            "imageUriFrontPng": "https://cards.scryfall.io/png/front/7/2/726e8b29-13e9-4138-b6a9-d2a0d8188d1c.png?1680582212",
+            "imageUriBackLarge": null,
+            "imageUriBackSmall": null,
+            "imageUriBackNormal": null,
+            "imageUriFrontLarge": "https://cards.scryfall.io/large/front/7/2/726e8b29-13e9-4138-b6a9-d2a0d8188d1c.jpg?1680582212",
+            "imageUriFrontSmall": "https://cards.scryfall.io/small/front/7/2/726e8b29-13e9-4138-b6a9-d2a0d8188d1c.jpg?1680582212",
+            "layoutRotationFront": null,
+            "imageUriFrontNormal": "https://cards.scryfall.io/normal/front/7/2/726e8b29-13e9-4138-b6a9-d2a0d8188d1c.jpg?1680582212",
+            "imageUriBackArtCrop": null,
+            "imageUriFrontArtCrop": "https://cards.scryfall.io/art_crop/front/7/2/726e8b29-13e9-4138-b6a9-d2a0d8188d1c.jpg?1680582212"
+          },
+          "quantity": 1,
+          "zoneLocations": [
+            "H"
+          ],
+          "exileCardState": "",
+          "mustBeCommander": false,
+          "libraryCardState": "",
+          "graveyardCardState": "",
+          "battlefieldCardState": ""
+        }
+      ],
+      "notes": "",
+      "prices": {
+        "tcgplayer": "32.51",
+        "cardmarket": "20.98",
+        "cardkingdom": "37.98"
+      },
+      "status": "OK",
+      "spoiler": false,
+      "identity": "UB",
+      "includes": [
+        {
+          "id": 355
+        }
+      ],
+      "produces": [
+        {
+          "feature": {
+            "id": 88,
+            "name": "Exile your library",
+            "status": "H",
+            "uncountable": true
+          },
+          "quantity": 1
+        },
+        {
+          "feature": {
+            "id": 2,
+            "name": "Win the game",
+            "status": "S",
+            "uncountable": true
+          },
+          "quantity": 1
+        }
+      ],
+      "requires": [],
+      "legalities": {
+        "brawl": false,
+        "predh": false,
+        "legacy": false,
+        "modern": false,
+        "pauper": false,
+        "pioneer": false,
+        "vintage": true,
+        "standard": false,
+        "commander": true,
+        "premodern": false,
+        "oathbreaker": true,
+        "pauperCommander": false,
+        "pauperCommanderMain": false
+      },
+      "popularity": 137916,
+      "bracketTag": "R",
+      "description": "Cast Demonic Consultation by paying {B}, naming Thassa's Oracle and thus exiling your library due to you not having a card named Thassa's Oracle in your library.\nCast Thassa's Oracle by paying {U}{U}.\nThassa's Oracle enters the battlefield, causing you to win the game.",
+      "manaNeeded": "{U}{U}{B}",
+      "variantCount": 1,
+      "manaValueNeeded": 3,
+      "easyPrerequisites": "",
+      "notablePrerequisites": ""
+    },
+    {
+      "id": "690-3966",
+      "of": [
+        {
+          "id": 539
+        }
+      ],
+      "uses": [
+        {
+          "card": {
+            "id": 3966,
+            "name": "Exquisite Blood",
+            "spoiler": false,
+            "oracleId": "8f933fae-6c0c-42d7-a817-14760d8285cd",
+            "typeLine": "Enchantment",
+            "imageUriBackPng": null,
+            "imageUriFrontPng": "https://cards.scryfall.io/png/front/0/e/0e8ccfa7-4178-476a-a155-0ca1c98556c9.png?1698988246",
+            "imageUriBackLarge": null,
+            "imageUriBackSmall": null,
+            "imageUriBackNormal": null,
+            "imageUriFrontLarge": "https://cards.scryfall.io/large/front/0/e/0e8ccfa7-4178-476a-a155-0ca1c98556c9.jpg?1698988246",
+            "imageUriFrontSmall": "https://cards.scryfall.io/small/front/0/e/0e8ccfa7-4178-476a-a155-0ca1c98556c9.jpg?1698988246",
+            "layoutRotationFront": null,
+            "imageUriFrontNormal": "https://cards.scryfall.io/normal/front/0/e/0e8ccfa7-4178-476a-a155-0ca1c98556c9.jpg?1698988246",
+            "imageUriBackArtCrop": null,
+            "imageUriFrontArtCrop": "https://cards.scryfall.io/art_crop/front/0/e/0e8ccfa7-4178-476a-a155-0ca1c98556c9.jpg?1698988246"
+          },
+          "quantity": 1,
+          "zoneLocations": [
+            "B"
+          ],
+          "exileCardState": "",
+          "mustBeCommander": false,
+          "libraryCardState": "",
+          "graveyardCardState": "",
+          "battlefieldCardState": ""
+        },
+        {
+          "card": {
+            "id": 690,
+            "name": "Sanguine Bond",
+            "spoiler": false,
+            "oracleId": "73089a39-a2f6-4aa2-a058-e6551475153d",
+            "typeLine": "Enchantment",
+            "imageUriBackPng": null,
+            "imageUriFrontPng": "https://cards.scryfall.io/png/front/a/d/ad4de9f1-7a39-45af-828e-c59234d9e9b9.png?1625193373",
+            "imageUriBackLarge": null,
+            "imageUriBackSmall": null,
+            "imageUriBackNormal": null,
+            "imageUriFrontLarge": "https://cards.scryfall.io/large/front/a/d/ad4de9f1-7a39-45af-828e-c59234d9e9b9.jpg?1625193373",
+            "imageUriFrontSmall": "https://cards.scryfall.io/small/front/a/d/ad4de9f1-7a39-45af-828e-c59234d9e9b9.jpg?1625193373",
+            "layoutRotationFront": null,
+            "imageUriFrontNormal": "https://cards.scryfall.io/normal/front/a/d/ad4de9f1-7a39-45af-828e-c59234d9e9b9.jpg?1625193373",
+            "imageUriBackArtCrop": null,
+            "imageUriFrontArtCrop": "https://cards.scryfall.io/art_crop/front/a/d/ad4de9f1-7a39-45af-828e-c59234d9e9b9.jpg?1625193373"
+          },
+          "quantity": 1,
+          "zoneLocations": [
+            "B"
+          ],
+          "exileCardState": "",
+          "mustBeCommander": false,
+          "libraryCardState": "",
+          "graveyardCardState": "",
+          "battlefieldCardState": ""
+        }
+      ],
+      "notes": "",
+      "prices": {
+        "tcgplayer": "35.91",
+        "cardmarket": "26.36",
+        "cardkingdom": "43.48"
+      },
+      "status": "OK",
+      "spoiler": false,
+      "identity": "B",
+      "includes": [
+        {
+          "id": 539
+        }
+      ],
+      "produces": [
+        {
+          "feature": {
+            "id": 14,
+            "name": "Infinite lifegain triggers",
+            "status": "C",
+            "uncountable": true
+          },
+          "quantity": 1
+        },
+        {
+          "feature": {
+            "id": 26,
+            "name": "Infinite lifeloss",
+            "status": "S",
+            "uncountable": true
+          },
+          "quantity": 1
+        },
+        {
+          "feature": {
+            "id": 15,
+            "name": "Infinite lifegain",
+            "status": "S",
+            "uncountable": true
+          },
+          "quantity": 1
+        }
+      ],
+      "requires": [],
+      "legalities": {
+        "brawl": true,
+        "predh": false,
+        "legacy": true,
+        "modern": true,
+        "pauper": false,
+        "pioneer": false,
+        "vintage": true,
+        "standard": false,
+        "commander": true,
+        "premodern": false,
+        "oathbreaker": true,
+        "pauperCommander": false,
+        "pauperCommanderMain": false
+      },
+      "popularity": 131032,
+      "bracketTag": "S",
+      "description": "Gain life.\nSanguine Bond triggers, causing an opponent to lose 1 life.\nExquisite Blood triggers, causing you to gain 1 life.\nRepeat from step 2.",
+      "manaNeeded": "",
+      "variantCount": 24,
+      "manaValueNeeded": 0,
+      "easyPrerequisites": "",
+      "notablePrerequisites": "You have a way to gain life."
+    },
+    {
+      "id": "1295-3093",
+      "of": [
+        {
+          "id": 1776
+        }
+      ],
+      "uses": [
+        {
+          "card": {
+            "id": 3093,
+            "name": "Tainted Pact",
+            "spoiler": false,
+            "oracleId": "1a85ba2b-ae10-4917-954a-7709b75a9740",
+            "typeLine": "Instant",
+            "imageUriBackPng": null,
+            "imageUriFrontPng": "https://cards.scryfall.io/png/front/c/5/c513f51b-a0db-4c08-8acc-1e91060b93b7.png?1628801908",
+            "imageUriBackLarge": null,
+            "imageUriBackSmall": null,
+            "imageUriBackNormal": null,
+            "imageUriFrontLarge": "https://cards.scryfall.io/large/front/c/5/c513f51b-a0db-4c08-8acc-1e91060b93b7.jpg?1628801908",
+            "imageUriFrontSmall": "https://cards.scryfall.io/small/front/c/5/c513f51b-a0db-4c08-8acc-1e91060b93b7.jpg?1628801908",
+            "layoutRotationFront": null,
+            "imageUriFrontNormal": "https://cards.scryfall.io/normal/front/c/5/c513f51b-a0db-4c08-8acc-1e91060b93b7.jpg?1628801908",
+            "imageUriBackArtCrop": null,
+            "imageUriFrontArtCrop": "https://cards.scryfall.io/art_crop/front/c/5/c513f51b-a0db-4c08-8acc-1e91060b93b7.jpg?1628801908"
+          },
+          "quantity": 1,
+          "zoneLocations": [
+            "H"
+          ],
+          "exileCardState": "",
+          "mustBeCommander": false,
+          "libraryCardState": "",
+          "graveyardCardState": "",
+          "battlefieldCardState": ""
+        },
+        {
+          "card": {
+            "id": 1295,
+            "name": "Thassa's Oracle",
+            "spoiler": false,
+            "oracleId": "1de1b591-a73f-4974-b507-8c63e07a0868",
+            "typeLine": "Creature \u2014 Merfolk Wizard",
+            "imageUriBackPng": null,
+            "imageUriFrontPng": "https://cards.scryfall.io/png/front/7/2/726e8b29-13e9-4138-b6a9-d2a0d8188d1c.png?1680582212",
+            "imageUriBackLarge": null,
+            "imageUriBackSmall": null,
+            "imageUriBackNormal": null,
+            "imageUriFrontLarge": "https://cards.scryfall.io/large/front/7/2/726e8b29-13e9-4138-b6a9-d2a0d8188d1c.jpg?1680582212",
+            "imageUriFrontSmall": "https://cards.scryfall.io/small/front/7/2/726e8b29-13e9-4138-b6a9-d2a0d8188d1c.jpg?1680582212",
+            "layoutRotationFront": null,
+            "imageUriFrontNormal": "https://cards.scryfall.io/normal/front/7/2/726e8b29-13e9-4138-b6a9-d2a0d8188d1c.jpg?1680582212",
+            "imageUriBackArtCrop": null,
+            "imageUriFrontArtCrop": "https://cards.scryfall.io/art_crop/front/7/2/726e8b29-13e9-4138-b6a9-d2a0d8188d1c.jpg?1680582212"
+          },
+          "quantity": 1,
+          "zoneLocations": [
+            "H"
+          ],
+          "exileCardState": "",
+          "mustBeCommander": false,
+          "libraryCardState": "",
+          "graveyardCardState": "",
+          "battlefieldCardState": ""
+        }
+      ],
+      "notes": "",
+      "prices": {
+        "tcgplayer": "58.27",
+        "cardmarket": "28.30",
+        "cardkingdom": "64.98"
+      },
+      "status": "OK",
+      "spoiler": false,
+      "identity": "UB",
+      "includes": [
+        {
+          "id": 1776
+        }
+      ],
+      "produces": [
+        {
+          "feature": {
+            "id": 2,
+            "name": "Win the game",
+            "status": "S",
+            "uncountable": true
+          },
+          "quantity": 1
+        }
+      ],
+      "requires": [],
+      "legalities": {
+        "brawl": false,
+        "predh": false,
+        "legacy": true,
+        "modern": false,
+        "pauper": false,
+        "pioneer": false,
+        "vintage": true,
+        "standard": false,
+        "commander": true,
+        "premodern": false,
+        "oathbreaker": true,
+        "pauperCommander": false,
+        "pauperCommanderMain": false
+      },
+      "popularity": 123582,
+      "bracketTag": "R",
+      "description": "Cast Tainted Pact by paying {1}{B}, exiling your library.\nCast Thassa's Oracle by paying {U}{U}.\nThassa's Oracle enters the battlefield, causing you to win the game.",
+      "manaNeeded": "{1}{U}{U}{B}",
+      "variantCount": 3,
+      "manaValueNeeded": 4,
+      "easyPrerequisites": "No two cards in library share a name.",
+      "notablePrerequisites": ""
+    },
+    {
+      "id": "314-3966",
+      "of": [
+        {
+          "id": 539
+        }
+      ],
+      "uses": [
+        {
+          "card": {
+            "id": 3966,
+            "name": "Exquisite Blood",
+            "spoiler": false,
+            "oracleId": "8f933fae-6c0c-42d7-a817-14760d8285cd",
+            "typeLine": "Enchantment",
+            "imageUriBackPng": null,
+            "imageUriFrontPng": "https://cards.scryfall.io/png/front/0/e/0e8ccfa7-4178-476a-a155-0ca1c98556c9.png?1698988246",
+            "imageUriBackLarge": null,
+            "imageUriBackSmall": null,
+            "imageUriBackNormal": null,
+            "imageUriFrontLarge": "https://cards.scryfall.io/large/front/0/e/0e8ccfa7-4178-476a-a155-0ca1c98556c9.jpg?1698988246",
+            "imageUriFrontSmall": "https://cards.scryfall.io/small/front/0/e/0e8ccfa7-4178-476a-a155-0ca1c98556c9.jpg?1698988246",
+            "layoutRotationFront": null,
+            "imageUriFrontNormal": "https://cards.scryfall.io/normal/front/0/e/0e8ccfa7-4178-476a-a155-0ca1c98556c9.jpg?1698988246",
+            "imageUriBackArtCrop": null,
+            "imageUriFrontArtCrop": "https://cards.scryfall.io/art_crop/front/0/e/0e8ccfa7-4178-476a-a155-0ca1c98556c9.jpg?1698988246"
+          },
+          "quantity": 1,
+          "zoneLocations": [
+            "B"
+          ],
+          "exileCardState": "",
+          "mustBeCommander": false,
+          "libraryCardState": "",
+          "graveyardCardState": "",
+          "battlefieldCardState": ""
+        },
+        {
+          "card": {
+            "id": 314,
+            "name": "Vito, Thorn of the Dusk Rose",
+            "spoiler": false,
+            "oracleId": "7336a541-3ae9-4ab2-acb8-f574c0a5b3a9",
+            "typeLine": "Legendary Creature \u2014 Vampire Cleric",
+            "imageUriBackPng": null,
+            "imageUriFrontPng": "https://cards.scryfall.io/png/front/0/f/0fe79ee4-c3f3-4a6b-a967-203ca3b70ee5.png?1594736442",
+            "imageUriBackLarge": null,
+            "imageUriBackSmall": null,
+            "imageUriBackNormal": null,
+            "imageUriFrontLarge": "https://cards.scryfall.io/large/front/0/f/0fe79ee4-c3f3-4a6b-a967-203ca3b70ee5.jpg?1594736442",
+            "imageUriFrontSmall": "https://cards.scryfall.io/small/front/0/f/0fe79ee4-c3f3-4a6b-a967-203ca3b70ee5.jpg?1594736442",
+            "layoutRotationFront": null,
+            "imageUriFrontNormal": "https://cards.scryfall.io/normal/front/0/f/0fe79ee4-c3f3-4a6b-a967-203ca3b70ee5.jpg?1594736442",
+            "imageUriBackArtCrop": null,
+            "imageUriFrontArtCrop": "https://cards.scryfall.io/art_crop/front/0/f/0fe79ee4-c3f3-4a6b-a967-203ca3b70ee5.jpg?1594736442"
+          },
+          "quantity": 1,
+          "zoneLocations": [
+            "B"
+          ],
+          "exileCardState": "",
+          "mustBeCommander": false,
+          "libraryCardState": "",
+          "graveyardCardState": "",
+          "battlefieldCardState": ""
+        }
+      ],
+      "notes": "",
+      "prices": {
+        "tcgplayer": "39.07",
+        "cardmarket": "30.89",
+        "cardkingdom": "50.98"
+      },
+      "status": "OK",
+      "spoiler": false,
+      "identity": "B",
+      "includes": [
+        {
+          "id": 539
+        }
+      ],
+      "produces": [
+        {
+          "feature": {
+            "id": 14,
+            "name": "Infinite lifegain triggers",
+            "status": "C",
+            "uncountable": true
+          },
+          "quantity": 1
+        },
+        {
+          "feature": {
+            "id": 26,
+            "name": "Infinite lifeloss",
+            "status": "S",
+            "uncountable": true
+          },
+          "quantity": 1
+        },
+        {
+          "feature": {
+            "id": 15,
+            "name": "Infinite lifegain",
+            "status": "S",
+            "uncountable": true
+          },
+          "quantity": 1
+        }
+      ],
+      "requires": [],
+      "legalities": {
+        "brawl": true,
+        "predh": false,
+        "legacy": true,
+        "modern": true,
+        "pauper": false,
+        "pioneer": false,
+        "vintage": true,
+        "standard": false,
+        "commander": true,
+        "premodern": false,
+        "oathbreaker": true,
+        "pauperCommander": false,
+        "pauperCommanderMain": false
+      },
+      "popularity": 109344,
+      "bracketTag": "S",
+      "description": "Gain life.\nVito triggers, causing an opponent to lose 1 life.\nExquisite Blood triggers, causing you to gain 1 life.\nRepeat from step 2.",
+      "manaNeeded": "",
+      "variantCount": 24,
+      "manaValueNeeded": 0,
+      "easyPrerequisites": "",
+      "notablePrerequisites": "You have a way to gain life."
+    }
+  ]
+}

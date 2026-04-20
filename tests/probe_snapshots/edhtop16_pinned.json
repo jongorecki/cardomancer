@@ -1,0 +1,59 @@
+{
+  "data": {
+    "__schema": {
+      "queryType": {
+        "fields": [
+          {
+            "name": "card"
+          },
+          {
+            "name": "cheaters"
+          },
+          {
+            "name": "commander"
+          },
+          {
+            "name": "commanders"
+          },
+          {
+            "name": "countrySeatWinRates"
+          },
+          {
+            "name": "homePagePromo"
+          },
+          {
+            "name": "leaderboard"
+          },
+          {
+            "name": "monthlySeatWinRates"
+          },
+          {
+            "name": "node"
+          },
+          {
+            "name": "player"
+          },
+          {
+            "name": "searchResults"
+          },
+          {
+            "name": "staples"
+          },
+          {
+            "name": "tournament"
+          },
+          {
+            "name": "tournamentPagePromo"
+          },
+          {
+            "name": "tournaments"
+          },
+          {
+            "name": "viewer"
+          }
+        ],
+        "name": "Query"
+      }
+    }
+  }
+}

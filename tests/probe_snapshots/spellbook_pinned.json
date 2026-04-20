@@ -1,0 +1,154 @@
+{
+  "count": null,
+  "next": "https://backend.commanderspellbook.com/variants/?limit=1&offset=1",
+  "previous": null,
+  "results": [
+    {
+      "bracketTag": "E",
+      "description": "Activate Sol Ring by tapping it, adding {C} {C}.\nCast the permanent that can be cast using {C} by paying its mana cost.\nHullbreaker Horror triggers, returning Sol Ring from the battlefield to your hand.\nCast Sol Ring by paying {1}. \nHullbreaker Horror triggers, returning the permanent cast in step 2 from the battlefield to your hand.\nRepeat.\nIf the permanent can be cast by paying {0}, this combo nets infinite colorless mana.",
+      "easyPrerequisites": "",
+      "id": "513-5034--46",
+      "identity": "U",
+      "includes": [
+        {
+          "id": 26301
+        },
+        {
+          "id": 26516
+        }
+      ],
+      "legalities": {
+        "brawl": false,
+        "commander": true,
+        "legacy": false,
+        "modern": false,
+        "oathbreaker": false,
+        "pauper": false,
+        "pauperCommander": false,
+        "pauperCommanderMain": false,
+        "pioneer": false,
+        "predh": false,
+        "premodern": false,
+        "standard": false,
+        "vintage": true
+      },
+      "manaNeeded": "",
+      "manaValueNeeded": 0,
+      "notablePrerequisites": "",
+      "notes": "",
+      "of": [
+        {
+          "id": 26516
+        }
+      ],
+      "popularity": 302510,
+      "prices": {
+        "cardkingdom": "9.78",
+        "cardmarket": "3.64",
+        "tcgplayer": "7.09"
+      },
+      "produces": [
+        {
+          "feature": {
+            "id": 11,
+            "name": "Infinite colorless mana",
+            "status": "S",
+            "uncountable": true
+          },
+          "quantity": 1
+        },
+        {
+          "feature": {
+            "id": 17,
+            "name": "Infinite storm count",
+            "status": "H",
+            "uncountable": true
+          },
+          "quantity": 1
+        }
+      ],
+      "requires": [
+        {
+          "battlefieldCardState": "",
+          "exileCardState": "",
+          "graveyardCardState": "",
+          "libraryCardState": "",
+          "mustBeCommander": false,
+          "quantity": 1,
+          "template": {
+            "id": 46,
+            "name": "Permanent that can be cast using {C}",
+            "scryfallApi": "https://api.scryfall.com/cards/search?q=%28mv%3C%3D1+%28mana%3D%7B0%7D+or+mana%3D%7B1%7D+or+mana%3D%7BC%7D%29+is%3Apermanent%29+legal%3Acommander",
+            "scryfallQuery": "mv<=1 (mana={0} or mana={1} or mana={C}) is:permanent"
+          },
+          "zoneLocations": [
+            "H"
+          ]
+        }
+      ],
+      "spoiler": false,
+      "status": "OK",
+      "uses": [
+        {
+          "battlefieldCardState": "",
+          "card": {
+            "id": 513,
+            "imageUriBackArtCrop": null,
+            "imageUriBackLarge": null,
+            "imageUriBackNormal": null,
+            "imageUriBackPng": null,
+            "imageUriBackSmall": null,
+            "imageUriFrontArtCrop": "https://cards.scryfall.io/art_crop/front/1/3/137acb70-a1fd-4ea9-a5d9-f4b438eb5e82.jpg?1736467749",
+            "imageUriFrontLarge": "https://cards.scryfall.io/large/front/1/3/137acb70-a1fd-4ea9-a5d9-f4b438eb5e82.jpg?1736467749",
+            "imageUriFrontNormal": "https://cards.scryfall.io/normal/front/1/3/137acb70-a1fd-4ea9-a5d9-f4b438eb5e82.jpg?1736467749",
+            "imageUriFrontPng": "https://cards.scryfall.io/png/front/1/3/137acb70-a1fd-4ea9-a5d9-f4b438eb5e82.png?1736467749",
+            "imageUriFrontSmall": "https://cards.scryfall.io/small/front/1/3/137acb70-a1fd-4ea9-a5d9-f4b438eb5e82.jpg?1736467749",
+            "layoutRotationFront": null,
+            "name": "Hullbreaker Horror",
+            "oracleId": "d4a84e78-d9b9-4c67-8a4b-4329e65f0f15",
+            "spoiler": false,
+            "typeLine": "Creature \u2014 Kraken Horror"
+          },
+          "exileCardState": "",
+          "graveyardCardState": "",
+          "libraryCardState": "",
+          "mustBeCommander": false,
+          "quantity": 1,
+          "zoneLocations": [
+            "B"
+          ]
+        },
+        {
+          "battlefieldCardState": "",
+          "card": {
+            "id": 5034,
+            "imageUriBackArtCrop": null,
+            "imageUriBackLarge": null,
+            "imageUriBackNormal": null,
+            "imageUriBackPng": null,
+            "imageUriBackSmall": null,
+            "imageUriFrontArtCrop": "https://cards.scryfall.io/art_crop/front/8/7/870ec754-a76c-40ea-9b81-81b3dca1f62c.jpg?1775940518",
+            "imageUriFrontLarge": "https://cards.scryfall.io/large/front/8/7/870ec754-a76c-40ea-9b81-81b3dca1f62c.jpg?1775940518",
+            "imageUriFrontNormal": "https://cards.scryfall.io/normal/front/8/7/870ec754-a76c-40ea-9b81-81b3dca1f62c.jpg?1775940518",
+            "imageUriFrontPng": "https://cards.scryfall.io/png/front/8/7/870ec754-a76c-40ea-9b81-81b3dca1f62c.png?1775940518",
+            "imageUriFrontSmall": "https://cards.scryfall.io/small/front/8/7/870ec754-a76c-40ea-9b81-81b3dca1f62c.jpg?1775940518",
+            "layoutRotationFront": null,
+            "name": "Sol Ring",
+            "oracleId": "6ad8011d-3471-4369-9d68-b264cc027487",
+            "spoiler": false,
+            "typeLine": "Artifact"
+          },
+          "exileCardState": "",
+          "graveyardCardState": "",
+          "libraryCardState": "",
+          "mustBeCommander": false,
+          "quantity": 1,
+          "zoneLocations": [
+            "B"
+          ]
+        }
+      ],
+      "variantCount": 1
+    }
+  ]
+}

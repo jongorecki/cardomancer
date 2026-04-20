@@ -1,0 +1,11 @@
+{
+  "_comment": "Minimal synthetic fixture for Tagger fallback tests.",
+  "_note": "Real Tagger GraphQL requires CSRF auth; this represents fallback catalog data.",
+  "tags": [
+    {"name": "removal", "type": "function", "parent": null, "card_count": 450},
+    {"name": "spot-removal", "type": "function", "parent": "removal", "card_count": 280},
+    {"name": "draw", "type": "function", "parent": null, "card_count": 1200},
+    {"name": "ramp", "type": "function", "parent": null, "card_count": 900},
+    {"name": "vanilla", "type": "function", "parent": null, "card_count": 350}
+  ]
+}

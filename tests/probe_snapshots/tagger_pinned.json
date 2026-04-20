@@ -1,0 +1,9 @@
+{
+  "_probe_mode": "scryfall_search_api_fallback",
+  "_note": "Tagger GraphQL at tagger.scryfall.com/graphql requires CSRF session authentication (returns 403 unauthenticated). Phase 1 uses the Scryfall search-API fallback (otag:/atag: queries). This file pins that fallback state so run_all.py considers the probe passing.",
+  "_pinned_at": "2026-04-20",
+  "endpoint_status": "403_auth_required",
+  "fallback_active": true,
+  "fallback_source": "scryfall_search_api",
+  "fallback_queries": ["otag:<tag_name>", "atag:<tag_name>"]
+}

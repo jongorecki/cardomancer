@@ -7,7 +7,8 @@ import re
 import time
 
 from query_parser import (
-    parse_query, evaluate_query, collect_otag_terms, QueryParseError
+    parse_query, evaluate_query, collect_otag_terms,
+    expand_otag_cache, QueryParseError,
 )
 
 
@@ -362,5 +363,17 @@ def fetch_otag_data(tag_names):
 
         cache[tag] = oracle_ids
         print(f"[otag] otag:{tag} — {len(oracle_ids)} unique cards cached")
+
+    # Expand parent tags to include descendant tags' oracle_ids using
+    # enrichment_db tag_catalog hierarchy (degrades gracefully if unavailable).
+    try:
+        import enrichment_db
+        conn = enrichment_db.get_connection()
+        try:
+            cache = expand_otag_cache(cache, conn)
+        finally:
+            conn.close()
+    except Exception:
+        pass
 
     return cache

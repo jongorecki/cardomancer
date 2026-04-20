@@ -24,9 +24,9 @@ ENDPOINT = "https://json.edhrec.com/pages/commanders/atraxa-praetors-voice.json"
 REQUIRED = [
     "container",
     "container.json_dict",
-    "container.json_dict.card_lists",
-    "container.json_dict.card_lists[].cardviews",
-    "container.json_dict.card_lists[].cardviews[].name",
+    "container.json_dict.cardlists",
+    "container.json_dict.cardlists[].cardviews",
+    "container.json_dict.cardlists[].cardviews[].name",
 ]
 
 

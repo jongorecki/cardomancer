@@ -2,6 +2,16 @@
 # Scryfall-like query parser and evaluator for MTG card sorting.
 # Supports field:value syntax, comparison operators, AND/OR/NOT, parentheses,
 # quoted strings, and oracle tags (otag:) via pre-fetched cache.
+#
+# Enrichment tokens (require enrichment_data kwarg to evaluate_query):
+#   staple:universal / staple:cedh / staple:archetype / staple:any
+#   salt>N  salt<N  salt>=N  salt<=N  salt=N
+#   combo:true  combo:any
+#
+# otag: hierarchy rollup:
+#   Call expand_otag_cache(cache, conn) after building the otag_cache to union
+#   descendant-tag oracle_ids into each parent tag's set. conn is an
+#   enrichment_db connection; degrades gracefully if tag_catalog is empty.
 
 import re
 
@@ -90,6 +100,10 @@ FIELD_ALIASES = {
     "produces": "produces",
     "st": "set_type",
     "settype": "set_type",
+    # Enrichment tokens (require enrichment_data kwarg in evaluate_query)
+    "staple": "staple",
+    "salt": "salt",
+    "combo": "combo",
 }
 
 
@@ -416,7 +430,7 @@ def _eval_color_field(card_data, field_key, operator, value):
         return color_letters.issubset(set(colors))
 
 
-def _eval_field_query(fq, card_data, otag_cache=None):
+def _eval_field_query(fq, card_data, otag_cache=None, enrichment_data=None):
     """Evaluate a single FieldQuery against a Scryfall card dict."""
 
     field = fq.field
@@ -545,6 +559,33 @@ def _eval_field_query(fq, card_data, otag_cache=None):
     if field == 'is':
         return _eval_is_predicate(card_data, val)
 
+    # --- Enrichment: staple tier ---
+    if field == 'staple':
+        if enrichment_data is None:
+            return False
+        val_lower = val.lower()
+        if val_lower == 'any':
+            return any(enrichment_data.get(f"staple_{t}", False)
+                       for t in ("universal", "cedh", "archetype"))
+        return bool(enrichment_data.get(f"staple_{val_lower}", False))
+
+    # --- Enrichment: salt score ---
+    if field == 'salt':
+        if enrichment_data is None:
+            return False
+        return _compare(enrichment_data.get("salt"), op, val)
+
+    # --- Enrichment: combo membership ---
+    if field == 'combo':
+        if enrichment_data is None:
+            return False
+        val_lower = val.lower()
+        if val_lower in ('true', 'any', 'yes'):
+            return bool(enrichment_data.get("in_combo", False))
+        if val_lower in ('false', 'no'):
+            return not bool(enrichment_data.get("in_combo", False))
+        return False
+
     return False
 
 
@@ -611,24 +652,30 @@ def _eval_is_predicate(card_data, predicate):
     return False
 
 
-def evaluate_query(ast, card_data, otag_cache=None):
+def evaluate_query(ast, card_data, otag_cache=None, enrichment_data=None):
     """
     Evaluate a parsed query AST against a full Scryfall card dict.
     Returns True if the card matches the query.
 
-    otag_cache: optional dict of { tag_name: set(oracle_ids) } for otag: queries.
+    otag_cache:      optional dict of { tag_name: set(oracle_ids) } for otag: queries.
+    enrichment_data: optional per-card dict for enrichment tokens:
+                       staple_universal, staple_cedh, staple_archetype: bool
+                       salt: float | None
+                       in_combo: bool
     """
     if isinstance(ast, FieldQuery):
-        return _eval_field_query(ast, card_data, otag_cache)
+        return _eval_field_query(ast, card_data, otag_cache, enrichment_data)
 
     elif isinstance(ast, AndNode):
-        return all(evaluate_query(c, card_data, otag_cache) for c in ast.children)
+        return all(evaluate_query(c, card_data, otag_cache, enrichment_data)
+                   for c in ast.children)
 
     elif isinstance(ast, OrNode):
-        return any(evaluate_query(c, card_data, otag_cache) for c in ast.children)
+        return any(evaluate_query(c, card_data, otag_cache, enrichment_data)
+                   for c in ast.children)
 
     elif isinstance(ast, NotNode):
-        return not evaluate_query(ast.child, card_data, otag_cache)
+        return not evaluate_query(ast.child, card_data, otag_cache, enrichment_data)
 
     raise QueryParseError(f"Unknown AST node type: {type(ast)}")
 
@@ -637,7 +684,63 @@ def evaluate_query(ast, card_data, otag_cache=None):
 # Convenience: parse + evaluate in one call
 # ---------------------------------------------------------------------------
 
-def matches_query(query_string, card_data, otag_cache=None):
+def matches_query(query_string, card_data, otag_cache=None, enrichment_data=None):
     """Parse a query string and evaluate it against a card. Returns bool."""
     ast = parse_query(query_string)
-    return evaluate_query(ast, card_data, otag_cache)
+    return evaluate_query(ast, card_data, otag_cache, enrichment_data)
+
+
+# ---------------------------------------------------------------------------
+# otag hierarchy rollup
+# ---------------------------------------------------------------------------
+
+def expand_otag_cache(cache: dict, conn) -> dict:
+    """Union descendant-tag oracle_ids into each parent tag's set.
+
+    Reads tag_catalog from an enrichment_db connection to build the
+    parent→children map, then loads oracle_ids for each descendant from
+    the tags table.  Modifies and returns an expanded copy of cache.
+    Degrades gracefully (returns cache unchanged) if the DB tables are empty
+    or unavailable.
+    """
+    try:
+        catalog_rows = conn.execute(
+            "SELECT tag_name, parent FROM tag_catalog WHERE parent IS NOT NULL"
+        ).fetchall()
+    except Exception:
+        return cache
+
+    if not catalog_rows:
+        return cache
+
+    # Build parent → [children] map
+    children_map: dict[str, list[str]] = {}
+    for row in catalog_rows:
+        tag_name = row[0] if not hasattr(row, "keys") else row["tag_name"]
+        parent   = row[1] if not hasattr(row, "keys") else row["parent"]
+        children_map.setdefault(parent, []).append(tag_name)
+
+    def _descendants(tag: str) -> list[str]:
+        result: list[str] = []
+        for child in children_map.get(tag, []):
+            result.append(child)
+            result.extend(_descendants(child))
+        return result
+
+    expanded = {k: set(v) for k, v in cache.items()}
+    for tag in list(cache.keys()):
+        descs = _descendants(tag)
+        if not descs:
+            continue
+        placeholders = ",".join("?" * len(descs))
+        try:
+            rows = conn.execute(
+                f"SELECT oracle_id FROM tags WHERE tag_name IN ({placeholders})",
+                descs,
+            ).fetchall()
+            for row in rows:
+                expanded[tag].add(row[0])
+        except Exception:
+            pass
+
+    return expanded

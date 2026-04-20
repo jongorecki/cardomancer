@@ -1,0 +1,76 @@
+{
+  "data": {
+    "staples": [
+      {
+        "name": "Mystic Remora",
+        "oracleId": "8a52f3c0-2552-4425-b2e3-5496eb2232a7",
+        "colorId": "U",
+        "type": "Enchantment",
+        "playRateLastYear": 0.918900609697087
+      },
+      {
+        "name": "Vampiric Tutor",
+        "oracleId": "ededbdae-d9dc-4206-9335-d7158f2d7700",
+        "colorId": "B",
+        "type": "Instant",
+        "playRateLastYear": 0.9075131250318569
+      },
+      {
+        "name": "Underground Sea",
+        "oracleId": "4b22be3a-8ce1-47d1-b82e-6c3ccfb0548b",
+        "colorId": "UB",
+        "type": "Land \u2014 Island Swamp",
+        "playRateLastYear": 0.9002189345186757
+      },
+      {
+        "name": "Demonic Tutor",
+        "oracleId": "82004860-e589-4e38-8d61-8c0210e4ea39",
+        "colorId": "B",
+        "type": "Sorcery",
+        "playRateLastYear": 0.899663591416484
+      },
+      {
+        "name": "Rhystic Study",
+        "oracleId": "53236dd7-845a-444c-96d5-f41ed7325d8f",
+        "colorId": "U",
+        "type": "Enchantment",
+        "playRateLastYear": 0.8953256556663118
+      },
+      {
+        "name": "Tropical Island",
+        "oracleId": "74b7fe23-5d3a-4092-8d78-7c0eba8f6f73",
+        "colorId": "UG",
+        "type": "Land \u2014 Forest Island",
+        "playRateLastYear": 0.8930333936502715
+      },
+      {
+        "name": "Tundra",
+        "oracleId": "02418479-9455-417f-a6a1-004356faff37",
+        "colorId": "WU",
+        "type": "Land \u2014 Plains Island",
+        "playRateLastYear": 0.8795411089866156
+      },
+      {
+        "name": "Flusterstorm",
+        "oracleId": "86bf58f2-7f25-4e10-b797-25e0e8e67769",
+        "colorId": "U",
+        "type": "Instant",
+        "playRateLastYear": 0.8740733572050712
+      },
+      {
+        "name": "Scrubland",
+        "oracleId": "c8d95ca8-7d12-4072-aeaf-e20f248c7e39",
+        "colorId": "WB",
+        "type": "Land \u2014 Plains Swamp",
+        "playRateLastYear": 0.8739964506042424
+      },
+      {
+        "name": "Esper Sentinel",
+        "oracleId": "5def9f38-0a0b-4e8d-9f9d-29dcb46520b4",
+        "colorId": "W",
+        "type": "Artifact Creature \u2014 Human Soldier",
+        "playRateLastYear": 0.8700782511489256
+      }
+    ]
+  }
+}

@@ -40,6 +40,10 @@ import enrichment_db
 from web_enrichment.repo import EnrichmentRepo
 from web_enrichment.scheduler import RefreshScheduler
 from web_enrichment.stubs import ALL_STUBS
+from web_enrichment.spellbook import SpellbookSource
+from web_enrichment.edhrec import EDHRECSource
+from web_enrichment.edhtop16 import EDHTop16Source
+from web_enrichment.tagger import TaggerSource
 
 
 # ---------------------------------------------------------------------------
@@ -184,14 +188,9 @@ calibrator.set_emit(lambda event, data: socketio.emit(event, data))
 
 
 # =========================================================================
-# Enrichment (Phase 0A foundation — scheduler + stub sources)
+# Enrichment (Phase 1 — real sources for Spellbook, EDHREC, edhtop16,
+# Tagger; stubs retained for buylist_ck and prices which are Phase 3+)
 # =========================================================================
-#
-# `enrichment.db` sits next to `collection.db` and holds pulled data from
-# external sources (Scryfall Tagger, EDHREC, edhtop16, Commander
-# Spellbook, buylists). Phase 0A wires the plumbing (DB schema, repo,
-# scheduler, endpoints) and registers placeholder stub sources. Phase 1+
-# replaces each stub with a real implementation.
 
 enrichment_repo = EnrichmentRepo()
 try:
@@ -203,13 +202,30 @@ except Exception as _enr_err:
 enrichment_scheduler = RefreshScheduler(
     emit=lambda event, data: socketio.emit(event, data),
 )
-for _stub_name, _stub_cls in ALL_STUBS.items():
-    _cron = "daily" if _stub_name in ("buylist_ck", "prices") else "weekly"
+
+# Phase 1 real sources
+_PHASE1_SOURCES = [
+    (TaggerSource(),    "weekly"),
+    (EDHRECSource(),    "weekly"),
+    (EDHTop16Source(),  "weekly"),
+    (SpellbookSource(), "weekly"),
+]
+for _src, _cron in _PHASE1_SOURCES:
     try:
-        enrichment_scheduler.register(_stub_cls(), cron=_cron)
-    except Exception as _stub_err:
-        logging.error("Could not register stub source %s: %s",
-                      _stub_name, _stub_err)
+        enrichment_scheduler.register(_src, cron=_cron)
+    except Exception as _src_err:
+        logging.error("Could not register source %s: %s", _src.name, _src_err)
+
+# Phase 3+ stub sources (buylist_ck, prices)
+_STUB_ONLY = {"buylist_ck", "prices"}
+for _stub_name, _stub_cls in ALL_STUBS.items():
+    if _stub_name in _STUB_ONLY:
+        _cron = "daily" if _stub_name == "prices" else "daily"
+        try:
+            enrichment_scheduler.register(_stub_cls(), cron=_cron)
+        except Exception as _stub_err:
+            logging.error("Could not register stub source %s: %s",
+                          _stub_name, _stub_err)
 
 
 # =========================================================================

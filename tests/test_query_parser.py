@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from query_parser import (
     tokenize, parse_query, evaluate_query, collect_otag_terms,
-    matches_query, QueryParseError,
+    matches_query, expand_otag_cache, QueryParseError,
     AndNode, OrNode, NotNode, FieldQuery,
 )
 
@@ -621,6 +621,218 @@ class TestCollectOtagTerms(unittest.TestCase):
     def test_nested_otag(self):
         ast = parse_query("(otag:ramp or otag:removal) -t:land")
         self.assertEqual(collect_otag_terms(ast), {"ramp", "removal"})
+
+
+# ===========================================================================
+# Enrichment tokens (staple:, salt>, combo:)
+# ===========================================================================
+
+class TestEnrichmentTokens(unittest.TestCase):
+    """Enrichment tokens degrade gracefully when enrichment_data is None."""
+
+    BASE_CARD = {"oracle_id": "oid-abc", "type_line": "Artifact"}
+
+    def _enr(self, **kw):
+        return {
+            "staple_universal": False,
+            "staple_cedh": False,
+            "staple_archetype": False,
+            "salt": None,
+            "in_combo": False,
+            **kw,
+        }
+
+    # -- parse round-trips ---------------------------------------------------
+
+    def test_staple_parses(self):
+        ast = parse_query("staple:universal")
+        self.assertIsNotNone(ast)
+
+    def test_salt_gt_parses(self):
+        ast = parse_query("salt>1.5")
+        self.assertIsNotNone(ast)
+
+    def test_combo_parses(self):
+        ast = parse_query("combo:true")
+        self.assertIsNotNone(ast)
+
+    # -- no enrichment_data degrades to False --------------------------------
+
+    def test_staple_no_data_returns_false(self):
+        self.assertFalse(matches_query("staple:universal", self.BASE_CARD))
+
+    def test_salt_no_data_returns_false(self):
+        self.assertFalse(matches_query("salt>1", self.BASE_CARD))
+
+    def test_combo_no_data_returns_false(self):
+        self.assertFalse(matches_query("combo:true", self.BASE_CARD))
+
+    # -- staple tiers --------------------------------------------------------
+
+    def test_staple_universal_true(self):
+        enr = self._enr(staple_universal=True)
+        self.assertTrue(matches_query(
+            "staple:universal", self.BASE_CARD, enrichment_data=enr))
+
+    def test_staple_universal_false(self):
+        enr = self._enr(staple_universal=False)
+        self.assertFalse(matches_query(
+            "staple:universal", self.BASE_CARD, enrichment_data=enr))
+
+    def test_staple_cedh_true(self):
+        enr = self._enr(staple_cedh=True)
+        self.assertTrue(matches_query(
+            "staple:cedh", self.BASE_CARD, enrichment_data=enr))
+
+    def test_staple_archetype_true(self):
+        enr = self._enr(staple_archetype=True)
+        self.assertTrue(matches_query(
+            "staple:archetype", self.BASE_CARD, enrichment_data=enr))
+
+    def test_staple_any_matches_one_tier(self):
+        enr = self._enr(staple_cedh=True)
+        self.assertTrue(matches_query(
+            "staple:any", self.BASE_CARD, enrichment_data=enr))
+
+    def test_staple_any_false_when_none(self):
+        enr = self._enr()
+        self.assertFalse(matches_query(
+            "staple:any", self.BASE_CARD, enrichment_data=enr))
+
+    # -- salt ----------------------------------------------------------------
+
+    def test_salt_gt_matches(self):
+        enr = self._enr(salt=2.5)
+        self.assertTrue(matches_query(
+            "salt>2", self.BASE_CARD, enrichment_data=enr))
+
+    def test_salt_gt_no_match(self):
+        enr = self._enr(salt=0.5)
+        self.assertFalse(matches_query(
+            "salt>2", self.BASE_CARD, enrichment_data=enr))
+
+    def test_salt_lt_matches(self):
+        enr = self._enr(salt=0.3)
+        self.assertTrue(matches_query(
+            "salt<1", self.BASE_CARD, enrichment_data=enr))
+
+    def test_salt_none_returns_false(self):
+        enr = self._enr(salt=None)
+        self.assertFalse(matches_query(
+            "salt>0", self.BASE_CARD, enrichment_data=enr))
+
+    # -- combo ---------------------------------------------------------------
+
+    def test_combo_true_matches(self):
+        enr = self._enr(in_combo=True)
+        self.assertTrue(matches_query(
+            "combo:true", self.BASE_CARD, enrichment_data=enr))
+
+    def test_combo_false_not_in_combo(self):
+        enr = self._enr(in_combo=False)
+        self.assertFalse(matches_query(
+            "combo:true", self.BASE_CARD, enrichment_data=enr))
+
+    def test_combo_false_keyword(self):
+        enr = self._enr(in_combo=True)
+        self.assertFalse(matches_query(
+            "combo:false", self.BASE_CARD, enrichment_data=enr))
+
+    # -- combined with other fields ------------------------------------------
+
+    def test_staple_and_type(self):
+        enr = self._enr(staple_universal=True)
+        card = {**self.BASE_CARD, "type_line": "Artifact"}
+        self.assertTrue(matches_query(
+            "staple:universal t:artifact", card, enrichment_data=enr))
+
+    def test_not_staple(self):
+        enr = self._enr(staple_universal=False)
+        self.assertTrue(matches_query(
+            "-staple:universal", self.BASE_CARD, enrichment_data=enr))
+
+
+# ===========================================================================
+# otag hierarchy rollup (expand_otag_cache)
+# ===========================================================================
+
+class TestExpandOtagCache(unittest.TestCase):
+
+    def _make_conn(self, tag_catalog_rows, tags_rows):
+        """Build an in-memory SQLite DB with tag_catalog + tags tables."""
+        import sqlite3
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.executescript("""
+            CREATE TABLE tag_catalog (
+                tag_name TEXT PRIMARY KEY,
+                parent TEXT
+            );
+            CREATE TABLE tags (
+                oracle_id TEXT NOT NULL,
+                tag_name TEXT NOT NULL
+            );
+        """)
+        conn.executemany(
+            "INSERT INTO tag_catalog (tag_name, parent) VALUES (?,?)",
+            tag_catalog_rows)
+        conn.executemany(
+            "INSERT INTO tags (oracle_id, tag_name) VALUES (?,?)",
+            tags_rows)
+        conn.commit()
+        return conn
+
+    def test_parent_includes_child_oracle_ids(self):
+        conn = self._make_conn(
+            tag_catalog_rows=[("spot-removal", "removal")],
+            tags_rows=[("oid-1", "spot-removal"), ("oid-2", "removal")],
+        )
+        cache = {"removal": {"oid-2"}}
+        expanded = expand_otag_cache(cache, conn)
+        conn.close()
+        self.assertIn("oid-1", expanded["removal"])
+        self.assertIn("oid-2", expanded["removal"])
+
+    def test_no_children_unchanged(self):
+        conn = self._make_conn([], [("oid-1", "ramp")])
+        cache = {"ramp": {"oid-1"}}
+        expanded = expand_otag_cache(cache, conn)
+        conn.close()
+        self.assertEqual(expanded["ramp"], {"oid-1"})
+
+    def test_transitive_descendants(self):
+        conn = self._make_conn(
+            tag_catalog_rows=[
+                ("board-wipe", "removal"),
+                ("asymmetric-wipe", "board-wipe"),
+            ],
+            tags_rows=[
+                ("oid-asym", "asymmetric-wipe"),
+                ("oid-wipe", "board-wipe"),
+                ("oid-removal", "removal"),
+            ],
+        )
+        cache = {"removal": {"oid-removal"}}
+        expanded = expand_otag_cache(cache, conn)
+        conn.close()
+        self.assertIn("oid-wipe", expanded["removal"])
+        self.assertIn("oid-asym", expanded["removal"])
+
+    def test_empty_tag_catalog_returns_unchanged(self):
+        conn = self._make_conn([], [])
+        cache = {"removal": {"oid-x"}}
+        expanded = expand_otag_cache(cache, conn)
+        conn.close()
+        self.assertEqual(expanded, {"removal": {"oid-x"}})
+
+    def test_db_error_degrades_gracefully(self):
+        import sqlite3
+        conn = sqlite3.connect(":memory:")
+        # No tables created — should degrade gracefully
+        cache = {"removal": {"oid-x"}}
+        expanded = expand_otag_cache(cache, conn)
+        conn.close()
+        self.assertEqual(expanded["removal"], {"oid-x"})
 
 
 if __name__ == "__main__":
