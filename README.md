@@ -1,6 +1,6 @@
 # Card Sorter
 
-An automated Magic: The Gathering card sorting robot. A Marlin-controlled X/Z gantry picks cards from a source bin, places each on a staging platform to be scanned, identifies the card by perceptual hash, and drops it into a user-configured destination bin.
+An automated Magic: The Gathering card sorting robot. A Marlin-controlled X/Z gantry picks cards from a source bin, places each on a staging platform to be scanned, identifies the card by a hybrid of perceptual hash and DINOv2 visual embeddings, and drops it into a user-configured destination bin.
 
 Private project. Runs on the workshop PC that drives the hardware.
 
@@ -9,7 +9,7 @@ Private project. Runs on the workshop PC that drives the hardware.
 ## What it does
 
 - **Picks** cards one at a time from a source bin with a vacuum suction cup, places each on a staging platform, and captures a scan.
-- **Identifies** each card via perceptual-hash match against a local Scryfall-derived hash database (~30k oracle IDs). No OCR in the primary path — hashing is faster and more reliable.
+- **Identifies** each card via a two-model hybrid: perceptual hash (pHash) is the fast primary path against a local Scryfall-derived hash database (~30k oracle IDs); a **DINOv2 ViT-B/14** visual-embedding DB (`card_embeddings.npz`) is a second opinion used when pHash is uncertain. Decision rules live in [card_identify_hybrid.py](card_identify_hybrid.py) — briefly: trust pHash when both agree, when pHash distance ≤ 82, or when pHash has a decisive #1-to-#2 gap at moderate distance; otherwise fall back to DINOv2. No OCR in the primary path — visual matching is faster and more reliable.
 - **Sorts** into physical bins based on a user-chosen rule: by color, by price tier, by set, by custom Scryfall query, or by user-authored presets (e.g. "EDH staples", "bulk vs keeper").
 - **Logs** every scan to `collection.db` (SQLite) with timestamp, bin assignment, and enrichment metadata.
 - **Tracks location** post-sort: which numbered box, which numbered divider. Makes cards findable again without rescanning.

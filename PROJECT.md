@@ -33,7 +33,7 @@ A ground-up build: hardware, firmware, and software for automatically sorting a 
    └─────────────────┘    └─────────────────────┘
 ```
 
-The **gantry** picks a card from the source bin, drops it on the staging platform, moves the X-carriage-mounted camera over the platform, the host identifies the card via perceptual hash, computes a destination bin from the active sort rule, and the gantry picks it back up and drops it there.
+The **gantry** picks a card from the source bin, drops it on the staging platform, moves the X-carriage-mounted camera over the platform, the host identifies the card via a hybrid of perceptual hash and DINOv2 visual embeddings, computes a destination bin from the active sort rule, and the gantry picks it back up and drops it there.
 
 ---
 
@@ -84,7 +84,7 @@ Design decision: the original Z design used a rack-and-pinion on the moving carr
 
 - **Model**: ASUS ROG Eye (gen 1), ~81×17×29 mm.
 - **Mount**: on the **X carriage**, on a friction-pivot (single-bolt adjust). Moves horizontally with the head. This is what makes automatic ArUco-based bin-position calibration possible — the camera sweeps along the bin row and records each marker's X position as it passes underneath.
-- **Scanning**: after the head drops a card on the staging platform, X moves the camera over the platform and the host captures a frame for perceptual-hash identification.
+- **Scanning**: after the head drops a card on the staging platform, X moves the camera over the platform and the host captures a frame. Identification then runs through the hybrid pHash + DINOv2 pipeline in [card_identify_hybrid.py](card_identify_hybrid.py).
 - Stream native resolution is rotated 90° by the camera manager so the UI receives a portrait-oriented 720×1280 JPEG stream.
 - `CROP_SIZE = 745` px in `config.py` — this matches Scryfall's PNG art width and the whole hash database depends on it. Do not change.
 
@@ -165,11 +165,11 @@ The host talks to Marlin over USB serial, sending plain G-code. Critical rules e
 
 ## Software (host)
 
-The host software is a single Python application in this repo — Flask web server, SocketIO for live updates, SQLite for data, OpenCV + imagehash for identification, pyserial for Marlin comms.
+The host software is a single Python application in this repo — Flask web server, SocketIO for live updates, SQLite for data, OpenCV + imagehash + PyTorch/DINOv2 for identification, pyserial for Marlin comms.
 
 Deep dive: [README.md](README.md).
 
-Architecture in one paragraph: a Flask process (`web_server.py`) serves a Bootstrap single-page app and a WebSocket. A worker module (`web_worker.py`) owns the sort-session state machine, reads frames from the camera thread (`web_camera.py`), runs detection (`detection.py`) and hashing (`hashing.py`), looks up matches against a local hash database built from Scryfall bulk data, consults per-card enrichment data (tags, staples, prices) to resolve a destination bin, and issues G-code to Marlin to route the card. Everything observable — scan results, bin fullness, errors — is mirrored to the browser over SocketIO.
+Architecture in one paragraph: a Flask process (`web_server.py`) serves a Bootstrap single-page app and a WebSocket. A worker module (`web_worker.py`) owns the sort-session state machine, reads frames from the camera thread (`web_camera.py`), runs contour-based card detection (`card_detect.py`), and identifies each card through the hybrid pipeline in `card_identify_hybrid.py` — perceptual hash first (against `card_hashes_v3.json`), DINOv2 ViT-B/14 embeddings as a second opinion (against `card_embeddings.npz`) when pHash is uncertain. The result is looked up against per-card enrichment data (tags, staples, prices) to resolve a destination bin, and G-code is issued to Marlin to route the card. Everything observable — scan results, bin fullness, errors — is mirrored to the browser over SocketIO.
 
 ---
 
@@ -190,7 +190,7 @@ See [plans/handoff/07_shared_interfaces.md](plans/handoff/07_shared_interfaces.m
 
 ### Working today
 
-- End-to-end sort pipeline (staging → scan → identify → route → drop) with hash-based identification
+- End-to-end sort pipeline (staging → scan → identify → route → drop) with hybrid pHash + DINOv2 identification
 - Web UI with live camera, session control, and preset-based sort configuration
 - Calibration routines (camera height, bin X positions via ArUco sweep)
 - Collection database with scan history and storage-location tracking
@@ -222,7 +222,7 @@ See [plans/handoff/07_shared_interfaces.md](plans/handoff/07_shared_interfaces.m
 
 A few choices that look arbitrary but aren't, captured so they survive context loss:
 
-- **Hash, don't OCR.** OCR was tried as the primary ID method and is not reliable enough. Perceptual hash is the primary path; OCR is at best a tiebreaker.
+- **Visual matching, not OCR.** OCR was tried as the primary ID method and is not reliable enough. Perceptual hash is the fast primary path; DINOv2 visual embeddings are a second opinion for cases pHash gets wrong (foils, elevated lighting variation, near-duplicate art). OCR is at best a tiebreaker and not in the live path.
 - **Full-corpus enrichment, not owned-only.** Storing enrichment for all ~30k oracle IDs (not just owned cards) means you can act on card info *before* the card is scanned — e.g. import a Moxfield deck and the system already knows which of those cards are staples.
 - **Two databases, not one.** `collection.db` is irreplaceable (your scans). `enrichment.db` is disposable (rebuild from sources). Mixing them would make refresh dangerous.
 - **No framework on the front end.** `static/app.js` is one file of vanilla JS + Bootstrap. Simpler to debug, no build step, no dependency churn.
