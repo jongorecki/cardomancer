@@ -417,6 +417,49 @@
                                                         -->
                                                         <input type="hidden" id="custom-load-file" value="">
                                                     </div>
+
+                                                    <!-- Query reference -->
+                                                    <div class="mt-3">
+                                                        <a class="small text-muted text-decoration-none" data-bs-toggle="collapse" href="#query-reference" role="button">
+                                                            ▸ Query reference
+                                                        </a>
+                                                        <div class="collapse" id="query-reference">
+                                                            <div class="mt-2 p-2 border rounded small" style="background:var(--bs-body-bg)">
+
+                                                                <p class="mb-1 fw-semibold">Basic fields</p>
+                                                                <table class="table table-sm table-borderless mb-2" style="font-size:0.8rem">
+                                                                    <tbody>
+                                                                        <tr><td class="text-nowrap pe-3"><code>c:r</code></td><td>Color — W U B R G or C (colorless). Combine: <code>c:wr</code></td></tr>
+                                                                        <tr><td class="text-nowrap pe-3"><code>t:creature</code></td><td>Type line contains word. Also: <code>t:land</code>, <code>t:artifact</code>, <code>t:instant</code></td></tr>
+                                                                        <tr><td class="text-nowrap pe-3"><code>cmc&lt;=3</code></td><td>Mana value. Operators: <code>&lt; &lt;= = &gt;= &gt;</code></td></tr>
+                                                                        <tr><td class="text-nowrap pe-3"><code>usd&lt;1.00</code></td><td>TCGPlayer price in USD</td></tr>
+                                                                        <tr><td class="text-nowrap pe-3"><code>r:mythic</code></td><td>Rarity — common uncommon rare mythic</td></tr>
+                                                                        <tr><td class="text-nowrap pe-3"><code>otag:removal</code></td><td>Scryfall function tag. Fetched from API on load.</td></tr>
+                                                                    </tbody>
+                                                                </table>
+
+                                                                <p class="mb-1 fw-semibold">Enrichment fields <span class="badge bg-info text-dark ms-1" style="font-size:0.7rem">requires enrichment refresh</span></p>
+                                                                <table class="table table-sm table-borderless mb-2" style="font-size:0.8rem">
+                                                                    <tbody>
+                                                                        <tr><td class="text-nowrap pe-3"><code>staple:universal</code></td><td>In top EDHREC inclusion lists (appears in &gt;5% of decks)</td></tr>
+                                                                        <tr><td class="text-nowrap pe-3"><code>staple:cedh</code></td><td>Appears in &gt;15% of top-16 cEDH tournament decks</td></tr>
+                                                                        <tr><td class="text-nowrap pe-3"><code>staple:archetype</code></td><td>Top card in ≥3 EDHREC archetypes</td></tr>
+                                                                        <tr><td class="text-nowrap pe-3"><code>staple:any</code></td><td>Any staple tier (universal, cedh, or archetype)</td></tr>
+                                                                        <tr><td class="text-nowrap pe-3"><code>salt&gt;2</code></td><td>EDHREC salt score above threshold. Range ≈ 0–4.</td></tr>
+                                                                        <tr><td class="text-nowrap pe-3"><code>combo:true</code></td><td>Appears in a Commander Spellbook combo</td></tr>
+                                                                    </tbody>
+                                                                </table>
+
+                                                                <p class="mb-1 fw-semibold">Logic &amp; grouping</p>
+                                                                <div class="text-muted" style="font-size:0.8rem">
+                                                                    Space = AND &nbsp;|&nbsp; <code>OR</code> &nbsp;|&nbsp; <code>-</code> = NOT &nbsp;|&nbsp; <code>(…)</code> = group<br>
+                                                                    Example: <code>-staple:any usd&lt;1.00</code> — cheap non-staples (junk pile)<br>
+                                                                    Example: <code>staple:cedh OR combo:true</code> — high-value targets<br>
+                                                                    Example: <code>(c:w OR c:u) t:creature cmc&lt;=3</code> — cheap Azorius creatures
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
