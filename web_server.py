@@ -1474,6 +1474,46 @@ def api_collection_import_csv():
         conn.close()
 
 
+@app.route('/api/collection/cull-candidates')
+def api_collection_cull_candidates():
+    import collection_db
+    max_price = request.args.get('max_price', 1.0, type=float)
+    conn = collection_db.get_connection()
+    try:
+        candidates = collection_db.get_cull_candidates(conn, max_price=max_price)
+        return jsonify({
+            'candidates': candidates,
+            'total': len(candidates),
+            'max_price': max_price,
+        })
+    finally:
+        conn.close()
+
+
+@app.route('/api/collection/cull-candidates/export')
+def api_collection_cull_candidates_export():
+    import collection_db, csv, io
+    max_price = request.args.get('max_price', 1.0, type=float)
+    conn = collection_db.get_connection()
+    try:
+        candidates = collection_db.get_cull_candidates(conn, max_price=max_price)
+        output = io.StringIO()
+        fields = ['name', 'set_code', 'type_line', 'price_usd', 'quantity', 'cull_reasons']
+        writer = csv.DictWriter(output, fieldnames=fields, extrasaction='ignore')
+        writer.writeheader()
+        for c in candidates:
+            c['cull_reasons'] = ', '.join(c.get('cull_reasons') or [])
+            writer.writerow(c)
+        from flask import Response
+        return Response(
+            output.getvalue(),
+            mimetype='text/csv',
+            headers={'Content-Disposition': 'attachment; filename=cull_candidates.csv'},
+        )
+    finally:
+        conn.close()
+
+
 @app.route('/api/collection/generate-test', methods=['POST'])
 def api_collection_generate_test():
     import collection_db

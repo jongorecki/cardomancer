@@ -855,7 +855,9 @@
                     <li class="nav-item"><a class="nav-link active" data-collection-view="inventory" href="#">Inventory</a></li>
                     <li class="nav-item"><a class="nav-link" data-collection-view="locator" href="#">Locator</a></li>
                     <li class="nav-item"><a class="nav-link" data-collection-view="sync" href="#">Sync</a></li>
+                    <li class="nav-item"><a class="nav-link" data-collection-view="cull" href="#">Cull</a></li>
                 </ul>
+                <div data-collection-section="inventory">
                 <div class="row">
                     <div class="col-md-3">
                         <div class="card">
@@ -970,6 +972,66 @@
                         <div class="d-flex justify-content-center mt-2" id="inventory-pagination"></div>
                     </div>
                 </div>
+                </div><!-- end data-collection-section="inventory" -->
+
+                <div data-collection-section="cull" style="display:none">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="card">
+                            <div class="card-header">Cull Settings</div>
+                            <div class="card-body">
+                                <label class="form-label small mb-1">Max price to cull</label>
+                                <div class="input-group input-group-sm mb-2">
+                                    <span class="input-group-text">$</span>
+                                    <input type="number" class="form-control" id="cull-max-price"
+                                           value="1.00" min="0" step="0.25">
+                                </div>
+                                <button class="btn btn-primary btn-sm w-100 mb-2"
+                                        onclick="loadCullCandidates()">Find Candidates</button>
+                                <button class="btn btn-outline-success btn-sm w-100"
+                                        onclick="exportCullCSV()">Export CSV</button>
+                                <hr>
+                                <p class="small text-muted mb-0">
+                                    Shows owned cards that are vanilla or french-vanilla,
+                                    have no staple value, and are worth less than the price
+                                    threshold.
+                                </p>
+                                <p class="small text-muted mt-1 mb-0">
+                                    Requires enrichment data to be refreshed first.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-9">
+                        <div class="card">
+                            <div class="card-header">
+                                Cull Candidates
+                                <span class="badge bg-danger ms-1" id="cull-count">0</span>
+                            </div>
+                            <div class="card-body p-0">
+                                <div id="cull-status" class="text-muted small text-center py-3" style="display:none">
+                                    Loading…
+                                </div>
+                                <div id="cull-empty" class="text-muted small text-center py-3" style="display:none">
+                                    No candidates found. Run enrichment refresh first if this seems wrong.
+                                </div>
+                                <table class="table table-sm table-striped mb-0" id="cull-table" style="display:none">
+                                    <thead><tr>
+                                        <th>Name</th>
+                                        <th>Set</th>
+                                        <th>Type</th>
+                                        <th>Price</th>
+                                        <th>Qty</th>
+                                        <th>Reasons</th>
+                                    </tr></thead>
+                                    <tbody id="cull-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                </div><!-- end data-collection-section="cull" -->
+
                 <div class="row mt-3">
                     <div class="col-12">
                         <div class="card">

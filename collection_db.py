@@ -359,6 +359,81 @@ def get_session_history(conn):
     return [dict(r) for r in rows]
 
 
+def get_cull_candidates(conn, max_price=1.0, enr_db_path=None):
+    """Return owned inventory rows that are cull candidates.
+
+    A card qualifies if ALL of:
+    - Has otag:vanilla or otag:french-vanilla in enrichment tags
+    - Has no row in enrichment staples (any tier/source)
+    - price_usd is NULL or < max_price
+
+    Returns [] gracefully if enrichment.db is missing or tags are unpopulated.
+    """
+    import os
+    import enrichment_db as _edb
+    enr_path = enr_db_path or _edb.DB_PATH
+
+    if not os.path.exists(enr_path):
+        return []
+
+    attached = False
+    try:
+        conn.execute("ATTACH DATABASE ? AS enr", (enr_path,))
+        attached = True
+
+        rows = conn.execute(
+            """
+            SELECT
+                i.id,
+                i.name,
+                i.set_code,
+                i.collector_number,
+                i.oracle_id,
+                i.type_line,
+                i.rarity,
+                i.colors,
+                i.price_usd,
+                i.quantity,
+                GROUP_CONCAT(DISTINCT t.tag_name) AS matched_tags
+            FROM inventory i
+            JOIN enr.tags t
+                ON t.oracle_id = i.oracle_id
+               AND t.tag_name IN ('vanilla', 'french-vanilla')
+            WHERE i.oracle_id NOT IN (
+                SELECT DISTINCT oracle_id FROM enr.staples
+            )
+            AND (i.price_usd IS NULL OR i.price_usd < ?)
+            GROUP BY i.id
+            ORDER BY i.name ASC
+            """,
+            (max_price,),
+        ).fetchall()
+
+        result = []
+        for row in rows:
+            d = dict(row)
+            tags = set((d.pop("matched_tags") or "").split(","))
+            reasons = []
+            if "vanilla" in tags:
+                reasons.append("vanilla")
+            if "french-vanilla" in tags:
+                reasons.append("french-vanilla")
+            reasons.append("no_staple")
+            reasons.append("low_price")
+            d["cull_reasons"] = reasons
+            result.append(d)
+        return result
+
+    except Exception:
+        return []
+    finally:
+        if attached:
+            try:
+                conn.execute("DETACH DATABASE enr")
+            except Exception:
+                pass
+
+
 def get_scan_history(conn, session_id=None, limit=None):
     """Get scan history, optionally filtered by session."""
     query = "SELECT * FROM scan_history"

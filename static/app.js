@@ -4355,8 +4355,68 @@ function wireCollectionSubnav() {
                 sec.style.display = (sec.getAttribute('data-collection-section') === view)
                     ? '' : 'none';
             });
+            // Trigger data loads for views that need it
+            if (view === 'cull') loadCullCandidates();
         });
     });
+}
+
+// ========================================================================
+// Cull candidates view
+// ========================================================================
+
+async function loadCullCandidates() {
+    const maxPrice = parseFloat(document.getElementById('cull-max-price')?.value) || 1.0;
+    const status  = document.getElementById('cull-status');
+    const empty   = document.getElementById('cull-empty');
+    const table   = document.getElementById('cull-table');
+    const tbody   = document.getElementById('cull-body');
+    const count   = document.getElementById('cull-count');
+
+    if (!status) return;
+
+    status.style.display = '';
+    empty.style.display  = 'none';
+    table.style.display  = 'none';
+    tbody.innerHTML      = '';
+    count.textContent    = '0';
+
+    try {
+        const data  = await apiGet(`/api/collection/cull-candidates?max_price=${maxPrice}`);
+        const items = data.candidates || [];
+
+        count.textContent   = items.length;
+        status.style.display = 'none';
+
+        if (items.length === 0) {
+            empty.style.display = '';
+            return;
+        }
+
+        tbody.innerHTML = items.map(c => {
+            const price   = c.price_usd != null ? '$' + parseFloat(c.price_usd).toFixed(2) : '—';
+            const reasons = (c.cull_reasons || [])
+                .map(r => `<span class="badge bg-secondary me-1">${r}</span>`)
+                .join('');
+            return `<tr>
+                <td>${c.name || ''}</td>
+                <td>${c.set_code || ''}</td>
+                <td class="small text-muted">${c.type_line || ''}</td>
+                <td>${price}</td>
+                <td>${c.quantity ?? ''}</td>
+                <td>${reasons}</td>
+            </tr>`;
+        }).join('');
+
+        table.style.display = '';
+    } catch (e) {
+        status.textContent = 'Error loading candidates: ' + e.message;
+    }
+}
+
+function exportCullCSV() {
+    const maxPrice = parseFloat(document.getElementById('cull-max-price')?.value) || 1.0;
+    window.location.href = `/api/collection/cull-candidates/export?max_price=${maxPrice}`;
 }
 
 // ========================================================================

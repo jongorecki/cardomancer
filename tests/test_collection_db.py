@@ -222,5 +222,127 @@ class TestCollectionDB(unittest.TestCase):
         self.assertIn("Forest", content)
 
 
+class TestGetCullCandidates(unittest.TestCase):
+    """Tests for get_cull_candidates() cross-DB query."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.col_path = os.path.join(self.tmpdir, "collection.db")
+        self.enr_path = os.path.join(self.tmpdir, "enrichment.db")
+        self.conn = collection_db.get_connection(db_path=self.col_path)
+
+        # Build a minimal enrichment.db with tags + staples tables
+        import sqlite3
+        enr = sqlite3.connect(self.enr_path)
+        enr.execute(
+            "CREATE TABLE tags (oracle_id TEXT NOT NULL, tag_name TEXT NOT NULL, "
+            "PRIMARY KEY (oracle_id, tag_name))"
+        )
+        enr.execute(
+            "CREATE TABLE staples (oracle_id TEXT NOT NULL, tier TEXT, source TEXT, "
+            "score REAL, archetypes_json TEXT, last_updated TEXT, "
+            "PRIMARY KEY (oracle_id, tier, source))"
+        )
+        enr.commit()
+        enr.close()
+
+    def tearDown(self):
+        self.conn.close()
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _add_inventory(self, name, oracle_id, price=0.25, qty=1,
+                       type_line="Creature"):
+        self.conn.execute(
+            "INSERT INTO inventory (name, set_code, collector_number, oracle_id, "
+            "type_line, rarity, colors, price_usd, quantity, first_scanned, last_scanned) "
+            "VALUES (?, 'TST', '001', ?, ?, 'common', 'W', ?, ?, datetime('now'), datetime('now'))",
+            (name, oracle_id, type_line, price, qty),
+        )
+        self.conn.commit()
+
+    def _add_tag(self, oracle_id, tag_name):
+        import sqlite3
+        enr = sqlite3.connect(self.enr_path)
+        enr.execute("INSERT OR IGNORE INTO tags VALUES (?, ?)", (oracle_id, tag_name))
+        enr.commit()
+        enr.close()
+
+    def _add_staple(self, oracle_id):
+        import sqlite3
+        enr = sqlite3.connect(self.enr_path)
+        enr.execute(
+            "INSERT OR IGNORE INTO staples VALUES (?, 'universal', 'edhrec', 0.5, NULL, '2026-01-01')",
+            (oracle_id,),
+        )
+        enr.commit()
+        enr.close()
+
+    def test_vanilla_below_threshold_returned(self):
+        self._add_inventory("Grizzly Bears", "oid-bears", price=0.15)
+        self._add_tag("oid-bears", "vanilla")
+        result = collection_db.get_cull_candidates(
+            self.conn, max_price=1.0, enr_db_path=self.enr_path)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["name"], "Grizzly Bears")
+        self.assertIn("vanilla", result[0]["cull_reasons"])
+        self.assertIn("no_staple", result[0]["cull_reasons"])
+
+    def test_french_vanilla_included(self):
+        self._add_inventory("Squire", "oid-squire", price=0.10)
+        self._add_tag("oid-squire", "french-vanilla")
+        result = collection_db.get_cull_candidates(
+            self.conn, max_price=1.0, enr_db_path=self.enr_path)
+        self.assertEqual(len(result), 1)
+        self.assertIn("french-vanilla", result[0]["cull_reasons"])
+
+    def test_staple_excluded(self):
+        self._add_inventory("Sol Ring", "oid-sol-ring", price=0.50)
+        self._add_tag("oid-sol-ring", "vanilla")   # hypothetically tagged
+        self._add_staple("oid-sol-ring")
+        result = collection_db.get_cull_candidates(
+            self.conn, max_price=1.0, enr_db_path=self.enr_path)
+        self.assertEqual(len(result), 0, "Staple cards must be excluded")
+
+    def test_above_price_threshold_excluded(self):
+        self._add_inventory("Pricey Vanilla", "oid-pricey", price=2.50)
+        self._add_tag("oid-pricey", "vanilla")
+        result = collection_db.get_cull_candidates(
+            self.conn, max_price=1.0, enr_db_path=self.enr_path)
+        self.assertEqual(len(result), 0, "Cards above price threshold must be excluded")
+
+    def test_custom_price_threshold(self):
+        self._add_inventory("Cheap Vanilla", "oid-cheap", price=0.05)
+        self._add_inventory("Mid Vanilla", "oid-mid", price=0.75)
+        self._add_tag("oid-cheap", "vanilla")
+        self._add_tag("oid-mid", "vanilla")
+        result = collection_db.get_cull_candidates(
+            self.conn, max_price=0.50, enr_db_path=self.enr_path)
+        oids = {r["oracle_id"] for r in result}
+        self.assertIn("oid-cheap", oids)
+        self.assertNotIn("oid-mid", oids)
+
+    def test_no_tag_not_returned(self):
+        self._add_inventory("Lightning Bolt", "oid-bolt", price=0.30)
+        # No tag added
+        result = collection_db.get_cull_candidates(
+            self.conn, max_price=1.0, enr_db_path=self.enr_path)
+        self.assertEqual(len(result), 0)
+
+    def test_missing_enrichment_db_returns_empty(self):
+        result = collection_db.get_cull_candidates(
+            self.conn, max_price=1.0,
+            enr_db_path=os.path.join(self.tmpdir, "nonexistent.db"))
+        self.assertEqual(result, [])
+
+    def test_null_price_included(self):
+        """Cards with no price data are included (treated as worthless)."""
+        self._add_inventory("No-Price Vanilla", "oid-noprice", price=None)
+        self._add_tag("oid-noprice", "vanilla")
+        result = collection_db.get_cull_candidates(
+            self.conn, max_price=1.0, enr_db_path=self.enr_path)
+        self.assertEqual(len(result), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
