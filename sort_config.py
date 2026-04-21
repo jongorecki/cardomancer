@@ -8,7 +8,7 @@ import time
 
 from query_parser import (
     parse_query, evaluate_query, collect_otag_terms,
-    expand_otag_cache, QueryParseError,
+    collect_enrichment_fields, expand_otag_cache, QueryParseError,
 )
 
 
@@ -36,6 +36,9 @@ class SortConfig:
         self.otag_cache = otag_cache or {}
         # Track how many cards have been placed in each bin
         self.bin_card_counts = {}
+        # Enrichment support: populated by from_lines/from_file when needed
+        self._needs_enrichment = False   # True if any query uses staple/salt/combo
+        self._enr_cache: dict = {}       # oracle_id → enrichment data dict
 
     def get_bin(self, card_data):
         """
@@ -50,6 +53,13 @@ class SortConfig:
         if not card_data:
             return self.fallback_bin
 
+        # Fetch enrichment data once per card when any query needs it
+        enrichment_data = None
+        if self._needs_enrichment:
+            oracle_id = card_data.get('oracle_id')
+            if oracle_id:
+                enrichment_data = self._get_enrichment_data(oracle_id)
+
         for bin_num, query_str, ast in self.bin_queries:
             # Skip bins that are at capacity
             if self.bin_limit is not None:
@@ -58,7 +68,8 @@ class SortConfig:
                     continue
 
             try:
-                if evaluate_query(ast, card_data, self.otag_cache):
+                if evaluate_query(ast, card_data, self.otag_cache,
+                                  enrichment_data=enrichment_data):
                     self.bin_card_counts[bin_num] = \
                         self.bin_card_counts.get(bin_num, 0) + 1
                     return bin_num
@@ -71,6 +82,52 @@ class SortConfig:
         self.bin_card_counts[self.fallback_bin] = \
             self.bin_card_counts.get(self.fallback_bin, 0) + 1
         return self.fallback_bin
+
+    def _get_enrichment_data(self, oracle_id: str) -> dict:
+        """Fetch enrichment data for one oracle_id, with in-session cache.
+
+        Returns a dict with keys:
+          staple_universal, staple_cedh, staple_archetype (bool)
+          salt (float|None)
+          in_combo (bool)
+        Degrades to {} if enrichment.db is unavailable.
+        """
+        if oracle_id in self._enr_cache:
+            return self._enr_cache[oracle_id]
+
+        data: dict = {}
+        try:
+            import enrichment_db
+            conn = enrichment_db.get_connection()
+            try:
+                tiers = {
+                    r[0] for r in conn.execute(
+                        "SELECT tier FROM staples WHERE oracle_id=?",
+                        (oracle_id,),
+                    ).fetchall()
+                }
+                salt_row = conn.execute(
+                    "SELECT salt FROM salt_scores WHERE oracle_id=?",
+                    (oracle_id,),
+                ).fetchone()
+                combo_row = conn.execute(
+                    "SELECT 1 FROM combo_membership WHERE oracle_id=? LIMIT 1",
+                    (oracle_id,),
+                ).fetchone()
+                data = {
+                    "staple_universal":  "universal"  in tiers,
+                    "staple_cedh":       "cedh"       in tiers,
+                    "staple_archetype":  "archetype"  in tiers,
+                    "salt":              salt_row[0] if salt_row else None,
+                    "in_combo":          combo_row is not None,
+                }
+            finally:
+                conn.close()
+        except Exception as exc:
+            print(f"[sort_config] enrichment lookup failed for {oracle_id}: {exc}")
+
+        self._enr_cache[oracle_id] = data
+        return data
 
     def reset_counts(self):
         """Reset all bin card counts (e.g., when starting a new sorting session)."""
@@ -205,6 +262,15 @@ class SortConfig:
         if all_otags:
             config.otag_cache = fetch_otag_data(all_otags)
 
+        # Flag if any queries use enrichment tokens (staple/salt/combo)
+        for _bn, _qs, ast in bin_queries:
+            if collect_enrichment_fields(ast):
+                config._needs_enrichment = True
+                break
+        if config._needs_enrichment:
+            print("[sort_config] Enrichment tokens detected — "
+                  "staple/salt/combo will be resolved per card from enrichment.db")
+
         return config
 
     @classmethod
@@ -300,6 +366,15 @@ def prompt_manual_config():
         all_otags.update(collect_otag_terms(ast))
     if all_otags:
         config.otag_cache = fetch_otag_data(all_otags)
+
+    # Flag enrichment token usage
+    for _bn, _qs, ast in bin_queries:
+        if collect_enrichment_fields(ast):
+            config._needs_enrichment = True
+            break
+    if config._needs_enrichment:
+        print("[sort_config] Enrichment tokens detected — "
+              "staple/salt/combo will be resolved per card from enrichment.db")
 
     print(f"\n{config.describe()}")
     return config

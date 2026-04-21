@@ -291,5 +291,113 @@ class TestDescribeAndStatus(unittest.TestCase):
         self.assertIn("Bin 2: 0", status)
 
 
+class TestSortConfigEnrichment(unittest.TestCase):
+    """Test enrichment token detection and per-card lookup in SortConfig."""
+
+    def _make_config(self, query_str, fallback=2):
+        ast = parse_query(query_str)
+        return SortConfig(
+            bin_count=2,
+            fallback_bin=fallback,
+            bin_queries=[(1, query_str, ast)],
+        )
+
+    def test_needs_enrichment_flag_set_for_staple(self):
+        config = SortConfig.from_lines([
+            "bins: 2", "fallback: 2", "bin1: staple:universal",
+        ])
+        self.assertTrue(config._needs_enrichment)
+
+    def test_needs_enrichment_flag_not_set_for_color(self):
+        config = SortConfig.from_lines([
+            "bins: 2", "fallback: 2", "bin1: c:r",
+        ])
+        self.assertFalse(config._needs_enrichment)
+
+    def test_needs_enrichment_flag_set_for_salt(self):
+        config = SortConfig.from_lines([
+            "bins: 2", "fallback: 2", "bin1: salt>2",
+        ])
+        self.assertTrue(config._needs_enrichment)
+
+    def test_needs_enrichment_flag_set_for_combo(self):
+        config = SortConfig.from_lines([
+            "bins: 2", "fallback: 2", "bin1: combo:true",
+        ])
+        self.assertTrue(config._needs_enrichment)
+
+    def test_staple_query_routes_correctly_with_enrichment_data(self):
+        """Cards with staple data route to bin 1; others fall back."""
+        from unittest.mock import patch
+
+        config = SortConfig.from_lines([
+            "bins: 2", "fallback: 2", "bin1: staple:universal",
+        ])
+
+        staple_data = {
+            "staple_universal": True, "staple_cedh": False,
+            "staple_archetype": False, "salt": 1.2, "in_combo": False,
+        }
+        non_staple_data = {
+            "staple_universal": False, "staple_cedh": False,
+            "staple_archetype": False, "salt": 0.1, "in_combo": False,
+        }
+
+        card_staple = {"oracle_id": "oid-staple", "name": "Sol Ring",
+                       "colors": [], "cmc": 1.0, "type_line": "Artifact",
+                       "rarity": "uncommon", "prices": {}}
+        card_junk = {"oracle_id": "oid-junk", "name": "Squire",
+                     "colors": ["W"], "cmc": 1.0, "type_line": "Creature",
+                     "rarity": "common", "prices": {}}
+
+        def fake_enr(oracle_id):
+            return staple_data if oracle_id == "oid-staple" else non_staple_data
+
+        with patch.object(config, "_get_enrichment_data", side_effect=fake_enr):
+            self.assertEqual(config.get_bin(card_staple), 1)
+            self.assertEqual(config.get_bin(card_junk), 2)
+
+    def test_enrichment_cache_used_on_second_call(self):
+        """Same oracle_id is only looked up once (cached)."""
+        from unittest.mock import patch
+
+        config = SortConfig.from_lines([
+            "bins: 2", "fallback: 2", "bin1: staple:universal",
+        ])
+        config._enr_cache["oid-cached"] = {
+            "staple_universal": True, "staple_cedh": False,
+            "staple_archetype": False, "salt": None, "in_combo": False,
+        }
+        card = {"oracle_id": "oid-cached", "name": "Test", "colors": [],
+                "cmc": 0.0, "type_line": "Artifact", "rarity": "common",
+                "prices": {}}
+
+        with patch.object(config, "_get_enrichment_data",
+                          wraps=config._get_enrichment_data) as mock_lookup:
+            config.get_bin(card)
+            # Cache hit — real method not called for DB part
+            self.assertNotIn("oid-cached", [
+                c.args[0] for c in mock_lookup.call_args_list
+                if c.args[0] not in config._enr_cache
+            ])
+
+    def test_no_enrichment_data_without_flag(self):
+        """Without enrichment tokens, enrichment_data stays None (no DB hit)."""
+        from unittest.mock import patch
+
+        config = SortConfig.from_lines([
+            "bins: 2", "fallback: 2", "bin1: c:r",
+        ])
+        self.assertFalse(config._needs_enrichment)
+
+        card = {"oracle_id": "oid-x", "name": "Goblin", "colors": ["R"],
+                "cmc": 1.0, "type_line": "Creature", "rarity": "common",
+                "prices": {}}
+
+        with patch.object(config, "_get_enrichment_data") as mock_lookup:
+            config.get_bin(card)
+            mock_lookup.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

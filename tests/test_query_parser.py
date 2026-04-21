@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from query_parser import (
     tokenize, parse_query, evaluate_query, collect_otag_terms,
-    matches_query, expand_otag_cache, QueryParseError,
+    collect_enrichment_fields, matches_query, expand_otag_cache, QueryParseError,
     AndNode, OrNode, NotNode, FieldQuery,
 )
 
@@ -833,6 +833,41 @@ class TestExpandOtagCache(unittest.TestCase):
         expanded = expand_otag_cache(cache, conn)
         conn.close()
         self.assertEqual(expanded["removal"], {"oid-x"})
+
+
+class TestCollectEnrichmentFields(unittest.TestCase):
+
+    def test_staple_detected(self):
+        ast = parse_query("staple:universal")
+        self.assertEqual(collect_enrichment_fields(ast), {"staple"})
+
+    def test_salt_detected(self):
+        ast = parse_query("salt>2")
+        self.assertEqual(collect_enrichment_fields(ast), {"salt"})
+
+    def test_combo_detected(self):
+        ast = parse_query("combo:true")
+        self.assertEqual(collect_enrichment_fields(ast), {"combo"})
+
+    def test_multiple_detected(self):
+        ast = parse_query("staple:any OR combo:true")
+        self.assertEqual(collect_enrichment_fields(ast), {"staple", "combo"})
+
+    def test_non_enrichment_empty(self):
+        ast = parse_query("c:r t:creature")
+        self.assertEqual(collect_enrichment_fields(ast), set())
+
+    def test_otag_not_enrichment(self):
+        ast = parse_query("otag:removal")
+        self.assertEqual(collect_enrichment_fields(ast), set())
+
+    def test_not_node_detected(self):
+        ast = parse_query("-staple:universal")
+        self.assertEqual(collect_enrichment_fields(ast), {"staple"})
+
+    def test_nested_and(self):
+        ast = parse_query("t:creature staple:universal salt>1")
+        self.assertEqual(collect_enrichment_fields(ast), {"staple", "salt"})
 
 
 if __name__ == "__main__":

@@ -356,6 +356,25 @@ def collect_otag_terms(ast):
     return tags
 
 
+def collect_enrichment_fields(ast) -> set:
+    """Walk the AST and return which enrichment fields are used.
+
+    Returns a subset of {'staple', 'salt', 'combo'}.  Used by SortConfig
+    to decide whether to fetch enrichment data during bin evaluation.
+    """
+    ENRICHMENT = frozenset(('staple', 'salt', 'combo'))
+    fields = set()
+    if isinstance(ast, FieldQuery):
+        if ast.field in ENRICHMENT:
+            fields.add(ast.field)
+    elif isinstance(ast, NotNode):
+        fields.update(collect_enrichment_fields(ast.child))
+    elif isinstance(ast, (AndNode, OrNode)):
+        for child in ast.children:
+            fields.update(collect_enrichment_fields(child))
+    return fields
+
+
 # ---------------------------------------------------------------------------
 # Evaluator
 # ---------------------------------------------------------------------------
