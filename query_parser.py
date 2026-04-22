@@ -135,6 +135,7 @@ FIELD_ALIASES = {
     "staple": "staple",
     "salt": "salt",
     "combo": "combo",
+    "buylist": "buylist",
 }
 
 
@@ -390,10 +391,11 @@ def collect_otag_terms(ast):
 def collect_enrichment_fields(ast) -> set:
     """Walk the AST and return which enrichment fields are used.
 
-    Returns a subset of {'staple', 'salt', 'combo'}.  Used by SortConfig
-    to decide whether to fetch enrichment data during bin evaluation.
+    Returns a subset of {'staple', 'salt', 'combo', 'buylist'}.  Used by
+    SortConfig to decide whether to fetch enrichment data during bin
+    evaluation.
     """
-    ENRICHMENT = frozenset(('staple', 'salt', 'combo'))
+    ENRICHMENT = frozenset(('staple', 'salt', 'combo', 'buylist'))
     fields = set()
     if isinstance(ast, FieldQuery):
         if ast.field in ENRICHMENT:
@@ -644,6 +646,46 @@ def _eval_field_query(fq, card_data, otag_cache=None, enrichment_data=None):
         if val_lower in ('false', 'no'):
             return not bool(enrichment_data.get("in_combo", False))
         return False
+
+    # --- Enrichment: CardKingdom buylist price ---
+    # Syntax:
+    #   buylist:ck           — any card with a CK buylist entry (price > 0)
+    #   buylist:ck>=1.00     — CK buylist price >= $1.00
+    #   buylist:ck>0.50      — CK buylist price > $0.50
+    #   -buylist:ck          — no CK buylist entry
+    if field == 'buylist':
+        if enrichment_data is None:
+            return False
+        val_lower = val.lower()
+
+        # Parse vendor prefix (currently only 'ck' supported)
+        # Accept bare "ck" (presence check) or "ck>=N" / "ck>N" etc.
+        # The tokenizer hands us the full val string after "buylist:"
+        # e.g.  buylist:ck        -> val = "ck"
+        #       buylist:ck>=1.00  -> val = "ck>=1.00"  (captured by tokenizer
+        #                            as a single word since no whitespace)
+        ck_price = enrichment_data.get("buylist_ck_price")  # float | None
+
+        # Strip the vendor prefix to get the optional comparison suffix
+        if val_lower.startswith("ck"):
+            suffix = val[2:].strip()   # e.g. "" / ">=1.00" / ">0.50"
+        else:
+            # Unknown vendor — no match
+            return False
+
+        if not suffix:
+            # Bare "buylist:ck" — presence check: any non-None, non-zero price
+            return ck_price is not None and ck_price > 0
+
+        # Comparison: extract operator + number
+        import re as _re
+        m = _re.match(r'^(>=|<=|!=|>|<|=)(.+)$', suffix)
+        if not m:
+            return False
+        cmp_op, cmp_val = m.group(1), m.group(2)
+        if ck_price is None:
+            return False
+        return _compare(ck_price, cmp_op, cmp_val)
 
     return False
 

@@ -159,12 +159,19 @@ class SortConfig:
                     "SELECT 1 FROM combo_membership WHERE oracle_id=? LIMIT 1",
                     (oracle_id,),
                 ).fetchone()
+                buylist_row = conn.execute(
+                    "SELECT price_usd FROM buylists "
+                    "WHERE oracle_id=? AND vendor='ck' LIMIT 1",
+                    (oracle_id,),
+                ).fetchone()
                 data = {
                     "staple_universal":  "universal"  in tiers,
                     "staple_cedh":       "cedh"       in tiers,
                     "staple_archetype":  "archetype"  in tiers,
                     "salt":              salt_row[0] if salt_row else None,
                     "in_combo":          combo_row is not None,
+                    "buylist_ck_price":  (buylist_row[0]
+                                          if buylist_row else None),
                 }
             finally:
                 conn.close()

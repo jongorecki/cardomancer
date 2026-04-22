@@ -196,6 +196,25 @@ class EnrichmentRepo:
         finally:
             conn.close()
 
+    def buylist_ck_price(self, oracle_id: str) -> Optional[float]:
+        """Return the CardKingdom buylist price for oracle_id, or None.
+
+        Fast read from buylists table (no network). Returns None if the
+        card has no CK buylist entry or the entry has a null price.
+        """
+        conn = self._conn()
+        try:
+            row = conn.execute(
+                "SELECT price_usd FROM buylists "
+                "WHERE oracle_id = ? AND vendor = 'ck'",
+                (oracle_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            return row["price_usd"]  # may be None if stored as NULL
+        finally:
+            conn.close()
+
     # -- Coverage -----------------------------------------------------------
 
     def coverage_overview(self) -> dict:

@@ -44,6 +44,7 @@ from web_enrichment.spellbook import SpellbookSource
 from web_enrichment.edhrec import EDHRECSource
 from web_enrichment.edhtop16 import EDHTop16Source
 from web_enrichment.tagger import TaggerSource
+from web_enrichment.buylist_ck import CardKingdomBuylistSource
 
 
 # ---------------------------------------------------------------------------
@@ -216,13 +217,18 @@ for _src, _cron in _PHASE1_SOURCES:
     except Exception as _src_err:
         logging.error("Could not register source %s: %s", _src.name, _src_err)
 
-# Phase 3+ stub sources (buylist_ck, prices)
-_STUB_ONLY = {"buylist_ck", "prices"}
+# Phase 3 real sources
+try:
+    enrichment_scheduler.register(CardKingdomBuylistSource(), cron="daily")
+except Exception as _ck_err:
+    logging.error("Could not register buylist_ck source: %s", _ck_err)
+
+# Remaining stub sources (prices only — buylist_ck is now real)
+_STUB_ONLY = {"prices"}
 for _stub_name, _stub_cls in ALL_STUBS.items():
     if _stub_name in _STUB_ONLY:
-        _cron = "daily" if _stub_name == "prices" else "daily"
         try:
-            enrichment_scheduler.register(_stub_cls(), cron=_cron)
+            enrichment_scheduler.register(_stub_cls(), cron="daily")
         except Exception as _stub_err:
             logging.error("Could not register stub source %s: %s",
                           _stub_name, _stub_err)
