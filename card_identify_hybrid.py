@@ -39,6 +39,7 @@ from card_identify_v2 import (
 )
 
 from cards import CARD_DATA_BY_ID
+import cards as _cards_mod  # for dynamic getattr of get_cheapest_printing_id
 
 # --- Decision thresholds ---
 # With 1-region phash: phash-correct max distance = 80,
@@ -59,6 +60,27 @@ def _get_name(card_id):
     if card_id and card_id in CARD_DATA_BY_ID:
         return CARD_DATA_BY_ID[card_id].get('name', '')
     return ''
+
+
+def _remap_to_cheapest(card_id):
+    """
+    Remap an identified card_id to the cheapest nonfoil printing sharing the
+    same art (illustration_id group).  Until we do set detection, this is how
+    we avoid misclassifying a $285 serialized Fynn as high-value when the same
+    art is also printed as a 50-cent regular.
+
+    Uses getattr(cards_mod, ...) so we degrade gracefully if the running
+    cards module predates this helper (function missing -> no remap).
+    """
+    if not card_id:
+        return card_id
+    fn = getattr(_cards_mod, 'get_cheapest_printing_id', None)
+    if fn is None:
+        return card_id
+    try:
+        return fn(card_id) or card_id
+    except Exception:
+        return card_id
 
 
 def _names_match(name_a, name_b):
@@ -101,25 +123,25 @@ def identify_card(card_img, threshold=None):
     d_name = _get_name(d_id)
 
     # --- Decision logic ---
+    # Single-exit pattern so we can cheapest-printing-remap in one place.
 
     # Case 1: Both agree -> trust phash result (has distance-sorted results)
     if p_id and d_id and _names_match(p_name, d_name):
-        return p_id, p_dist, p_rot, p_results
+        final_id, final_dist, final_rot, final_results = p_id, p_dist, p_rot, p_results
 
     # Case 2: Phash is confident (low distance) -> trust phash
-    if p_dist <= PHASH_CONFIDENCE_THRESHOLD:
-        return p_id, p_dist, p_rot, p_results
+    elif p_dist <= PHASH_CONFIDENCE_THRESHOLD:
+        final_id, final_dist, final_rot, final_results = p_id, p_dist, p_rot, p_results
 
     # Case 3: Phash has a decisive lead over #2 at moderate distance ->
     # trust phash (catches foils, lighting variation).
     # Only applies at dist <= 85; at 90+ a big gap just means noise.
-    if p_dist <= PHASH_GAP_MAX_DIST and len(p_results) >= 2:
-        gap = p_results[1][1] - p_results[0][1]
-        if gap >= PHASH_GAP_THRESHOLD:
-            return p_id, p_dist, p_rot, p_results
+    elif (p_dist <= PHASH_GAP_MAX_DIST and len(p_results) >= 2
+          and (p_results[1][1] - p_results[0][1]) >= PHASH_GAP_THRESHOLD):
+        final_id, final_dist, final_rot, final_results = p_id, p_dist, p_rot, p_results
 
     # Case 4: Phash is not confident -> trust DINOv2
-    if d_id:
+    elif d_id:
         # Build all_results with DINOv2's pick at position 0.
         # Use a synthetic low distance so it passes the threshold check
         # in web_worker's filtering code.
@@ -132,7 +154,21 @@ def identify_card(card_img, threshold=None):
             if cid != d_id:
                 merged.append((cid, d))
 
-        return d_id, p_dist, d_rot, merged
+        final_id, final_dist, final_rot, final_results = d_id, p_dist, d_rot, merged
 
     # Case 5: DINOv2 returned nothing -> fall back to phash
-    return p_id, p_dist, p_rot, p_results
+    else:
+        final_id, final_dist, final_rot, final_results = p_id, p_dist, p_rot, p_results
+
+    # --- Cheapest-printing remap ---
+    # Remap the winning card_id to the cheapest sibling with the same art,
+    # so a serialized / promo / expensive-variant printing doesn't push the
+    # card into the wrong value bin.  Also rewrite the top entry of
+    # final_results so downstream consumers (CSV logging, UI) see the
+    # remapped card everywhere.
+    remapped_id = _remap_to_cheapest(final_id)
+    if remapped_id != final_id and final_results:
+        final_results = [(remapped_id, final_results[0][1])] + final_results[1:]
+    final_id = remapped_id
+
+    return final_id, final_dist, final_rot, final_results

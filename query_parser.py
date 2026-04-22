@@ -17,6 +17,37 @@ import re
 
 
 # ---------------------------------------------------------------------------
+# Safe cards-module reference for price lookups
+# ---------------------------------------------------------------------------
+# We resolve get_art_min_price dynamically (getattr) on each call rather than
+# `from cards import get_art_min_price` up front.  Two reasons:
+#   1. If cards.py is reloaded via cards.reload_card_data(), a bound name
+#      captured at import time would become stale.
+#   2. If a running server was started before get_art_min_price was added to
+#      cards.py, a `from cards import X` inside _eval_field_query would raise
+#      ImportError on every query, sending every card to the fallback bin.
+#      Dynamic getattr degrades gracefully: missing function -> None -> we
+#      just use the card's own nonfoil price.
+try:
+    import cards as _cards_module
+except ImportError:
+    _cards_module = None
+
+
+def _lookup_art_min_price(card_id):
+    """Safely resolve and call cards.get_art_min_price; return None on any issue."""
+    if _cards_module is None or not card_id:
+        return None
+    fn = getattr(_cards_module, 'get_art_min_price', None)
+    if fn is None:
+        return None
+    try:
+        return fn(card_id)
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
 # AST Node Types
 # ---------------------------------------------------------------------------
 
@@ -501,6 +532,15 @@ def _eval_field_query(fq, card_data, otag_cache=None, enrichment_data=None):
 
     # --- Price ---
     if field == 'price':
+        # Use art-min-price (cheapest nonfoil across same-art printings) when
+        # available, so a $10 promo printing sorts like its 50-cent siblings.
+        # Resolved via _lookup_art_min_price (safe getattr) to survive module
+        # reloads and stale-module ImportError.
+        card_id = card_data.get('id')
+        art_price = _lookup_art_min_price(card_id)
+        if art_price is not None:
+            return _compare(art_price, op, val)
+        # Fallback: use the card's own nonfoil price
         prices = card_data.get('prices') or {}
         usd = prices.get('usd')
         if usd is None:

@@ -76,6 +76,12 @@ def reload_card_data():
         print(f"[cards] Reloaded printings map: "
               f"{len(PRINTINGS_MAP)} entries")
 
+    # Invalidate lazy price indexes so they rebuild from fresh data
+    global _name_price_index, _art_min_price_index, _cheapest_printing_index
+    _name_price_index = None
+    _art_min_price_index = None
+    _cheapest_printing_index = None
+
     return len(CARD_DATA_BY_ID)
 
 
@@ -85,12 +91,16 @@ def reload_card_data():
 # Scryfall's bulk data has null USD prices for ~19% of English paper cards.
 # This happens for foil-only printings, promos, and older sets.
 # Fallback chain:
-#   1. prices.usd (non-foil market price)
-#   2. prices.usd_foil (foil market price — many promos are foil-only)
+#   0. Art-min-price: cheapest nonfoil across all same-art printings
+#      (prevents promo/expensive printing from inflating sort price)
+#   1. prices.usd (non-foil market price)        — for cards not in printings map
+#   2. prices.usd_foil (foil market price)        — foil-only printings
 #   3. Cheapest price across all printings of the same card name
 # ---------------------------------------------------------------------------
 
-_name_price_index = None  # Lazy-init: {card_name_lower: cheapest_usd_float}
+_name_price_index = None         # Lazy-init: {card_name_lower: cheapest_usd_float}
+_art_min_price_index = None      # Lazy-init: {card_id: cheapest_nonfoil_usd_float across same-art printings}
+_cheapest_printing_index = None  # Lazy-init: {card_id: cheapest_sibling_card_id across same-art printings}
 
 
 def _build_name_price_index():
@@ -118,6 +128,85 @@ def _build_name_price_index():
     print(f"[cards] Built name-price index: {len(_name_price_index)} unique card names with prices")
 
 
+def _build_art_min_price_index():
+    """
+    Build card_id -> min nonfoil USD price across all same-art printings,
+    AND card_id -> cheapest-sibling card_id for the same groupings.
+
+    Iterates every illustration group in PRINTINGS_MAP, finds the cheapest
+    nonfoil printing (both price AND its card_id), and maps every card ID
+    in the group to both values.  Cards with no art group (unique printings)
+    are not added; callers fall back to the card's own price / id.
+    """
+    global _art_min_price_index, _cheapest_printing_index
+    _art_min_price_index = {}
+    _cheapest_printing_index = {}
+
+    for rep_id, entry in PRINTINGS_MAP.items():
+        printings = entry.get('printings', [])
+        # Collect all card IDs in this illustration group (rep + all printings)
+        all_ids = [rep_id] + [p['id'] for p in printings if p.get('id')]
+
+        # Find cheapest nonfoil printing across the group (price + card_id)
+        min_price = None
+        cheapest_id = None
+        for cid in all_ids:
+            c = CARD_DATA_BY_ID.get(cid)
+            if not c:
+                continue
+            raw = (c.get('prices') or {}).get('usd')
+            if raw:
+                try:
+                    p = float(raw)
+                    if p > 0 and (min_price is None or p < min_price):
+                        min_price = p
+                        cheapest_id = cid
+                except (ValueError, TypeError):
+                    pass
+
+        if min_price is not None and cheapest_id is not None:
+            for cid in all_ids:
+                _art_min_price_index[cid] = min_price
+                _cheapest_printing_index[cid] = cheapest_id
+
+    print(f"[cards] Built art-min-price index: {len(_art_min_price_index)} card IDs")
+
+
+def get_art_min_price(card_id):
+    """
+    Return the minimum nonfoil USD price across all same-art printings for
+    the given card ID, or None if this card has no art group or no prices.
+    """
+    global _art_min_price_index
+    if _art_min_price_index is None:
+        _build_art_min_price_index()
+    return _art_min_price_index.get(card_id)
+
+
+def get_cheapest_printing_id(card_id):
+    """
+    Return the card_id of the cheapest nonfoil printing sharing this card's
+    art (illustration group).  Used to remap identified serialized / promo
+    printings down to the regular cheap printing so sort decisions reflect
+    the card's "real" value, not the serialized stamp's market price.
+
+    Returns the input card_id unchanged if:
+      - card_id is None / unknown
+      - card has no art group (unique printing)
+      - no printing in the group has a valid nonfoil USD price
+
+    Note: siblings share illustration_id (same art).  Serialized MUL printings
+    DO share art with their normal counterparts in Scryfall's data, so this
+    remap catches the $285 serialized -> $0.50 normal case.
+    """
+    global _cheapest_printing_index
+    if _cheapest_printing_index is None:
+        _build_art_min_price_index()
+    if not card_id:
+        return card_id
+    return _cheapest_printing_index.get(card_id, card_id)
+
+
 def _get_price_str(card, name):
     """
     Extract USD price string from a card's Scryfall data with fallbacks.
@@ -125,6 +214,16 @@ def _get_price_str(card, name):
     Returns "$X.XX" on success, "null" if no price found anywhere.
     """
     global _name_price_index
+
+    # 0. Art-min-price: cheapest nonfoil across all same-art printings.
+    #    This prevents a promo/expensive printing from inflating the sort price
+    #    (e.g. a $10 promo Farseek should sort alongside 50-cent copies).
+    card_id = card.get('id')
+    if card_id:
+        art_price = get_art_min_price(card_id)
+        if art_price is not None:
+            return f"${art_price:.2f}"
+
     prices = card.get('prices', {})
 
     # 1. Try non-foil USD price
