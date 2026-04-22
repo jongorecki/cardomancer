@@ -28,6 +28,44 @@ from web_motion_sim import motion_tracker
 STATES = ('disconnected', 'idle', 'sorting', 'paused', 'estopped')
 
 
+# ---------------------------------------------------------------------------
+# Bin layout helper
+# ---------------------------------------------------------------------------
+
+def _apply_sort_bin_layout(worker, gcode_control, bin_count):
+    """Apply physical bin positions for a custom sort session.
+
+    Preserves existing calibrated bin positions (from ArUco / manual
+    calibration) rather than overwriting them with evenly-spaced defaults.
+    Only falls back to configure_bins() when no calibrated positions exist.
+
+    Also logs a warning when the sort config requests more bins than are
+    physically calibrated so the user knows upfront which bins won't have
+    dedicated physical slots.
+    """
+    existing = gcode_control.get_bin_locations()
+    dest_bins = {k: v for k, v in existing.items() if k > 0}
+
+    if not dest_bins:
+        # No calibrated positions — generate evenly-spaced defaults.
+        gcode_control.configure_bins(bin_count)
+        return
+
+    max_cal = max(dest_bins)
+    if bin_count <= max_cal:
+        # All sort bins have calibrated positions — nothing to do.
+        return
+
+    # Warn: some bins lack calibrated positions.
+    missing = list(range(max_cal + 1, bin_count + 1))
+    worker.log(
+        f"WARNING: Sort config uses {bin_count} bins but only bins 1–{max_cal} "
+        f"are physically calibrated. Bins {missing} will use bin {max_cal}'s "
+        f"physical position as fallback. Calibrate those bins or reduce the "
+        f"sort config bin count to {max_cal}."
+    )
+
+
 class SortWorker:
     """
     Background worker that processes hardware commands from a queue.
@@ -694,8 +732,8 @@ class SortWorker:
                 self.sort_config_obj = SortConfig.from_file(filepath)
                 set_sort_config(self.sort_config_obj)
                 import gcode_control
-                if self.sort_config_obj.bin_count != 10:
-                    gcode_control.configure_bins(self.sort_config_obj.bin_count)
+                _apply_sort_bin_layout(self, gcode_control,
+                                       self.sort_config_obj.bin_count)
                 self.log(f"Custom sort config loaded from {os.path.basename(filepath)}:")
                 self.log(self.sort_config_obj.describe())
             except Exception as e:
@@ -731,8 +769,8 @@ class SortWorker:
                 self.sort_config_obj = SortConfig.from_lines(lines)
                 set_sort_config(self.sort_config_obj)
                 import gcode_control
-                if self.sort_config_obj.bin_count != 10:
-                    gcode_control.configure_bins(self.sort_config_obj.bin_count)
+                _apply_sort_bin_layout(self, gcode_control,
+                                       self.sort_config_obj.bin_count)
                 self.log(f"Custom sort config applied:")
                 self.log(self.sort_config_obj.describe())
             except Exception as e:
@@ -984,6 +1022,20 @@ class SortWorker:
             self.log("detect_and_sort: aborted before start")
             return
 
+        # On the very first card, log the active sort config + bin positions
+        # so the user can verify routing is set up correctly.
+        if self.scan_count == 0:
+            from sorting import get_sort_config
+            sc = get_sort_config()
+            if sc:
+                self.log(f"[sort] Active config: {sc.describe()}")
+            bin_locs = gcode_control.get_bin_locations()
+            loc_str = ', '.join(
+                f'bin{k}={v:.0f}mm' for k, v in sorted(bin_locs.items())
+            )
+            self.log(f"[sort] Bin positions: {loc_str}")
+            self.log(f"[sort] Sort mode: {self.sort_mode}")
+
         # --- Periodic re-home ---
         self._cards_since_rehome += 1
         if self._cards_since_rehome >= self.rehome_interval:
@@ -1052,6 +1104,10 @@ class SortWorker:
             # Card is on staging — pick it up and put in fallback bin
             gcode_control.pick_from_staging()
             gcode_control.quick_drop(self._get_fallback_x())
+            if self.continuous_sorting and self.state == 'sorting':
+                time.sleep(self.continuous_delay)
+                from web_camera import camera as cam
+                self.enqueue('detect_and_sort', camera=cam)
             return
 
         self.log(f"Frame sharpness: {sharpness:.1f}")
@@ -1213,11 +1269,20 @@ class SortWorker:
         method = id_result['method']
         hash_distance = id_result['hash_distance']
 
+        # --- Step 6: Motion parameters (shared by card-back and normal paths) ---
+        bin_locs = gcode_control.get_bin_locations()
+        staging_x = gcode_control.X_STAGING_POSITION
+        z_clear = gcode_control.Z_CLEAR_HEIGHT or gcode_control.Z_MAX
+        drop_z = gcode_control.Z_MAX - gcode_control.Z_DROP_OFFSET
+        source_x = bin_locs.get(0, gcode_control.X_SOURCE_BIN)
+        fallback_x = self._get_fallback_x()
+
         # --- Card-back routing ---
         if id_result['is_card_back']:
             back_dist = id_result['card_back_dist']
             logical_bin = 10
             physical_bin = self.resolve_bin(logical_bin)
+            target_x_bk = bin_locs.get(physical_bin, fallback_x)
             self.emit('card_detected', {
                 'recognized': False,
                 'reason': 'card_back',
@@ -1225,21 +1290,42 @@ class SortWorker:
                 'bin': physical_bin,
                 'logical_bin': logical_bin,
             })
-            target_x_bk = gcode_control.get_bin_locations().get(
-                physical_bin, self._get_fallback_x())
+            self.emit('motion_path', [
+                {'x': staging_x, 'z': z_clear,
+                 'feedrate': 0, 'carrying': 'CARD BACK', 'pause': 0},
+                {'x': target_x_bk, 'z': z_clear,
+                 'feedrate': gcode_control.X_FEEDRATE, 'carrying': 'CARD BACK'},
+                {'x': target_x_bk, 'z': drop_z,
+                 'feedrate': gcode_control.Z_FEEDRATE, 'carrying': 'CARD BACK'},
+                {'x': target_x_bk, 'z': drop_z,
+                 'feedrate': 0, 'carrying': None,
+                 'pause': gcode_control.PRESSURE_ON_MS},
+                {'x': target_x_bk, 'z': z_clear,
+                 'feedrate': gcode_control.Z_FEEDRATE, 'carrying': None},
+            ])
+            self.emit('card_picked_up', {'name': 'CARD BACK'})
             gcode_control.quick_drop(target_x_bk)
             if self.tracker:
                 self.tracker.record_scan(card_info=None, bin_num=physical_bin,
                                          hash_distance=back_dist)
+            motion_tracker.set_carrying(None)
+            motion_tracker.update_position(x=target_x_bk, z=z_clear)
+            self.emit('card_dropped', {'name': 'CARD BACK', 'bin': physical_bin})
+            self.emit('motion_update', motion_tracker.get_state())
+            self._increment_bin_count(physical_bin)
+            self.last_drop_x = target_x_bk
+            sort_duration = time.time() - sort_start
+            self.sort_times.append(sort_duration)
+            if len(self.sort_times) > 50:
+                self.sort_times = self.sort_times[-50:]
+            self.scan_count += 1
+            self._emit_session_stats()
+            self.emit('motion_update', motion_tracker.get_state())
+            if self.continuous_sorting and self.state == 'sorting':
+                time.sleep(self.continuous_delay)
+                from web_camera import camera as cam
+                self.enqueue('detect_and_sort', camera=cam)
             return
-
-        # --- Step 6: Determine bin and deliver ---
-        bin_locs = gcode_control.get_bin_locations()
-        staging_x = gcode_control.X_STAGING_POSITION
-        z_clear = gcode_control.Z_CLEAR_HEIGHT or gcode_control.Z_MAX
-        drop_z = gcode_control.Z_MAX - gcode_control.Z_DROP_OFFSET
-        source_x = bin_locs.get(0, gcode_control.X_SOURCE_BIN)
-        fallback_x = self._get_fallback_x()
 
         if card_info:
             card_name = card_info.get('Name', 'Unknown')
@@ -1303,6 +1389,10 @@ class SortWorker:
             })
 
             target_x = bin_locs.get(physical_bin, fallback_x)
+            self.log(
+                f"[sort] {card_name} → bin {physical_bin} "
+                f"(logical={logical_bin}) X={target_x:.0f}mm"
+            )
 
             self.emit('motion_path', [
                 {'x': staging_x, 'z': z_clear,
@@ -1398,6 +1488,11 @@ class SortWorker:
         """Start continuous sort mode — auto-detect loop."""
         if self.state != 'sorting':
             self.log("Cannot start continuous sort — start a session first")
+            return
+        if self.continuous_sorting:
+            # Already running — ignore duplicate start requests (e.g. from
+            # rapid button clicks before the UI receives the confirmation).
+            self.log("Continuous sort already running — ignoring duplicate start")
             return
         self.continuous_sorting = True
         self.continuous_delay = float(delay)
@@ -1932,28 +2027,61 @@ class SortWorker:
             self.log("Session resumed")
 
     def _cmd_stop_session(self, **kwargs):
-        """Stop the current sorting session."""
-        if self.tracker:
-            self.tracker.print_status()
-            self.tracker.end_session()
-            stats = {
-                'total_scans': self.tracker.scan_count,
-                'recognized': self.tracker.scan_count - self.tracker.unrecognized_count,
-                'unrecognized': self.tracker.unrecognized_count,
-                'bins': self.tracker.get_all_bins(),
-            }
-            self.emit('session_ended', stats)
-            self.tracker = None
+        """Stop the current sorting session.
 
-        self.sort_mode = None
-        self.sort_config_obj = None
-        self.state = 'idle'
+        Uses try/finally so state=idle and continuous_sorting=False are
+        ALWAYS applied even if the tracker cleanup throws an exception.
+        Without this, a DB error during end_session() would leave the
+        worker stuck in 'sorting' state with no way to recover except a
+        server restart.
+        """
+        # Stop the continuous sort loop immediately. This prevents the
+        # re-enqueue check at the end of detect_and_sort from extending
+        # the loop after the session ends. Must be set before state='idle'
+        # so that any in-flight detect_and_sort that checks
+        # (continuous_sorting and state=='sorting') at its re-enqueue
+        # point will NOT re-enqueue another cycle.
+        self.continuous_sorting = False
+
+        try:
+            if self.tracker:
+                try:
+                    self.tracker.print_status()
+                except Exception as e:
+                    self.log(f"Warning: could not print session status: {e}")
+                try:
+                    self.tracker.end_session()
+                    stats = {
+                        'total_scans': self.tracker.scan_count,
+                        'recognized': (self.tracker.scan_count
+                                       - self.tracker.unrecognized_count),
+                        'unrecognized': self.tracker.unrecognized_count,
+                        'bins': self.tracker.get_all_bins(),
+                    }
+                    self.emit('session_ended', stats)
+                except Exception as e:
+                    self.log(f"Warning: error ending tracker session: {e}")
+                    # Still notify the UI — it needs to reset its buttons
+                    # even if the tracker teardown failed.
+                    self.emit('session_ended', {
+                        'total_scans': getattr(self.tracker, 'scan_count', 0),
+                        'recognized': 0, 'unrecognized': 0, 'bins': {},
+                    })
+                finally:
+                    self.tracker = None
+        finally:
+            self.sort_mode = None
+            self.sort_config_obj = None
+            self.state = 'idle'
 
         # Unlock camera focus so autofocus can re-settle for the next
         # session's ROI capture (the platform distance may differ if
         # the user adjusts the setup between sessions).
-        from web_camera import camera
-        camera.unlock_focus()
+        try:
+            from web_camera import camera
+            camera.unlock_focus()
+        except Exception as e:
+            self.log(f"Warning: could not unlock camera focus: {e}")
 
         self.log("Session ended")
 

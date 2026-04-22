@@ -78,9 +78,20 @@ class SortConfig:
                       f"query '{query_str}': {e}")
                 continue
 
-        # Fallback bin also gets counted
-        self.bin_card_counts[self.fallback_bin] = \
-            self.bin_card_counts.get(self.fallback_bin, 0) + 1
+        # Nothing matched — log once (first 5 fallbacks) so the user can
+        # see which queries are failing without flooding the console.
+        fb_count = self.bin_card_counts.get(self.fallback_bin, 0)
+        if fb_count < 5:
+            card_name = card_data.get('name', '?') if card_data else '?'
+            tried = ', '.join(
+                f'bin{b}({q!r})' for b, q, _ in self.bin_queries
+            ) or '(none)'
+            print(
+                f"[sort_config] FALLBACK: '{card_name}' matched no queries "
+                f"[{tried}] → bin {self.fallback_bin}",
+                flush=True,
+            )
+        self.bin_card_counts[self.fallback_bin] = fb_count + 1
         return self.fallback_bin
 
     def _get_enrichment_data(self, oracle_id: str) -> dict:
