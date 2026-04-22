@@ -1048,7 +1048,14 @@ class SortWorker:
             self.log("X re-homed")
 
         # --- Step 1: Pick card from source bin ---
-        gcode_control.pick_from_position(gcode_control.X_SOURCE_BIN)
+        if self._no_detect_retries > 0:
+            self.log(f"Retry pickup with Z-bounce "
+                     f"(miss {self._no_detect_retries}/"
+                     f"{self._max_no_detect_retries})")
+        gcode_control.pick_from_position(
+            gcode_control.X_SOURCE_BIN,
+            bounce=self._no_detect_retries > 0,
+        )
         if self._abort_check() or self.state != 'sorting':
             self.log("detect_and_sort: aborted after source pick")
             # Kill pumps so we drop whatever we were carrying safely.
