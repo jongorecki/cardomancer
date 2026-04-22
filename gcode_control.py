@@ -12,6 +12,8 @@
 
 import serial
 import time
+import os
+import sys
 
 # =========================================================================
 # TUNABLE PARAMETERS — adjust these to match your physical setup
@@ -271,6 +273,60 @@ def _check_bin_fullness(bin_number, target_x):
 
 
 # =========================================================================
+# G-code trace log
+# Writes every serial send/receive line to logs/gcode_trace.log.
+# This survives Python stdout buffering and Flask's TTY-less mode,
+# so you always have a full diagnostic trail after a stuck event.
+# =========================================================================
+
+_GCODE_LOG_DIR  = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
+_GCODE_LOG_PATH = os.path.join(_GCODE_LOG_DIR, 'gcode_trace.log')
+_gcode_log_fh   = None   # open file handle; None until first use
+
+
+def _gcode_trace(msg: str):
+    """Write msg to gcode_trace.log AND stdout (force-flushed).
+
+    Called from every send/receive path so the log captures a complete
+    record of all serial I/O regardless of Python buffering state.
+    """
+    global _gcode_log_fh
+    # Ensure log directory exists
+    if _gcode_log_fh is None:
+        try:
+            os.makedirs(_GCODE_LOG_DIR, exist_ok=True)
+            _gcode_log_fh = open(_GCODE_LOG_PATH, 'a', encoding='utf-8',
+                                 buffering=1)  # line-buffered
+            ts = time.strftime('%Y-%m-%d %H:%M:%S')
+            _gcode_log_fh.write(f'\n--- gcode_trace opened {ts} ---\n')
+        except Exception:
+            _gcode_log_fh = None  # stay silent if we can't open log
+
+    ts = time.strftime('%H:%M:%S')
+    line = f'[{ts}] {msg}'
+    # stdout — force flush so it appears immediately in terminal/journal
+    print(line, flush=True)
+    # file log
+    if _gcode_log_fh is not None:
+        try:
+            _gcode_log_fh.write(line + '\n')
+        except Exception:
+            pass
+
+
+def close_gcode_log():
+    """Flush and close the trace log (called on shutdown)."""
+    global _gcode_log_fh
+    if _gcode_log_fh is not None:
+        try:
+            _gcode_log_fh.flush()
+            _gcode_log_fh.close()
+        except Exception:
+            pass
+        _gcode_log_fh = None
+
+
+# =========================================================================
 # Serial connection
 # =========================================================================
 
@@ -362,7 +418,7 @@ def connect_to_board():
                 line = ser.readline().decode('utf-8', errors='replace').strip()
                 if not line:
                     break
-                print(f"[gcode] << {line}")
+                _gcode_trace(f'[gcode] << {line}')
             print("[gcode] Disabled Marlin software endstops (M211 S0) "
                   "— X_SAFE_MAX is now the authoritative X bound.")
         except Exception as e:
@@ -451,7 +507,7 @@ def _send_gcode(command):
     # Defensive bounds clamp on absolute-mode motion commands.
     safe_command = _clamp_motion_command(command)
     cmd = safe_command.strip() + '\n'
-    print(f"[gcode] >> {cmd}", end='')
+    _gcode_trace(f'[gcode] >> {cmd.strip()}')
     try:
         ser.write(cmd.encode('utf-8'))
         return True
@@ -460,8 +516,15 @@ def _send_gcode(command):
         return False
 
 
-def _read_response(max_lines=5):
-    """Read response lines from the board."""
+def _read_response(max_lines=20):
+    """Read response lines from the board until 'ok' or an error is seen.
+
+    max_lines guards against infinite loops; default raised to 20 so that
+    verbose Marlin output (echo:busy, probe position lines, etc.) between a
+    command and its 'ok' doesn't desync the stream.  Each readline() call
+    already has a 2-second timeout, so at most 40 s of blocking before we
+    give up — in practice 'ok' arrives in well under 1 s for most commands.
+    """
     global ser
     if not is_connected():
         return
@@ -471,10 +534,16 @@ def _read_response(max_lines=5):
         except (serial.SerialException, OSError, AttributeError) as e:
             _handle_serial_error('readline', e)
             return
-        if line:
-            print(f"[gcode] << {line}")
-            if line.startswith('ok') or 'rror' in line.lower():
-                break
+        if not line:
+            # Empty read = readline() timed out; keep waiting up to max_lines
+            continue
+        _gcode_trace(f'[gcode] << {line}')
+        if line.startswith('ok') or 'rror' in line.lower():
+            break
+        # Marlin sends "echo:busy: processing" while a long move runs.
+        # These are informational only — keep reading, don't break.
+        if line.lower().startswith('echo:busy'):
+            continue
 
 
 def _send_and_wait(command):
@@ -513,7 +582,7 @@ def _get_current_xz():
         leftover = ser.readline().decode('utf-8', errors='replace').strip()
         if not leftover:
             break
-        print(f"[gcode] << (drain) {leftover}")
+        _gcode_trace(f'[gcode] << (drain) {leftover}')
     # Now send M114 and wait for the position response
     ser.timeout = 2.0
     _send_gcode("M114")
@@ -521,7 +590,7 @@ def _get_current_xz():
         line = ser.readline().decode('utf-8', errors='replace').strip()
         if not line:
             continue
-        print(f"[gcode] << {line}")
+        _gcode_trace(f'[gcode] << {line}')
         # M114 response looks like: X:50.00 Y:0.00 Z:150.00 E:0.00
         z_match = re.search(r'Z:\s*(-?[\d.]+)', line)
         x_match = re.search(r'X:\s*(-?[\d.]+)', line)
@@ -533,7 +602,7 @@ def _get_current_xz():
             for _ in range(10):
                 ok_line = ser.readline().decode('utf-8', errors='replace').strip()
                 if ok_line:
-                    print(f"[gcode] << {ok_line}")
+                    _gcode_trace(f'[gcode] << {ok_line}')
                 if ok_line.startswith('ok'):
                     break
             return (x_val, z_val)

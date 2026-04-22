@@ -2704,24 +2704,31 @@ def _run_price_update():
 
         # Build price index: (set_code, collector_number) -> price
         price_index = {}
-        with open(CARDS_JSON_PATH, 'r', encoding='utf-8') as f:
-            import ijson
+
+        def _parse_price(prices):
             try:
+                p = float(prices.get('usd') or prices.get('usd_foil') or 0)
+                return p if p > 0 else None
+            except (ValueError, TypeError):
+                return None
+
+        try:
+            import ijson
+            _has_ijson = True
+        except ImportError:
+            _has_ijson = False
+
+        with open(CARDS_JSON_PATH, 'r', encoding='utf-8') as f:
+            if _has_ijson:
                 for card in ijson.items(f, 'item'):
                     if not _price_update_status['running']:
                         break
                     sc = card.get('set', '')
                     cn = card.get('collector_number', '')
                     if sc and cn:
-                        prices = card.get('prices', {})
-                        try:
-                            p = float(prices.get('usd') or prices.get('usd_foil') or 0)
-                            price_index[(sc, cn)] = p if p > 0 else None
-                        except (ValueError, TypeError):
-                            price_index[(sc, cn)] = None
-            except ImportError:
-                # ijson not available — fall back to loading full JSON
-                f.seek(0)
+                        price_index[(sc, cn)] = _parse_price(card.get('prices', {}))
+            else:
+                # ijson not available — load full JSON into memory
                 _price_update_status['message'] = 'Loading full JSON into memory...'
                 socketio.emit('price_update_progress', dict(_price_update_status))
                 cards_data = json.load(f)
@@ -2731,12 +2738,7 @@ def _run_price_update():
                     sc = card.get('set', '')
                     cn = card.get('collector_number', '')
                     if sc and cn:
-                        prices = card.get('prices', {})
-                        try:
-                            p = float(prices.get('usd') or prices.get('usd_foil') or 0)
-                            price_index[(sc, cn)] = p if p > 0 else None
-                        except (ValueError, TypeError):
-                            price_index[(sc, cn)] = None
+                        price_index[(sc, cn)] = _parse_price(card.get('prices', {}))
 
         if not _price_update_status['running']:
             _price_update_status['message'] = 'Cancelled'
@@ -3246,12 +3248,13 @@ def _graceful_shutdown(reason='shutdown'):
     except Exception as e:
         print(f"[server] worker.stop failed: {e}")
 
-    # 5. Disconnect serial.
+    # 5. Disconnect serial and flush gcode trace log.
     try:
         import gcode_control
         if gcode_control.is_connected():
             gcode_control.close_connection()
             print("[server] Serial disconnected")
+        gcode_control.close_gcode_log()
     except Exception as e:
         print(f"[server] disconnect failed: {e}")
 
