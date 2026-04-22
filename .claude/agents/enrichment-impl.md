@@ -69,20 +69,22 @@ Never modify:
 
 ## Implementation workflow
 
+The main session checks out the correct feature branch before invoking you — assume you are on it. Verify with `git branch --show-current` if unsure, and stop if it looks wrong.
+
 1. Read the required docs above.
-2. Create a feature branch: `feature/phase<N>-<source_or_feature>`.
-3. Copy the cleanest existing source as a template. Diff-adapt — don't start from scratch.
-4. Write the probe first; verify it fails-loudly on shape drift by manually corrupting the pinned snapshot then reverting.
-5. Write the source's `refresh()` with a transaction wrapper.
-6. Write tests. Minimum coverage:
+2. Copy the cleanest existing source as a template. Diff-adapt — don't start from scratch.
+3. Write the probe first; verify it fails-loudly on shape drift by manually corrupting the pinned snapshot then reverting.
+4. Write the source's `refresh()` with a transaction wrapper.
+5. Write tests. Minimum coverage:
    - Happy path (fixture response → expected rows)
    - Empty response (graceful, no data wipe)
    - Malformed response (raises with clear error, no partial commit)
    - Idempotency (two refreshes → identical DB state)
    - Rate-limit / 429 simulation (exponential backoff kicks in)
-7. Run `pytest tests/enrichment/test_<source>.py -v` locally — must be green.
-8. Run full suite `pytest tests/` — confirm no regressions.
-9. Run `python probes/run_all.py` — all probes green.
+6. Run `pytest tests/enrichment/test_<source>.py -v` locally — must be green.
+7. Run full suite `pytest tests/` — confirm no regressions.
+8. Run `python probes/run_all.py` — all probes green.
+9. Leave everything staged/unstaged but **uncommitted**. The main session decides the commit story.
 
 ## Output format
 
@@ -117,7 +119,8 @@ Keep report under 400 words. Don't paste code diffs — the main session can `gi
 
 ## Rules for your work
 
-- Commit frequently with messages describing the specific change. No broad rewrites in a single commit.
+- **DO NOT commit.** Leave all changes in the working tree. The main session decides when to commit, what to squash, and how to word commit messages. You may run `git status` / `git diff` to confirm your changes, but never `git add` + `git commit`, `git commit -am`, `git stash`, or `git checkout` of modified files. If the branch is dirty when you start (because the main session set it up for you), that's fine — leave the pre-existing changes alone unless your task touches them.
 - No cross-branch imports. If you need something from another feature branch that isn't merged, stop and tell the user.
 - Merge conflicts = STOP. Don't auto-resolve; report to user.
+- Never create a new branch yourself. The main session places you on the correct branch before invoking you. If you think you're on the wrong branch, stop and report.
 - If the acceptance criteria can't all be met, say so explicitly. Don't declare partial success as done.
