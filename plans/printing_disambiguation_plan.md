@@ -1,11 +1,13 @@
 # Printing Disambiguation Plan
 
-## STATUS: DRAFT 2026-04-22
+## STATUS
 
-Plan captured but not started. Priority: **after** foil detection
-(`plans/foil_detection_plan.md`). Foil has bigger pricing impact
-(foil-vs-nonfoil delta is typically larger than reprint-variant delta),
-so it ships first.
+Phase 1 complete (2026-04-22). Phases 2–7 pending.
+
+Being built in parallel with foil detection (`plans/foil_detection_plan.md`)
+on branch `feature/printing-disambiguation`.
+
+Phases are numbered in **build order**. Read top to bottom.
 
 ---
 
@@ -44,21 +46,19 @@ The List by set_code=`plst`), so every check below is "does the scan
 match this known option." No trained classifier needed — just
 constrained template matching and feature sampling.
 
-## Three disambiguation signals
+## Three disambiguation signals (built in this order)
 
 Each is run only when the phash candidate list disagrees on that
-specific axis:
+specific axis. Shipping in order of simplicity; each stage narrows
+the candidate list, and anything surviving all three stages (or
+falling through an ambiguous stage) goes to the existing
+cheapest-printing fallback.
 
-| Signal | What it picks between | Complexity |
-|--------|----------------------|-----------|
-| **Frame / border** (Phase 6) | `frame` era (1997/2003/2015), `frame_effects` (borderless, retro, showcase, extendedart) | Simplest — huge signal, broad ROIs |
-| **The List stamp** (Phase 7) | `plst` reprint vs. original printing of same art | Simple — binary, one template, one ROI |
-| **Set icon** (Phases 1–5) | Which `set_code` among multiple same-frame reprints | Hardest — small ROI, hundreds of templates, some confusable pairs |
-
-Ship in order of simplicity (frame → list-stamp → set-icon). Each
-further narrows the candidate list; the final pick is whatever survives
-all three filters, or the cheapest-printing fallback if any stage is
-ambiguous.
+| Stage | Signal | What it picks between | Complexity |
+|-------|--------|----------------------|-----------|
+| 1 | **Frame / border** | `frame` era (1997/2003/2015), `frame_effects` (borderless, retro, showcase, extendedart) | Simplest — huge signal, broad ROIs |
+| 2 | **The List stamp** | `plst` reprint vs. original printing of same art | Simple — binary, one template, one ROI |
+| 3 | **Set icon** | Which `set_code` among multiple same-frame reprints | Hardest — small ROI, hundreds of templates, some confusable pairs |
 
 ## Scope
 
@@ -85,13 +85,197 @@ ambiguous.
   confidence, fall back to the current cheapest-printing logic.
 - Fixing hash-DB coverage gaps — that's the frame-dedup fix in
   `plans/foil_detection_plan.md` Priority 1. If that ships first,
-  phash itself may already distinguish frames, and Phase 6 becomes a
-  cross-check rather than a primary signal. Build Phase 6 anyway; it
+  phash itself may already distinguish frames, and Phase 1 becomes a
+  cross-check rather than a primary signal. Build Phase 1 anyway; it
   catches same-`frame` / different-`frame_effects` cases phash misses.
 
 ---
 
-## Phase 1: Set-Icon Asset Pipeline
+## Phase 1: Frame / Border Detection — DONE 2026-04-22
+
+**Module:** `frame_detect.py`
+**Tests:** `tests/test_frame_detect.py` (10 tests, passing)
+**Commit:** `d38e013` on `feature/printing-disambiguation`
+
+### Approach
+
+Feature sampling in broad ROIs rather than template matching. The
+frame covers most of the card so signal is huge and detection is
+easy. Reuses the existing `frame_signatures.json` reference data
+(built by `find_frame_signatures.py`) which stores border-region
+phashes per `(frame, frame_effects)` combo.
+
+### API
+
+```python
+def detect_frame(
+    card_img: np.ndarray,
+    candidate_combos: Optional[Iterable[tuple[str, tuple[str, ...]]]] = None,
+    debug: bool = False,
+) -> dict:
+    """Returns {best_frame, best_frame_effects, distance, margin,
+    confidence, scores}. Restricts scoring to candidate_combos when
+    provided — the realistic use case when phash has returned a
+    candidate printing list."""
+```
+
+### Algorithm
+
+1. Compute phash of three border regions on the scan: top 50 px strip,
+   left 50 px strip, bottom 50 px strip.
+2. For each candidate `(frame, frame_effects)` combo, compute minimum
+   Hamming distance from each scan region phash to any reference phash
+   of that combo's corresponding region; sum across 3 regions.
+3. Return the combo with lowest total distance; margin = distance to
+   second-best; confidence = margin / scale (default scale = 30).
+
+### Constants
+
+```python
+_CONFIDENCE_MARGIN_SCALE = 30.0  # empirically chosen, tune from diag data
+```
+
+### Remaining polish (not blocking)
+
+- Real-scan validation on labeled data (Phase 7)
+- Tune `_CONFIDENCE_MARGIN_SCALE` once we see realistic margin
+  distributions on scan data
+- Consider adding a rectified-scan (not downloaded-image) test fixture
+  — current tests use source images that already live in the
+  reference set, so distance=0 is trivial to achieve
+
+---
+
+## Phase 2: The List Stamp Detection
+
+The List (`plst` set code) reprints cards with the same art as the
+original printing but adds a **planeswalker-symbol stamp in the
+bottom-left corner**. Binary detection: stamp present → `plst`, stamp
+absent → original printing.
+
+### Gating condition
+
+Run List-stamp detection only when phash candidates include **both** a
+`plst` printing and at least one non-`plst` printing of the same
+`illustration_id`.
+
+### ROI
+
+Bottom-left corner of the rectified 745×1040 card. Tune exact
+coordinates from 2–3 known-good List scans:
+
+```python
+THE_LIST_STAMP_ROI = (30, 960, 80, 70)  # (x, y, w, h)
+```
+
+### Algorithm
+
+1. Crop `THE_LIST_STAMP_ROI` from rectified card.
+2. Preprocess: grayscale → Canny edges.
+3. Single template match against cached List-stamp template
+   (`cv2.matchTemplate`, `TM_CCOEFF_NORMED`).
+4. Return `(is_list: bool, confidence: float)`.
+
+### API
+
+```python
+def detect_list_stamp(
+    card_img: np.ndarray,
+    debug: bool = False,
+) -> tuple[bool, float]:
+    """Detect whether the scan has The List planeswalker stamp.
+    Returns (is_list, confidence)."""
+```
+
+### Template asset
+
+Capture from 2–3 known-good List scans, average, clean up, store at
+`card_data/stamps/the_list.png` + Canny edge version. One-time manual
+step — the stamp hasn't changed since The List launched.
+
+### Scope fences
+
+- Don't detect promo stamps, pre-release stamps, or other corner
+  stamps — future work.
+- Don't try to detect older "List" variants before the planeswalker
+  stamp was added — fall back to cheapest-printing logic for them.
+
+### Constants (tune from data)
+
+```python
+LIST_STAMP_THRESHOLD = 0.55
+```
+
+---
+
+## Phase 3: Integration Cascade Scaffolding (Stages 1 + 2)
+
+Wire Phase 1 and Phase 2 into the identification finalization path.
+Set-icon stage is stubbed — just a no-op that passes the candidate
+list through, to be filled in by Phase 6.
+
+### Hook point
+
+In `card_identify.py` / `card_identify_hybrid.py`, post-phash match
+and pre-return. See Phase 1 mapping notes for exact line.
+
+### Cascade structure
+
+```python
+candidates = phash_match(card_img)
+
+if len(candidates) == 1:
+    return candidates[0], source="single_match"
+
+same_art = [c for c in candidates if _same_illustration_id(c, candidates[0])]
+if len(same_art) < 2:
+    return candidates[0], source="single_match"
+
+# Stage 1: frame / border
+if _candidates_disagree_on_frame(same_art):
+    result = detect_frame(card_img, candidate_combos=_combos_from(same_art))
+    if result["confidence"] > FRAME_THRESHOLD:
+        same_art = _filter_by_frame(same_art, result["best_frame"],
+                                    result["best_frame_effects"])
+
+# Stage 2: The List stamp
+if _candidates_include_list_and_original(same_art):
+    is_list, conf = detect_list_stamp(card_img)
+    if conf > LIST_STAMP_THRESHOLD:
+        same_art = _filter_by_list(same_art, is_list)
+
+# Stage 3: set icon — stubbed until Phase 6
+# (will call identify_set_icon() here)
+
+if len(same_art) == 1:
+    return same_art[0], source="disambiguated"
+return _cheapest_printing_fallback(same_art), source="cheapest_fallback"
+```
+
+### Result field additions
+
+- `detected_set_code: str`
+- `detected_frame: str` (when Stage 1 committed)
+- `detected_frame_effects: list[str]`
+- `detected_is_list: bool | None`
+- `disambiguation_source: "single_match" | "disambiguated" | "cheapest_fallback"`
+- `disambiguation_confidence: dict[str, float]` — confidence per stage
+
+### UI surfacing (can ship later)
+
+Card-detected debug panel shows which stages fired and their confidence.
+Green badge = fully disambiguated; yellow = fell back to cheapest.
+
+### Constants
+
+```python
+FRAME_THRESHOLD = 0.60       # confidence required to commit Stage 1
+LIST_STAMP_THRESHOLD = 0.55  # confidence required to commit Stage 2
+```
+
+---
+
+## Phase 4: Set-Icon Asset Pipeline
 
 One-time build, cached on disk, refreshed when new sets release.
 
@@ -119,15 +303,15 @@ One-time build, cached on disk, refreshed when new sets release.
   small details that alias at 32 px). Alternatives: Gatherer's set
   symbols, the MSE symbol library, hand-curating hard sets.
 - Some set icons are visually very similar (several Masters sets).
-  Log pairwise template distances across all sets during Phase 1 and
-  flag any pairs with Hamming distance < threshold.
+  Log pairwise template distances across all sets during this phase
+  and flag any pairs with Hamming distance < threshold.
 
 ---
 
-## Phase 2: Frame-Era ROI Lookup (for set icons)
+## Phase 5: Set-Icon Frame-Era ROI Lookup
 
-Set-icon position depends on **frame era**, which Scryfall provides in
-`frame` (and `frame_effects` for treatments).
+Set-icon position on the card depends on **frame era**, which Scryfall
+provides in `frame` (and `frame_effects` for treatments).
 
 ### Frame → ROI table
 
@@ -159,15 +343,15 @@ def get_symbol_roi(frame: str, frame_effects: list[str] | None) -> tuple[int, in
 
 ---
 
-## Phase 3: Set-Icon Detection Module
+## Phase 6: Set-Icon Detection Module
 
-New module `set_icon.py`.
+New module `set_icon.py`. Fills in Stage 3 stubbed by Phase 3.
 
 ### API
 
 ```python
 def identify_set_icon(
-    card_img: np.ndarray,           # post-rectification 745x1040
+    card_img: np.ndarray,
     candidate_set_codes: list[str],
     frame: str,
     frame_effects: list[str] | None,
@@ -201,76 +385,15 @@ SET_ICON_SCALES = [0.9, 1.0, 1.1]
 SET_ICON_ROTATIONS = [-5, 0, 5]
 ```
 
----
+### Wiring
 
-## Phase 4: Integration (cascade)
-
-### Hook point
-
-In the identification finalization path (currently
-`card_identify_hybrid.py` or wherever phash candidates are resolved to
-a single `card_id`):
-
-```python
-candidates = phash_match(card_img)
-
-if len(candidates) == 1:
-    return candidates[0], source="single_match"
-
-# All candidates sharing illustration_id within close hash distance
-same_art = [c for c in candidates if _same_illustration_id(c, candidates[0])]
-if len(same_art) < 2:
-    return candidates[0], source="single_match"
-
-# Cascade: narrow candidates using each disambiguation signal.
-# Each stage reads the current candidate list, applies a filter, and
-# returns the filtered list. If a stage is ambiguous, it returns the
-# list unchanged.
-
-# Stage 1: frame / border
-if _candidates_disagree_on_frame(same_art):
-    detected_frame, detected_effects, conf = detect_frame(card_img)
-    if conf > FRAME_THRESHOLD:
-        same_art = _filter_by_frame(same_art, detected_frame, detected_effects)
-
-# Stage 2: The List stamp
-if _candidates_include_list_and_original(same_art):
-    is_list, conf = detect_list_stamp(card_img)
-    if conf > LIST_STAMP_THRESHOLD:
-        same_art = _filter_by_list(same_art, is_list)
-
-# Stage 3: set icon
-if _candidates_disagree_on_set(same_art):
-    set_codes = [cards_by_id[c.card_id].set_code for c in same_art]
-    frame = cards_by_id[same_art[0].card_id].frame
-    frame_effects = cards_by_id[same_art[0].card_id].frame_effects
-    winning_set, conf = identify_set_icon(card_img, set_codes, frame, frame_effects)
-    if winning_set is not None:
-        same_art = [c for c in same_art if cards_by_id[c.card_id].set_code == winning_set]
-
-# Whatever survived; if >1 still, fall back to cheapest
-if len(same_art) == 1:
-    return same_art[0], source="disambiguated"
-return _cheapest_printing_fallback(same_art), source="cheapest_fallback"
-```
-
-### Result field additions
-
-- `detected_set_code: str`
-- `detected_frame: str` (when Stage 1 committed)
-- `detected_frame_effects: list[str]`
-- `detected_is_list: bool | None`
-- `disambiguation_source: "single_match" | "disambiguated" | "cheapest_fallback"`
-- `disambiguation_confidence: dict[str, float]` — confidence per stage
-
-### UI surfacing
-
-Card-detected debug panel shows which stages fired and their confidence.
-Green badge = fully disambiguated; yellow = fell back to cheapest.
+Replace the Stage 3 stub from Phase 3 with a real call to
+`identify_set_icon()`. Filter `same_art` by the winning set code when
+confidence exceeds threshold.
 
 ---
 
-## Phase 5: Validation
+## Phase 7: Validation + Diagnostics
 
 ### Build a labeled test set
 
@@ -309,191 +432,13 @@ Green badge = fully disambiguated; yellow = fell back to cheapest.
 - **No regression on unambiguous cards**: when phash returns a single
   confident match, no disambiguation code runs — verify in tests
 
----
+### Threshold tuning
 
-## Phase 6: Frame / Border Detection
-
-Structurally similar to set-icon detection but uses **feature sampling
-in broad ROIs** rather than template matching in a small ROI. The frame
-covers most of the card, so signal is huge and detection is easy in
-principle.
-
-### What we're picking between
-
-Scryfall `frame` field values: `1993`, `1997`, `2003`, `2015`, `future`.
-Scryfall `frame_effects` modifiers that meaningfully change appearance:
-`borderless`, `showcase`, `extendedart`, and the retro-frame effect
-(modern card rendered in 1997 frame — Scryfall tags this as a frame
-effect on the retro treatment cards).
-
-Also `border_color`: `black`, `white`, `borderless`, `silver`, `gold`.
-
-### Gating condition
-
-Run frame detection only when phash candidates disagree on `frame`
-**or** `frame_effects` **or** `border_color`. Otherwise skip.
-
-### Signals to sample
-
-1. **Outer-border ring color** — sample a thin ring 3–10 px inside the
-   card edge. Mean/median RGB and standard deviation:
-   - Uniform dark → black border
-   - Uniform light → white border (pre-8ED reprints, some older cards)
-   - Uniform yellow/gold → gold border (promo)
-   - High variance → borderless (art reaches the edge)
-2. **Title-box region** — crop the title-bar ROI (known position on
-   rectified card). 1997 has dark beveled frame, 2003 has cleaner
-   geometry, 2015 has a flatter gradient style. A second small phash
-   on this region discriminates among frames well.
-3. **Type-line region** — similar: different frames style the type line
-   differently (background color, border, rarity-symbol positioning).
-4. **Art-extension check** — for `extendedart`, sample pixels
-   **between** the normal art box and the card edge. If those pixels
-   look like art continuation rather than frame material, it's
-   extendedart.
-
-### Reference vectors
-
-Capture feature vectors once, from one clean reference scan (or
-downloaded Scryfall image) per distinct combination:
-
-- `(1993, [], black)`, `(1993, [], white)`
-- `(1997, [], black)`, `(1997, [], white)`
-- `(2003, [], black)`
-- `(2015, [], black)`, `(2015, [], white)`
-- `(2015, [borderless], borderless)`
-- `(2015, [extendedart], black)`
-- `(2015, [showcase], black)` — may need multiple per-showcase vectors
-- Retro-frame treatment: `(2015, [<retro effect name>], black)`
-
-Store as `card_data/frame_references.json` with feature vectors per
-combination.
-
-### API
-
-```python
-def detect_frame(
-    card_img: np.ndarray,
-    debug: bool = False,
-) -> tuple[str, list[str], str, float]:
-    """Detect the frame era, frame_effects, and border_color of a
-    rectified card image.
-
-    Returns (frame, frame_effects, border_color, confidence).
-    Confidence in [0, 1]. Caller checks confidence vs threshold."""
-```
-
-### Algorithm
-
-1. Extract feature vector from scan (ring color, title-box phash,
-   type-line phash, art-extension check).
-2. Compute distance to each reference vector.
-3. Pick closest; confidence = `1 - (closest_distance / second_closest_distance)`
-   (margin-based confidence).
-4. Return best match.
-
-### Why this is simplest
-
-- ROIs are large (full title bar, full ring) — small alignment errors
-  don't matter
-- Signal differences between frames are **huge** in pixel terms
-- Small number of distinct combinations to compare against (~10–15)
-- Reuses the rectified card image already in memory
-
-### Constants
-
-```python
-FRAME_THRESHOLD = 0.60       # confidence required to commit to a frame
-FRAME_MARGIN = 0.15           # margin between top-2 frame matches
-```
-
-### Template vs. phash choice
-
-For title-box and type-line regions, prefer a **second phash** on those
-crops over template matching. phash is already in the toolchain, and
-frames differ in broad structural ways (position of elements, darkness
-distribution) that phash captures well.
-
----
-
-## Phase 7: "The List" Stamp Detection
-
-The List (`plst` set code) reprints cards with the same art as the
-original printing but adds a **planeswalker-symbol stamp in the
-bottom-left corner**. Binary detection: stamp present → `plst`, stamp
-absent → original printing.
-
-### Gating condition
-
-Run List-stamp detection only when phash candidates include **both** a
-`plst` printing and at least one non-`plst` printing of the same
-`illustration_id`.
-
-### ROI
-
-Bottom-left corner of the rectified card. Approximate pixel coordinates
-on the 745×1040 image (tune from known List scans during
-implementation):
-
-```python
-THE_LIST_STAMP_ROI = (30, 960, 80, 70)  # (x, y, w, h)
-```
-
-### Algorithm
-
-1. Crop `THE_LIST_STAMP_ROI` from rectified card.
-2. Preprocess: grayscale → Canny edges.
-3. Single template match against cached List-stamp template.
-4. Return `(is_list: bool, confidence: float)`.
-
-### API
-
-```python
-def detect_list_stamp(
-    card_img: np.ndarray,
-    debug: bool = False,
-) -> tuple[bool, float]:
-    """Detect whether the scan has The List planeswalker stamp.
-    Returns (is_list, confidence)."""
-```
-
-### Template asset
-
-Capture from 2–3 known-good List scans, average, clean up, store at
-`card_data/stamps/the_list.png` + Canny edge version. One-time manual
-step.
-
-### Scope fences
-
-- Don't detect promo stamps, pre-release stamps, or other corner
-  stamps — future work.
-- Don't try to detect older "List" variants before the planeswalker
-  stamp was added — fall back to cheapest-printing logic for them.
-
----
-
-## Implementation Order
-
-Recommended order, simplest signal first:
-
-1. **Phase 6: frame/border detection** — broadest signal, easiest
-   implementation. Also the most frequently applicable (many reprints
-   differ on frame). Use the frame-dedup audit from
-   `plans/foil_detection_plan.md` to generate labeled scans.
-2. **Phase 7: List stamp** — binary, one template, one ROI. Simple
-   validation. Delivers immediate value (The List vs. original has big
-   price delta).
-3. **Phase 4: integration scaffolding** — wire the cascade into the
-   identification flow using just Phases 6 + 7 initially. Proves the
-   integration path works end-to-end.
-4. **Phase 1–3: set-icon module** — the hardest piece (many templates,
-   small ROI, confusable pairs). Build once scaffolding is proven.
-5. **Phase 5: full validation + `diag_printing.py`** — tune thresholds
-   across the cascade.
-6. **UI surfacing** — badges, debug panel. Ship last.
-
-Each step is independently testable and each narrows the "wrong
-printing" failure mode further.
+Once labeled data is in, re-measure and tune:
+- `_CONFIDENCE_MARGIN_SCALE` in `frame_detect.py`
+- `FRAME_THRESHOLD` in integration
+- `LIST_STAMP_THRESHOLD`
+- `SET_ICON_THRESHOLD`, `SET_ICON_MARGIN`
 
 ---
 
@@ -501,18 +446,18 @@ printing" failure mode further.
 
 1. **Redundancy with frame-dedup fix**: If the foil plan's Priority 1
    (one hash per `(illustration_id, frame)`) ships first, how much of
-   Phase 6 becomes redundant? Likely still needed for same-`frame` /
+   Phase 1 becomes redundant? Likely still needed for same-`frame` /
    different-`frame_effects` splits (borderless vs regular, retro
    treatment vs. base frame) since those can share hash space.
 2. **SVG rasterization quality** at 32–48 px for set icons — measure
-   during Phase 1.
+   during Phase 4.
 3. **Confusable set pairs** — how many sets have near-identical
    symbols? Does frame-era restriction (only comparing among phash
    candidates) make these non-problems in practice?
 4. **Showcase / extendedart coverage** — if rare in typical scan loads,
    punt; if common, build per-treatment ROI and reference entries.
 5. **Borderless fallback for set icon** — no icon visible on most
-   borderless cards. Is frame detection (Phase 6) enough to
+   borderless cards. Is frame detection (Phase 1) enough to
    disambiguate borderless-vs-regular of same set, or do we need
    another signal?
 6. **Retro-frame treatment naming** — confirm the exact
