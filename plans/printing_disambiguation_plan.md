@@ -2,7 +2,7 @@
 
 ## STATUS
 
-Phase 1 complete (2026-04-22). Phases 2–7 pending.
+Phase 1 and Phase 2 complete (2026-04-22). Phases 3–7 pending.
 
 Being built in parallel with foil detection (`plans/foil_detection_plan.md`)
 on branch `feature/printing-disambiguation`.
@@ -146,65 +146,58 @@ _CONFIDENCE_MARGIN_SCALE = 30.0  # empirically chosen, tune from diag data
 
 ---
 
-## Phase 2: The List Stamp Detection
+## Phase 2: The List Stamp Detection — DONE 2026-04-22
 
-The List (`plst` set code) reprints cards with the same art as the
-original printing but adds a **planeswalker-symbol stamp in the
-bottom-left corner**. Binary detection: stamp present → `plst`, stamp
-absent → original printing.
+**Module:** `list_stamp.py`
+**Template:** `card_data/stamps/the_list.png` (28×28 grayscale)
+**Tests:** `tests/test_list_stamp.py` (10 tests, passing)
+**Commit:** `7f6c21a` on `feature/printing-disambiguation`
 
-### Gating condition
+The List (`plst`) and Unfinity's list (`ulst`) reprint cards with the
+same art as the original printing but add a planeswalker-symbol stamp
+just above the collector-info line. Binary detection: stamp present →
+list-style reprint, stamp absent → original printing. The detector
+does **not** distinguish `plst` from `ulst`; the cascade's gating
+condition scopes usage to cases where phash candidates include
+one list-style set and one non-list set of the same art.
 
-Run List-stamp detection only when phash candidates include **both** a
-`plst` printing and at least one non-`plst` printing of the same
-`illustration_id`.
+### Key decisions vs. the original draft
 
-### ROI
+- Template uses **grayscale directly, not Canny edges**. The stamp is
+  already a high-contrast white-on-black shape; Canny edges of the
+  stamp are too sparse (~20 nonzero pixels) for reliable
+  `TM_CCOEFF_NORMED` scoring.
+- Template cropped from **one clean source image** rather than
+  averaged across multiple. Phase-correlation alignment of source
+  images introduced noise; a single clean source gave stronger
+  separation.
+- ROI tightened to `(0, 968, 35, 30)` (tight around stamp) instead of
+  the original draft's `(30, 960, 80, 70)`. Widening the ROI
+  dramatically increased false positives because collector-line text
+  shapes score highly against the stamp template.
+- Threshold `LIST_STAMP_THRESHOLD = 0.35` (vs draft 0.55) — tuned on
+  ~2200 source images: list-style p10 ≈ 0.37, non-list p99 ≈ 0.0.
+- Added `is_list_candidate_pair(candidates)` helper for Phase 3's
+  gating. Checks `LIST_LIKE_SETS = {"plst", "ulst"}` against each
+  candidate.
 
-Bottom-left corner of the rectified 745×1040 card. Tune exact
-coordinates from 2–3 known-good List scans:
-
-```python
-THE_LIST_STAMP_ROI = (30, 960, 80, 70)  # (x, y, w, h)
-```
-
-### Algorithm
-
-1. Crop `THE_LIST_STAMP_ROI` from rectified card.
-2. Preprocess: grayscale → Canny edges.
-3. Single template match against cached List-stamp template
-   (`cv2.matchTemplate`, `TM_CCOEFF_NORMED`).
-4. Return `(is_list: bool, confidence: float)`.
-
-### API
+### API (as shipped)
 
 ```python
 def detect_list_stamp(
     card_img: np.ndarray,
     debug: bool = False,
 ) -> tuple[bool, float]:
-    """Detect whether the scan has The List planeswalker stamp.
-    Returns (is_list, confidence)."""
+    """Detect whether the scan has a list-style planeswalker stamp.
+    Returns (has_stamp, confidence)."""
 ```
 
-### Template asset
+### Remaining polish (not blocking)
 
-Capture from 2–3 known-good List scans, average, clean up, store at
-`card_data/stamps/the_list.png` + Canny edge version. One-time manual
-step — the stamp hasn't changed since The List launched.
-
-### Scope fences
-
-- Don't detect promo stamps, pre-release stamps, or other corner
-  stamps — future work.
-- Don't try to detect older "List" variants before the planeswalker
-  stamp was added — fall back to cheapest-printing logic for them.
-
-### Constants (tune from data)
-
-```python
-LIST_STAMP_THRESHOLD = 0.55
-```
+- Real-scan validation on labeled data (Phase 7)
+- Tune threshold once real scans are available — current tuning uses
+  Scryfall source images, not camera scans
+- Extend `LIST_LIKE_SETS` as new list-style reprint sets ship
 
 ---
 
