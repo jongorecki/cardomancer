@@ -37,6 +37,19 @@ IMG_SIZE = 518          # 518 = 37 * 14 patches — optimal for DINOv2
 # Must match build_embedding_db.py exactly.
 ART_CROP = (30, 105, 715, 520)   # (left, top, right, bottom) = 685x415 art
 
+# --- Back-face suffix (matches download_cards.py + build_embedding_db.py) ---
+# The embedding DB stores back faces of DFC / transform / MDFC / meld cards
+# under IDs like "{real_uuid}__back".  We strip the suffix at return time so
+# downstream consumers see the canonical front-face ID.
+_BACK_FACE_SUFFIX = '__back'
+
+
+def _canonicalize(card_id):
+    """Strip __back suffix -> canonical front-face ID (or pass through)."""
+    if card_id and card_id.endswith(_BACK_FACE_SUFFIX):
+        return card_id[:-len(_BACK_FACE_SUFFIX)]
+    return card_id
+
 NORMALIZE = transforms.Normalize(
     mean=[0.485, 0.456, 0.406],
     std=[0.229, 0.224, 0.225],
@@ -213,14 +226,16 @@ def identify_card(card_img, threshold=None):
         best_sims = sims_rot
         was_rotated = True
 
-    # Build sorted results
+    # Build sorted results.  Canonicalize DFC back-face IDs so downstream
+    # (hybrid name-match, CARD_DATA_BY_ID, cheapest-printing remap, CSV
+    # logging) always gets an ID that resolves in the Scryfall data.
     all_results = sorted(
-        zip(_card_ids, best_sims.tolist()),
+        ((_canonicalize(cid), sim) for cid, sim in zip(_card_ids, best_sims.tolist())),
         key=lambda x: x[1],
         reverse=True,  # highest similarity first
     )
 
-    best_id = _card_ids[best_idx]
+    best_id = _canonicalize(_card_ids[best_idx])
 
     if best_sim >= threshold:
         return best_id, best_sim, was_rotated, all_results

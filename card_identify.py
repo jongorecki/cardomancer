@@ -24,6 +24,20 @@ import imagehash
 # --- Region definition (art crop, must match build_hash_db_v3.py Region A) ---
 REGION_A = (30, 105, 715, 520)
 
+# --- Back-face suffix (matches download_cards.py + build_hash_db_v3.py) ---
+# The hash DB stores back faces of transform / MDFC / meld / reversible cards
+# under keys like "{real_uuid}__back".  We strip the suffix at return time so
+# downstream code sees the canonical front-face ID (which is what
+# CARD_DATA_BY_ID uses) regardless of which side of the card was scanned.
+_BACK_FACE_SUFFIX = '__back'
+
+
+def _canonicalize(card_id):
+    """Strip __back suffix -> canonical front-face ID (or pass through)."""
+    if card_id and card_id.endswith(_BACK_FACE_SUFFIX):
+        return card_id[:-len(_BACK_FACE_SUFFIX)]
+    return card_id
+
 # --- Hash size (must match build_hash_db_v3.py) ---
 HASH_SIZE = 16  # 16x16 = 256-bit hashes
 
@@ -288,13 +302,17 @@ def identify_card(card_img, threshold=None):
         best_dists = dists_rot
         was_rotated = True
 
-    # Build sorted results from the winning comparison
+    # Build sorted results from the winning comparison.
+    # Canonicalize IDs: DFC back-face entries (keyed as "{id}__back" in the DB)
+    # are remapped to their front-face canonical ID so every consumer downstream
+    # (hybrid name-match, CARD_DATA_BY_ID lookup, cheapest-printing remap,
+    # scan CSV logging) gets an ID that resolves in the Scryfall data.
     all_results = sorted(
-        zip(_card_ids, best_dists.tolist()),
+        ((_canonicalize(cid), dist) for cid, dist in zip(_card_ids, best_dists.tolist())),
         key=lambda x: x[1]
     )
 
-    best_id = _card_ids[best_idx]
+    best_id = _canonicalize(_card_ids[best_idx])
 
     if best_dist <= threshold:
         return best_id, best_dist, was_rotated, all_results
