@@ -1,0 +1,14 @@
+{
+  "source": "buylist_ck",
+  "ok": true,
+  "endpoint": "https://www.cardkingdom.com/purchasing/mtg_singles",
+  "markers_present": [
+    "Magic: the Gathering",
+    "buylist"
+  ],
+  "selectors_present": [
+    "title",
+    "a[href*='/purchasing/']"
+  ],
+  "note": "Pinned snapshot for CK buylist landing page probe. Shape = HTML markers + CSS selectors check."
+}
