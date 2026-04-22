@@ -2,7 +2,7 @@
 
 ## STATUS
 
-Phase 1 and Phase 2 complete (2026-04-22). Phases 3–7 pending.
+Phases 1, 2, and 3 complete (2026-04-22). Phases 4–7 pending.
 
 Being built in parallel with foil detection (`plans/foil_detection_plan.md`)
 on branch `feature/printing-disambiguation`.
