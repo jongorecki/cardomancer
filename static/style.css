@@ -514,6 +514,39 @@ body {
 }
 
 /* =========================================================================
+ * Query reference panel
+ * Scoped to #query-reference so the ID specificity beats Bootstrap's
+ * .table > :not(caption) > * > * cell-background selector.
+ * ========================================================================= */
+
+#query-reference > div {
+    color: var(--text-primary);
+}
+
+/* Force table cells transparent — Bootstrap 5.3 defaults --bs-table-bg to
+   var(--bs-body-bg) (#fff) in its compiled light-mode CSS.  Our .table rule
+   sets --bs-table-bg:transparent but the ID selector here guarantees the win
+   regardless of cascade ordering. */
+#query-reference .table > :not(caption) > * > * {
+    background-color: transparent;
+    color: var(--text-primary);
+}
+
+/* Inline code chips inside the reference table */
+#query-reference code {
+    background-color: rgba(91, 156, 245, 0.12);
+    color: var(--accent-cyan);
+    padding: 0.05em 0.3em;
+    border-radius: 3px;
+    font-size: 0.9em;
+}
+
+[data-theme="light"] #query-reference code {
+    background-color: rgba(0, 0, 0, 0.06);
+    color: var(--accent-blue);
+}
+
+/* =========================================================================
  * Config file preview
  * ========================================================================= */
 
