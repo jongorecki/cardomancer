@@ -1,0 +1,66 @@
+# session_20260415_130451 — OLD lighting setup, pre-upgrade.
+# Do not use for weight tuning without re-scanning under current lighting.
+# Detector performance on this set: 3/4 recall, 10% precision at threshold=1.0.
+# Missed foil scan 248 had all three signals pointing wrong direction,
+# possibly a lighting artifact rather than a detector flaw.
+scan_num,verdict
+28,nonfoil
+39,nonfoil
+43,nonfoil
+58,nonfoil
+70,nonfoil
+71,nonfoil
+76,nonfoil
+79,nonfoil
+80,nonfoil
+82,nonfoil
+84,nonfoil
+85,nonfoil
+89,nonfoil
+106,nonfoil
+108,nonfoil
+110,nonfoil
+112,nonfoil
+113,nonfoil
+126,nonfoil
+153,nonfoil
+155,nonfoil
+157,nonfoil
+175,nonfoil
+177,nonfoil
+179,nonfoil
+205,foil
+206,nonfoil
+208,foil
+212,foil
+214,nonfoil
+218,nonfoil
+245,nonfoil
+247,nonfoil
+248,foil
+257,nonfoil
+270,nonfoil
+271,nonfoil
+288,nonfoil
+290,nonfoil
+300,nonfoil
+323,nonfoil
+325,nonfoil
+329,nonfoil
+330,nonfoil
+331,nonfoil
+332,nonfoil
+334,nonfoil
+336,nonfoil
+337,nonfoil
+339,nonfoil
+344,nonfoil
+346,nonfoil
+347,nonfoil
+348,nonfoil
+350,nonfoil
+355,nonfoil
+356,nonfoil
+358,nonfoil
+360,nonfoil
+362,nonfoil

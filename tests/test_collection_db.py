@@ -116,6 +116,72 @@ class TestCollectionDB(unittest.TestCase):
         self.assertEqual(len(inv), 1)
         self.assertEqual(inv[0]['quantity'], 3)
 
+    def test_record_scan_with_foil_flag(self):
+        """A scan marked is_foil=True should populate the foil columns."""
+        sid = collection_db.start_session(self.conn)
+        info = {"Name": "Zombie Infestation", "Set": "ody", "Colors": ["B"],
+                "CMC": 3.0}
+        data = {"collector_number": "170", "prices": {"usd": "0.25"}}
+        collection_db.record_scan(
+            self.conn, sid, 1,
+            card_info=info, card_data=data, bin_num=1,
+            is_foil=True, foil_confidence=1.391,
+        )
+
+        row = self.conn.execute(
+            "SELECT * FROM scan_history WHERE session_id=?", (sid,)
+        ).fetchone()
+        self.assertEqual(row['is_foil'], 1)
+        self.assertAlmostEqual(row['foil_confidence'], 1.391, places=3)
+
+        inv = self.conn.execute(
+            "SELECT * FROM inventory WHERE name=?", ("Zombie Infestation",)
+        ).fetchone()
+        # Total quantity 1, foil_quantity 1
+        self.assertEqual(inv['quantity'], 1)
+        self.assertEqual(inv['foil_quantity'], 1)
+
+    def test_record_scan_default_no_foil(self):
+        """Scans that don't pass is_foil default to is_foil=0, foil_quantity=0."""
+        sid = collection_db.start_session(self.conn)
+        info = {"Name": "Lightning Bolt", "Set": "m11", "Colors": ["R"],
+                "CMC": 1.0}
+        data = {"collector_number": "149", "prices": {"usd": "1.50"}}
+        collection_db.record_scan(self.conn, sid, 1,
+                                  card_info=info, card_data=data, bin_num=1)
+        row = self.conn.execute(
+            "SELECT * FROM scan_history WHERE session_id=?", (sid,)
+        ).fetchone()
+        self.assertEqual(row['is_foil'], 0)
+        self.assertIsNone(row['foil_confidence'])
+
+        inv = self.conn.execute(
+            "SELECT * FROM inventory WHERE name=?", ("Lightning Bolt",)
+        ).fetchone()
+        self.assertEqual(inv['quantity'], 1)
+        self.assertEqual(inv['foil_quantity'], 0)
+
+    def test_mixed_foil_nonfoil_inventory(self):
+        """Scanning same card as nonfoil then foil increments both counters."""
+        sid = collection_db.start_session(self.conn)
+        info = {"Name": "Sol Ring", "Set": "c21", "Colors": [], "CMC": 1.0}
+        data = {"collector_number": "263", "prices": {"usd": "2.00"}}
+
+        # 2 nonfoils + 1 foil
+        collection_db.record_scan(self.conn, sid, 1, card_info=info,
+                                  card_data=data, bin_num=1, is_foil=False)
+        collection_db.record_scan(self.conn, sid, 2, card_info=info,
+                                  card_data=data, bin_num=1, is_foil=True,
+                                  foil_confidence=2.1)
+        collection_db.record_scan(self.conn, sid, 3, card_info=info,
+                                  card_data=data, bin_num=1, is_foil=False)
+
+        inv = self.conn.execute(
+            "SELECT * FROM inventory WHERE name=?", ("Sol Ring",)
+        ).fetchone()
+        self.assertEqual(inv['quantity'], 3)
+        self.assertEqual(inv['foil_quantity'], 1)
+
     def test_different_printings_separate_inventory(self):
         sid = collection_db.start_session(self.conn)
         info1 = {"Name": "Sol Ring", "Set": "c21", "Colors": [], "CMC": 1.0}

@@ -67,6 +67,8 @@ def _create_tables(conn):
             method TEXT,
             hash_distance REAL,
             recognized INTEGER NOT NULL DEFAULT 0,
+            is_foil INTEGER NOT NULL DEFAULT 0,
+            foil_confidence REAL,
             FOREIGN KEY (session_id) REFERENCES sessions(id)
         );
 
@@ -83,6 +85,7 @@ def _create_tables(conn):
             rarity TEXT,
             price_usd REAL,
             quantity INTEGER NOT NULL DEFAULT 1,
+            foil_quantity INTEGER NOT NULL DEFAULT 0,
             first_scanned TEXT,
             last_scanned TEXT,
             box TEXT
@@ -113,6 +116,25 @@ def _create_tables(conn):
         conn.execute("SELECT box FROM inventory LIMIT 1")
     except sqlite3.OperationalError:
         conn.execute("ALTER TABLE inventory ADD COLUMN box TEXT")
+        conn.commit()
+
+    # Migration: add foil tracking columns if missing (existing databases)
+    try:
+        conn.execute("SELECT is_foil FROM scan_history LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute(
+            "ALTER TABLE scan_history ADD COLUMN is_foil INTEGER NOT NULL DEFAULT 0"
+        )
+        conn.execute(
+            "ALTER TABLE scan_history ADD COLUMN foil_confidence REAL"
+        )
+        conn.commit()
+    try:
+        conn.execute("SELECT foil_quantity FROM inventory LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute(
+            "ALTER TABLE inventory ADD COLUMN foil_quantity INTEGER NOT NULL DEFAULT 0"
+        )
         conn.commit()
     conn.commit()
 
@@ -155,12 +177,17 @@ def end_session(conn, session_id, total_scans=0, recognized=0, unrecognized=0):
 
 def record_scan(conn, session_id, scan_num,
                 card_info=None, card_data=None, bin_num=None,
-                method=None, hash_distance=None):
+                method=None, hash_distance=None,
+                is_foil=False, foil_confidence=None):
     """
     Record a scan to both scan_history and inventory.
 
     Every recognized card is added to inventory. If the card already
     exists (same name + set + collector_number), quantity is incremented.
+
+    :param is_foil:         bool, whether the scanned card was detected as foil
+    :param foil_confidence: float, raw confidence score from foil_detect
+                            (None if detection was skipped or unavailable)
     """
     timestamp = datetime.now().isoformat()
     recognized = card_info is not None
@@ -206,45 +233,56 @@ def record_scan(conn, session_id, scan_num,
             except (ValueError, TypeError):
                 pass
 
+    is_foil_int = 1 if is_foil else 0
+
     # --- 1. Always append to scan_history ---
     conn.execute(
         """INSERT INTO scan_history
            (session_id, scan_num, timestamp, name, set_code, collector_number,
             oracle_id, illustration_id, colors, cmc, type_line, rarity,
-            price_usd, bin, method, hash_distance, recognized)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            price_usd, bin, method, hash_distance, recognized,
+            is_foil, foil_confidence)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (session_id, scan_num, timestamp, name, set_code, collector_number,
          oracle_id, illustration_id, colors, cmc, type_line, rarity,
-         price_usd, bin_num, method, hash_distance, int(recognized))
+         price_usd, bin_num, method, hash_distance, int(recognized),
+         is_foil_int, foil_confidence)
     )
 
     # --- 2. Update inventory (only for recognized cards) ---
     if recognized and name:
         existing = conn.execute(
-            """SELECT id, quantity FROM inventory
+            """SELECT id, quantity, foil_quantity FROM inventory
                WHERE name=? AND set_code=? AND collector_number=?
                LIMIT 1""",
             (name, set_code, collector_number)
         ).fetchone()
 
+        foil_inc = 1 if is_foil else 0
+        nonfoil_inc = 0 if is_foil else 1
+
         if existing:
             conn.execute(
                 """UPDATE inventory
-                   SET quantity=quantity+1, last_scanned=?,
+                   SET quantity=quantity+?,
+                       foil_quantity=foil_quantity+?,
+                       last_scanned=?,
                        price_usd=COALESCE(?, price_usd)
                    WHERE id=?""",
-                (timestamp, price_usd, existing['id'])
+                (nonfoil_inc + foil_inc, foil_inc,
+                 timestamp, price_usd, existing['id'])
             )
         else:
             conn.execute(
                 """INSERT INTO inventory
                    (name, set_code, collector_number, oracle_id,
                     illustration_id, colors, cmc, type_line, rarity,
-                    price_usd, quantity, first_scanned, last_scanned)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+                    price_usd, quantity, foil_quantity,
+                    first_scanned, last_scanned)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)""",
                 (name, set_code, collector_number, oracle_id,
                  illustration_id, colors, cmc, type_line, rarity,
-                 price_usd, timestamp, timestamp)
+                 price_usd, foil_inc, timestamp, timestamp)
             )
 
     conn.commit()

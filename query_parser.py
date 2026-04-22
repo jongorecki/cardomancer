@@ -700,9 +700,17 @@ def _eval_is_predicate(card_data, predicate):
     elif pred == 'fullart' or pred == 'full_art':
         return card_data.get('full_art', False)
     elif pred == 'foil':
+        # Scryfall capability flag: "a foil printing of this card exists".
+        # Matches is:foil semantics on Scryfall itself. For "this scanned
+        # card is physically a foil printing", use is:foilscan.
         return card_data.get('foil', False)
     elif pred == 'nonfoil':
         return card_data.get('nonfoil', False)
+    elif pred == 'foilscan' or pred == 'detected_foil':
+        # Matches when the scanned card has been detected as foil by
+        # foil_detect (populated into card_data['is_foil'] by the web
+        # worker / scan tracker). Distinct from is:foil (capability flag).
+        return bool(card_data.get('is_foil', False))
     elif pred == 'digital':
         return card_data.get('digital', False)
     elif pred == 'reserved':

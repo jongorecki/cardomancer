@@ -73,7 +73,8 @@ class ScanTracker:
         self._csv_writer.writerow([
             "scan_num", "timestamp", "name", "set", "all_sets",
             "collector_number", "colors", "cmc", "type_line", "rarity",
-            "price_usd", "bin", "method", "hash_distance", "recognized"
+            "price_usd", "bin", "method", "hash_distance", "recognized",
+            "is_foil", "foil_confidence"
         ])
 
         # --- SQLite collection database ---
@@ -94,9 +95,13 @@ class ScanTracker:
         print(f"[tracker] Session started: {self.session_dir}")
 
     def record_scan(self, card_info=None, bin_num=None, method=None,
-                    hash_distance=None, card_data=None):
+                    hash_distance=None, card_data=None,
+                    is_foil=False, foil_confidence=None):
         """
         Record a single card scan to session logs and collection DB.
+
+        :param is_foil:         bool, set by foil_detect post-identification
+        :param foil_confidence: float, raw foil detection confidence score
         """
         if self.session_dir is None:
             print("[tracker] Warning: no active session, call start_session() first")
@@ -142,6 +147,8 @@ class ScanTracker:
             "method": method or '',
             "hash_distance": hash_distance,
             "recognized": recognized,
+            "is_foil": bool(is_foil),
+            "foil_confidence": foil_confidence,
         }
         self.scans.append(scan_record)
 
@@ -157,6 +164,8 @@ class ScanTracker:
                 method or '',
                 f"{hash_distance:.2f}" if hash_distance is not None else '',
                 recognized,
+                int(bool(is_foil)),
+                f"{foil_confidence:.3f}" if foil_confidence is not None else '',
             ])
             self._csv_file.flush()
 
@@ -184,6 +193,8 @@ class ScanTracker:
                 bin_num=bin_num,
                 method=method,
                 hash_distance=hash_distance,
+                is_foil=is_foil,
+                foil_confidence=foil_confidence,
             )
 
         # Print status

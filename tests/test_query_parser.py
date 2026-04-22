@@ -540,6 +540,39 @@ class TestEvalIsPredicate(unittest.TestCase):
         self.assertTrue(matches_query("is:historic", SOL_RING))
         self.assertFalse(matches_query("is:historic", LIGHTNING_BOLT))
 
+    def test_is_foil_is_capability_flag(self):
+        """is:foil matches Scryfall's capability flag (foil printing exists),
+        NOT "this scan is physically a foil" — that's is:foilscan."""
+        card_with_foil_printing = dict(LIGHTNING_BOLT, foil=True)
+        card_without = dict(LIGHTNING_BOLT, foil=False)
+        self.assertTrue(matches_query("is:foil", card_with_foil_printing))
+        self.assertFalse(matches_query("is:foil", card_without))
+
+    def test_is_foilscan_detects_physical_foil(self):
+        """is:foilscan matches when foil_detect tagged this scan as foil."""
+        detected = dict(LIGHTNING_BOLT, is_foil=True)
+        nondetected = dict(LIGHTNING_BOLT, is_foil=False)
+        missing = dict(LIGHTNING_BOLT)  # key absent -> treat as False
+        self.assertTrue(matches_query("is:foilscan", detected))
+        self.assertFalse(matches_query("is:foilscan", nondetected))
+        self.assertFalse(matches_query("is:foilscan", missing))
+
+    def test_is_detected_foil_alias(self):
+        """is:detected_foil is an alias for is:foilscan."""
+        detected = dict(LIGHTNING_BOLT, is_foil=True)
+        self.assertTrue(matches_query("is:detected_foil", detected))
+        self.assertFalse(
+            matches_query("is:detected_foil", dict(LIGHTNING_BOLT))
+        )
+
+    def test_is_foilscan_independent_of_is_foil(self):
+        """A card can be is:foil=False (nonfoil-only printing, e.g. from
+        the Lord of the Rings set) but still have been physically scanned
+        as a foil — is:foilscan should still match."""
+        weird = dict(LIGHTNING_BOLT, foil=False, is_foil=True)
+        self.assertFalse(matches_query("is:foil", weird))
+        self.assertTrue(matches_query("is:foilscan", weird))
+
 
 # ===========================================================================
 # Evaluator Tests — otag

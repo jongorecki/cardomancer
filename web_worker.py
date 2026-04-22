@@ -1000,6 +1000,7 @@ class SortWorker:
         from card_detect import detect_card
         from cards import extract_card_info, CARD_DATA_BY_ID
         from card_identify_hybrid import identify_card, is_card_back
+        from foil_detect import detect_foil
         from sorting import get_bin_number
         from config import PHASH_DISTANCE_THRESHOLD, PHASH_CLOSE_MATCH_DIFF, EXCLUDED_SETS
 
@@ -1161,6 +1162,8 @@ class SortWorker:
             'method': None,
             'hash_distance': None,
             'was_rotated': False,
+            'is_foil': False,
+            'foil_confidence': None,
         }
 
         def _process_and_identify(img):
@@ -1227,6 +1230,22 @@ class SortWorker:
                     id_result['card_info'] = ci
                     id_result['card_data'] = CARD_DATA_BY_ID.get(top_id)
                     id_result['method'] = "hash"
+
+                    # Foil detection: compare scan against the matched
+                    # reference image. Cheap (~10ms), runs inside the
+                    # background ID thread so it doesn't block motion.
+                    try:
+                        fr = detect_foil(oriented, card_id=top_id)
+                        id_result['is_foil'] = bool(fr.get('is_foil', False))
+                        id_result['foil_confidence'] = fr.get('confidence')
+                        if fr.get('is_foil'):
+                            self.log(
+                                f"[foil] DETECTED foil "
+                                f"(conf={fr.get('confidence', 0):+.2f}, "
+                                f"reason={fr.get('reason', '?')})"
+                            )
+                    except Exception as e:
+                        self.log(f"[foil] detect_foil error: {e}")
 
                     # Log close matches for diagnostics
                     if len(filtered) > 1:
@@ -1370,6 +1389,8 @@ class SortWorker:
                     card_info=card_info, bin_num=physical_bin,
                     method=method, hash_distance=hash_distance,
                     card_data=card_data,
+                    is_foil=id_result.get('is_foil', False),
+                    foil_confidence=id_result.get('foil_confidence'),
                 )
 
             self.emit('card_detected', {
@@ -1385,6 +1406,8 @@ class SortWorker:
                 'bin': physical_bin,
                 'method': method,
                 'hash_distance': hash_distance,
+                'is_foil': id_result.get('is_foil', False),
+                'foil_confidence': id_result.get('foil_confidence'),
                 'undo_available': True,
             })
 

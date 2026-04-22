@@ -37,6 +37,8 @@ sim_debug.log
 sim_start.log
 layout_test_failures/
 foil_signal1/
+foil_multisignal/*.jpg
+foil_review.html
 
 # Large data files (user regenerates locally)
 downloaded_cards/
