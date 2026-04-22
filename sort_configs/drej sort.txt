@@ -1,0 +1,8 @@
+bins: 7
+fallback: 7
+bin1: usd>=1
+bin2: usd<1 t:legend
+bin3: usd<1 NOT otag:ramp NOT usd>.5
+bin4: usd<1 staple:any NOT otag:ramp
+bin5: usd<1 otag:ramp
+bin6: usd<1 usd>.5
