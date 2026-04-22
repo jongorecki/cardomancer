@@ -95,14 +95,24 @@ def _is_inside_roi(cx, cy, margin=100):
 
 def _find_card_contour(frame, debug=False):
     """
-    Find the card contour using per-channel Canny + ROI filtering.
+    Find the card contour using multi-channel Canny + 2-pass morph cascade.
 
-    Strategy: try each channel independently first (Gray, B, G, R).
-    Individual channels avoid merging card edges with the staging
-    platform edges (which happens with OR-combining). Falls back to
-    multi-channel OR only when no single channel finds the card —
-    some cards need edges from multiple channels to form a complete
-    contour (e.g. green border on brown cardboard in blue channel).
+    Strategy: multi-OR edges at Canny 30/90, then run a 2-pass
+    morph-close cascade:
+
+      Pass 1: 3x3 kernel, iter=1 (tight — high-contrast cards whose outline
+              is already clean; prevents the morph from bridging the card
+              edge to adjacent background clutter).
+      Pass 2: 3x3 kernel, iter=3 (stronger close — bridges the ~9px gaps
+              on low-contrast dark-on-cardboard cards like Battle layouts
+              and black-bordered creatures).
+
+    Canny 30/90 (down from 50/150) catches weaker card borders that the
+    old thresholds missed, without introducing false positives on empty
+    platform noise (verified on 17 empty-platform frames + 7 previously-
+    missed real cards + 144 historically successful raw frames).
+
+    Falls back to per-channel (with the same 2-pass) if multi-OR fails.
 
     :param frame: BGR camera frame
     :param debug: Print debug info
@@ -117,30 +127,41 @@ def _find_card_contour(frame, debug=False):
         max_area = 600000
 
     # --- Compute Canny edges for each channel ---
+    # 30/90 (lowered from 50/150): catches weak card borders on low-contrast
+    # cards (dark-on-cardboard battle cards, black-bordered creatures).
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     b, g, r = cv2.split(frame)
 
-    edges_gray = cv2.Canny(cv2.GaussianBlur(gray, (3, 3), 0), 50, 150)
-    edges_b = cv2.Canny(cv2.GaussianBlur(b, (3, 3), 0), 50, 150)
-    edges_g = cv2.Canny(cv2.GaussianBlur(g, (3, 3), 0), 50, 150)
-    edges_r = cv2.Canny(cv2.GaussianBlur(r, (3, 3), 0), 50, 150)
+    edges_gray = cv2.Canny(cv2.GaussianBlur(gray, (3, 3), 0), 30, 90)
+    edges_b = cv2.Canny(cv2.GaussianBlur(b, (3, 3), 0), 30, 90)
+    edges_g = cv2.Canny(cv2.GaussianBlur(g, (3, 3), 0), 30, 90)
+    edges_r = cv2.Canny(cv2.GaussianBlur(r, (3, 3), 0), 30, 90)
 
-    # --- Primary: multi-channel OR ---
+    # --- Primary: multi-channel OR, 2-pass morph cascade ---
     # OR-combine all color channels for maximum edge coverage. This
     # catches card borders invisible in any single channel (e.g. green
-    # border on brown cardboard). Works best in most lighting conditions.
+    # border on brown cardboard).
     edges_mc = cv2.bitwise_or(
         edges_b, cv2.bitwise_or(edges_g, edges_r))
-    result = _find_best_card_in_edges(
-        edges_mc, min_area, max_area, debug=debug)
 
     best_approx = None
     best_area = 0
     best_channel = None
 
+    # Pass 1: tight morph (iter=1) — card's own outline, no bridging to clutter
+    result = _find_best_card_in_edges(
+        edges_mc, min_area, max_area, morph_iter=1, debug=debug)
     if result is not None:
         best_approx, best_area = result
-        best_channel = "multi-OR"
+        best_channel = "multi-OR pass1"
+
+    # Pass 2: stronger morph (iter=3) — bridge gaps in fragmented card edges
+    if best_approx is None:
+        result = _find_best_card_in_edges(
+            edges_mc, min_area, max_area, morph_iter=3, debug=debug)
+        if result is not None:
+            best_approx, best_area = result
+            best_channel = "multi-OR pass2"
 
     # --- Fallback: per-channel with outlier rejection ---
     # If multi-OR failed (edges merged card with platform into one huge
@@ -152,8 +173,12 @@ def _find_card_contour(frame, debug=False):
         candidates = []
         for ch_name, edges in [("gray", edges_gray), ("blue", edges_b),
                                ("green", edges_g), ("red", edges_r)]:
+            # Try pass 1 first, then pass 2
             result = _find_best_card_in_edges(
-                edges, min_area, max_area, debug=False)
+                edges, min_area, max_area, morph_iter=1, debug=False)
+            if result is None:
+                result = _find_best_card_in_edges(
+                    edges, min_area, max_area, morph_iter=3, debug=False)
             if result is not None:
                 approx, area = result
                 candidates.append((ch_name, approx, area))
@@ -195,7 +220,8 @@ def _find_card_contour(frame, debug=False):
     return best_approx
 
 
-def _find_best_card_in_edges(edges, min_area, max_area, debug=False):
+def _find_best_card_in_edges(edges, min_area, max_area,
+                             morph_iter=1, debug=False):
     """
     Apply dual morphological close to edge map and find the best card contour.
 
@@ -211,26 +237,27 @@ def _find_best_card_in_edges(edges, min_area, max_area, debug=False):
     :param edges: Single-channel Canny edge map
     :param min_area: Minimum contour area
     :param max_area: Maximum contour area
+    :param morph_iter: Morph-close iterations (callers sweep 1 then 3 —
+        iter=1 finds clean outlines without bridging card-to-clutter;
+        iter=3 bridges small gaps on low-contrast card edges)
     :param debug: Print rejections
     :return: (approx, area) tuple, or None if no valid card found
     """
     # Dual morphological close: rect + ellipse.
     # Rect bridges straight-edge gaps; ellipse bridges curved corners.
-    # We use a WEAK morph (5x5 x 2) to reliably find the card's inner
-    # frame as a closed contour — the inner frame is always detected
-    # cleanly by Canny because of its high contrast (dark colored frame
-    # vs light card face). The outer card edge (lower contrast against
-    # cardboard) often fragments and would need a much stronger morph
-    # to bridge, but stronger morph also merges card with staging
-    # platform edges. Instead we run weak morph here, then refine the
-    # resulting polygon outward to snap corners to the real outer edge
-    # (see _refine_polygon_outward).
-    k_rect = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-    k_ellipse = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    # 3x3 kernel (down from 5x5): smaller kernel prevents card edges from
+    # merging with adjacent background clutter through the morph.  The
+    # caller does a 2-pass cascade — pass 1 uses iter=1 (tight; card's own
+    # outline), pass 2 uses iter=3 (~9px total reach; bridges fragmented
+    # low-contrast card edges without reaching far enough to merge with
+    # platform/background).  _refine_polygon_outward then walks the polygon
+    # outward to the true outer card edge for the perspective warp.
+    k_rect = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    k_ellipse = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     closed_rect = cv2.morphologyEx(
-        edges, cv2.MORPH_CLOSE, k_rect, iterations=2)
+        edges, cv2.MORPH_CLOSE, k_rect, iterations=morph_iter)
     closed_elli = cv2.morphologyEx(
-        edges, cv2.MORPH_CLOSE, k_ellipse, iterations=2)
+        edges, cv2.MORPH_CLOSE, k_ellipse, iterations=morph_iter)
     closed = cv2.bitwise_or(closed_rect, closed_elli)
 
     contours, _ = cv2.findContours(
@@ -268,13 +295,16 @@ def _find_best_card_in_edges(edges, min_area, max_area, debug=False):
 
         # Solidity check: card area should be close to convex hull area.
         # Rejects irregular/concave contours (merged edges, C-shapes).
+        # 0.65 (down from 0.75): black-bordered cards on cardboard produce
+        # slightly fragmented Canny edges that lower solidity below 0.75
+        # even when the card is cleanly visible.
         hull = cv2.convexHull(cnt)
         hull_area = cv2.contourArea(hull)
         if hull_area > 0:
             solidity = area / hull_area
-            if solidity < 0.75:
+            if solidity < 0.65:
                 if debug:
-                    print(f"[detect] Rejected: solidity {solidity:.2f} < 0.75")
+                    print(f"[detect] Rejected: solidity {solidity:.2f} < 0.65")
                 continue
 
         # Shape filter: card-like aspect ratio via minAreaRect
@@ -369,13 +399,13 @@ def _refine_polygon_outward(frame, polygon, search_band=40, debug=False):
     order = np.argsort(angles)
     pts = pts[order]
 
-    # Multi-channel Canny edge map (same thresholds as primary detection)
+    # Multi-channel Canny edge map (same thresholds as primary detection: 30/90)
     b, g, r = cv2.split(frame)
     edges = cv2.bitwise_or(
-        cv2.Canny(cv2.GaussianBlur(b, (3, 3), 0), 50, 150),
+        cv2.Canny(cv2.GaussianBlur(b, (3, 3), 0), 30, 90),
         cv2.bitwise_or(
-            cv2.Canny(cv2.GaussianBlur(g, (3, 3), 0), 50, 150),
-            cv2.Canny(cv2.GaussianBlur(r, (3, 3), 0), 50, 150),
+            cv2.Canny(cv2.GaussianBlur(g, (3, 3), 0), 30, 90),
+            cv2.Canny(cv2.GaussianBlur(r, (3, 3), 0), 30, 90),
         ),
     )
 
