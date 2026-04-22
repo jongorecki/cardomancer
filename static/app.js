@@ -271,64 +271,8 @@ function updateSessionButtons() {
 
     sessionActive = active;
 
-    // Lock / unlock the sort configuration panel while a session is
-    // active. Changing mode mid-sort would desync the worker's active
-    // SortConfig from what the UI shows.
-    _lockSortConfig(active);
-}
-
-function _lockSortConfig(locked) {
-    // Sort mode dropdown
-    const modeSelect = document.getElementById('sort-mode');
-    if (modeSelect) modeSelect.disabled = locked;
-
-    // Bin count, fallback, limit
-    for (const id of ['custom-bin-count', 'custom-fallback', 'custom-bin-limit']) {
-        const el = document.getElementById(id);
-        if (el) el.disabled = locked;
-    }
-
-    // All custom query inputs + overflow checkboxes
-    document.querySelectorAll('[id^="custom-query-"]').forEach(el => {
-        // Don't re-enable inputs that are disabled because they're
-        // fallback bins or overflow bins — only toggle the locked state.
-        if (!locked) {
-            const binNum = parseInt(el.id.replace('custom-query-', ''));
-            const fallback = parseInt(document.getElementById('custom-fallback')?.value) || 0;
-            const overflowCb = document.getElementById(`custom-overflow-${binNum}`);
-            const isOverflow = overflowCb && overflowCb.checked;
-            el.disabled = (binNum === fallback) || isOverflow;
-        } else {
-            el.disabled = true;
-        }
-    });
-    document.querySelectorAll('.overflow-check').forEach(el => {
-        el.disabled = locked;
-    });
-    document.querySelectorAll('[id^="overflow-parent-"]').forEach(el => {
-        el.disabled = locked;
-    });
-
-    // Config file selector + load/save buttons
-    const cfgSelect = document.getElementById('config-file-select');
-    if (cfgSelect) cfgSelect.disabled = locked;
-    const customLoadFile = document.getElementById('custom-load-file');
-    if (customLoadFile) customLoadFile.disabled = locked;
-
-    // Apply button
-    const applyBtn = document.getElementById('btn-apply-sort-config');
-    if (applyBtn) applyBtn.disabled = locked;
-
-    // Show a lock indicator on the config panel header
-    const collapseHeader = document.querySelector('[data-bs-target="#sort-config-collapse"]');
-    if (collapseHeader) {
-        const hint = collapseHeader.querySelector('.text-muted');
-        if (hint) {
-            hint.textContent = locked
-                ? '🔒 locked while session is active'
-                : 'click to show/hide';
-        }
-    }
+    // Lock / unlock the sort configuration panel while a session is active.
+    _lockSortConfigPanel(active);
 }
 
 // =========================================================================
@@ -1457,10 +1401,10 @@ function configureBins() {
 socket.on('bins_configured', (data) => {
     loadBinTable();
     drawBinLayoutCanvas();
-    // Sync bin count to the sort config tab
+    // Sync bin count to the sort config panel
     if (data && data.count) {
-        const customBinCount = document.getElementById('custom-bin-count');
-        if (customBinCount) customBinCount.value = data.count;
+        const scBinCount = document.getElementById('sc-bin-count');
+        if (scBinCount) scBinCount.value = data.count;
     }
 });
 
@@ -1679,300 +1623,486 @@ socket.on('overflow_map_updated', (data) => {
 });
 
 // =========================================================================
-// Sort configuration
+// Sort Configuration (unified preset + override bins)
 // =========================================================================
 
-// --- Sort config confirmation ---
-// The user must click "Apply Sort Config" after configuring to
-// confirm their choice. This prevents accidental mid-sort mode
-// changes and makes the active sort mode explicit.
-let _sortConfigApplied = false;
-let _appliedSortMode = 'color';  // mode string that was last applied
-let _appliedSortLabel = 'Color'; // human label for display
+// BUILTIN_CONFIGS: filenames that ship with the project and are treated as
+// read-only. Users may load them, edit in-memory, and Save As a new file,
+// but cannot overwrite these files via the Save button.
+const BUILTIN_CONFIGS = new Set([
+    'color.txt', 'mana_value.txt', 'price.txt', 'price_tiers.txt',
+    'set.txt', 'type.txt', 'color_type.txt', 'edh_staples.txt',
+]);
 
-function applySortConfig() {
-    const mode = document.getElementById('sort-mode').value;
-    const label = document.getElementById('sort-mode').selectedOptions[0]?.text || mode;
+let _scFilename = null;      // currently loaded filename (null = unsaved)
+let _scDirty = false;        // any unsaved in-memory changes
+let _scBuiltin = false;      // currently loaded file is a builtin (read-only)
 
-    // Basic validation for custom modes
-    if (mode === 'custom_file') {
-        const file = document.getElementById('config-file-select').value;
-        if (!file) {
-            addLog('⚠️ Select a config file before applying');
-            return;
+// ---------- Config text parser ----------
+
+function _parseSortConfigText(text) {
+    const result = {
+        description: '',
+        bins: 10,
+        fallback: 10,
+        limit: null,
+        overrides: new Set(),
+        binQueries: {},
+    };
+    for (const raw of text.split('\n')) {
+        const line = raw.trim();
+        if (!line) continue;
+        if (line.startsWith('#')) {
+            if (!result.description) result.description = line.slice(1).trim();
+            continue;
         }
-    }
-    if (mode === 'custom_manual') {
-        const count = parseInt(document.getElementById('custom-bin-count').value) || 7;
-        let hasQuery = false;
-        for (let i = 1; i <= count; i++) {
-            const input = document.getElementById(`custom-query-${i}`);
-            if (input && input.value.trim()) { hasQuery = true; break; }
-        }
-        if (!hasQuery) {
-            addLog('⚠️ Enter at least one bin query before applying');
-            return;
-        }
-    }
-
-    _sortConfigApplied = true;
-    _appliedSortMode = mode;
-    _appliedSortLabel = label;
-
-    const badge = document.getElementById('sort-config-status');
-    badge.className = 'badge bg-success';
-    badge.textContent = `✓ ${label}`;
-
-    addLog(`Sort config applied: ${label}`);
-}
-
-function _markSortConfigDirty() {
-    // Called when any sort config input changes — clears the "applied"
-    // state so the user must re-confirm before starting a session.
-    if (!_sortConfigApplied) return;
-    _sortConfigApplied = false;
-    const badge = document.getElementById('sort-config-status');
-    if (badge) {
-        badge.className = 'badge bg-warning text-dark';
-        badge.textContent = 'Config changed — click Apply';
-    }
-}
-
-function onSortModeChange() {
-    const mode = document.getElementById('sort-mode').value;
-    const filePanel = document.getElementById('custom-file-panel');
-    const manualPanel = document.getElementById('custom-manual-panel');
-
-    const setPanel = document.getElementById('set-config-panel');
-
-    filePanel.style.display = mode === 'custom_file' ? '' : 'none';
-    manualPanel.style.display = (mode === 'custom_manual' || mode === 'custom_file') ? '' : 'none';
-    setPanel.style.display = mode === 'set' ? '' : 'none';
-
-    if (mode === 'set') {
-        loadSetConfig();
-    }
-    if (mode === 'custom_file') {
-        loadConfigFileList();
-    }
-    if (mode === 'custom_manual') {
-        buildCustomQueryInputs();
-        loadCustomConfigFileList();
-    }
-
-    // Update simulation mode display
-    const label = document.getElementById('sort-mode').selectedOptions[0]?.text || mode;
-    const simDisplay = document.getElementById('sim-mode-display');
-    if (simDisplay) simDisplay.textContent = label;
-
-    // Sort mode changed — user must re-apply
-    _markSortConfigDirty();
-}
-
-async function loadConfigFileList() {
-    const data = await apiGet('/api/sort/configs');
-    const select = document.getElementById('config-file-select');
-    select.innerHTML = '<option value="">-- Select a config file --</option>';
-    for (const cfg of data.configs || []) {
-        select.innerHTML += `<option value="${cfg.filename}">${cfg.filename}</option>`;
-    }
-}
-
-async function loadConfigFile() {
-    const filename = document.getElementById('config-file-select').value;
-    if (!filename) return;
-    const data = await apiGet(`/api/sort/configs/${filename}`);
-    document.getElementById('config-file-preview').textContent = data.content || '';
-}
-
-function buildCustomQueryInputs() {
-    const count = parseInt(document.getElementById('custom-bin-count').value) || 10;
-    const fbEl = document.getElementById('custom-fallback');
-    let fallback = parseInt(fbEl.value) || count;
-    // Clamp fallback into [1, count] so SortConfig validation doesn't
-    // reject it. This fires when the user changes bin count or when the
-    // hardware sync sets a lower count than the default 10.
-    if (fallback > count) {
-        fallback = count;
-        fbEl.value = count;
-    }
-    if (fallback < 1) {
-        fallback = 1;
-        fbEl.value = 1;
-    }
-    const container = document.getElementById('custom-query-inputs');
-    container.innerHTML = '';
-    for (let i = 1; i <= count; i++) {
-        const isFallback = i === fallback;
-        const div = document.createElement('div');
-        div.className = 'input-group input-group-sm mb-1';
-        div.innerHTML = `
-            <span class="input-group-text" style="width:60px;">Bin ${i}</span>
-            <input type="text" class="form-control" id="custom-query-${i}"
-                   placeholder="${isFallback ? '(fallback bin)' : 'Scryfall query (e.g. c:w t:creature)'}"
-                   ${isFallback ? 'disabled' : ''}
-                   oninput="_markSortConfigDirty()">
-            <div class="input-group-text">
-                <input type="checkbox" class="form-check-input mt-0 overflow-check"
-                       id="custom-overflow-${i}" data-bin="${i}"
-                       title="Use as overflow for another bin's query"
-                       ${isFallback ? 'disabled' : ''}>
-                <label class="form-check-label ms-1 small" for="custom-overflow-${i}">Overflow</label>
-            </div>
-        `;
-        container.appendChild(div);
-    }
-    // Wire up overflow checkbox logic: when an overflow checkbox is
-    // checked on a bin with no query, that bin becomes an overflow
-    // target. When it's checked, disable its query input (it inherits
-    // from its parent). Show a dropdown to select which bin it overflows.
-    _wireOverflowCheckboxes(count, fallback);
-}
-
-function _wireOverflowCheckboxes(count, fallback) {
-    for (let i = 1; i <= count; i++) {
-        if (i === fallback) continue;
-        const cb = document.getElementById(`custom-overflow-${i}`);
-        if (!cb) continue;
-        cb.addEventListener('change', () => {
-            const input = document.getElementById(`custom-query-${i}`);
-            if (cb.checked) {
-                // Overflow bin: disable query field, show parent selector
-                if (input) {
-                    input.disabled = true;
-                    input.value = '';
-                    input.placeholder = '(overflow — select parent below)';
-                }
-                _showOverflowParentSelect(i, count, fallback);
-            } else {
-                // Regular bin: enable query field, remove parent selector
-                if (input) {
-                    input.disabled = false;
-                    input.placeholder = 'Scryfall query (e.g. c:w t:creature)';
-                }
-                _removeOverflowParentSelect(i);
+        const m = line.match(/^(\w+):\s*(.*)$/);
+        if (!m) continue;
+        const key = m[1].toLowerCase();
+        const val = m[2].trim();
+        if (key === 'bins') result.bins = parseInt(val) || 10;
+        else if (key === 'fallback') result.fallback = parseInt(val) || 10;
+        else if (key === 'limit') result.limit = parseInt(val) || null;
+        else if (key === 'overrides') {
+            for (const n of val.split(',')) {
+                const bn = parseInt(n.trim());
+                if (bn) result.overrides.add(bn);
             }
-        });
-    }
-}
-
-function _showOverflowParentSelect(binNum, count, fallback) {
-    // Remove any existing select
-    _removeOverflowParentSelect(binNum);
-    // Build list of bins that have queries (potential parents)
-    const options = ['<option value="">-- overflow for --</option>'];
-    for (let j = 1; j <= count; j++) {
-        if (j === binNum || j === fallback) continue;
-        const cb = document.getElementById(`custom-overflow-${j}`);
-        if (cb && cb.checked) continue; // another overflow bin can't be a parent
-        const input = document.getElementById(`custom-query-${j}`);
-        const query = input ? input.value.trim() : '';
-        if (query) {
-            const short = query.length > 25 ? query.substring(0, 25) + '…' : query;
-            options.push(`<option value="${j}">Bin ${j}: ${short}</option>`);
+        } else if (key.startsWith('bin') && key.length > 3) {
+            const num = parseInt(key.slice(3));
+            if (num) result.binQueries[num] = val;
         }
     }
-    const sel = document.createElement('select');
-    sel.className = 'form-select form-select-sm';
-    sel.id = `overflow-parent-${binNum}`;
-    sel.style.maxWidth = '200px';
-    sel.innerHTML = options.join('');
-    // Insert after the input-group
-    const container = document.getElementById(`custom-query-${binNum}`)?.closest('.input-group');
-    if (container && container.parentElement) {
-        const wrapper = document.createElement('div');
-        wrapper.className = 'ms-2 d-inline-block';
-        wrapper.id = `overflow-parent-wrapper-${binNum}`;
-        wrapper.appendChild(sel);
-        container.parentElement.insertBefore(wrapper, container.nextSibling);
+    return result;
+}
+
+// ---------- Config text serializer ----------
+
+function serializeSortConfig() {
+    const bins = parseInt(document.getElementById('sc-bin-count').value) || 10;
+    const fallback = parseInt(document.getElementById('sc-fallback').value) || bins;
+    const limitVal = document.getElementById('sc-bin-limit').value.trim();
+    const overrideNums = [];
+    const tbody = document.getElementById('sort-config-tbody');
+    if (!tbody) return '';
+    const rows = tbody.querySelectorAll('tr[data-bin]');
+
+    let text = '';
+    if (_scFilename) {
+        const name = _scFilename.replace(/\.txt$/, '');
+        text += `# ${name}\n`;
     }
+    text += `bins: ${bins}\n`;
+    text += `fallback: ${fallback}\n`;
+    if (limitVal) text += `limit: ${limitVal}\n`;
+
+    const binLines = [];
+    rows.forEach(tr => {
+        const binNum = parseInt(tr.getAttribute('data-bin'));
+        const queryInput = tr.querySelector('.sc-query-input');
+        const overrideCb = tr.querySelector('.sc-override-cb');
+        const query = queryInput ? queryInput.value.trim() : '';
+        if (overrideCb && overrideCb.checked) overrideNums.push(binNum);
+        if (query) binLines.push(`bin${binNum}: ${query}`);
+    });
+
+    if (overrideNums.length) text += `overrides: ${overrideNums.join(',')}\n`;
+    text += binLines.join('\n');
+    if (binLines.length) text += '\n';
+    return text;
 }
 
-function _removeOverflowParentSelect(binNum) {
-    const wrapper = document.getElementById(`overflow-parent-wrapper-${binNum}`);
-    if (wrapper) wrapper.remove();
+// ---------- Row rendering ----------
+
+function _renderSortConfigRow(binNum, query, isOverride, isFallback) {
+    const tr = document.createElement('tr');
+    tr.setAttribute('data-bin', binNum);
+    if (isOverride) tr.classList.add('bin-row', 'is-override');
+    else tr.classList.add('bin-row');
+
+    const binLabel = isFallback
+        ? `<span class="bin-num">${binNum}</span> <span class="badge bg-secondary" style="font-size:0.65rem;">fb</span>`
+        : `<span class="bin-num">${binNum}</span>`;
+
+    const overrideDisabled = isFallback ? 'disabled' : '';
+    const overrideChecked = isOverride ? 'checked' : '';
+    const queryVal = escapeHtml(query || '');
+    const queryPlaceholder = isFallback ? '(fallback — no query needed)' : 'e.g. c:w t:creature';
+
+    tr.innerHTML = `
+        <td class="text-center">${binLabel}</td>
+        <td>
+            <input type="text" class="form-control form-control-sm sc-query-input"
+                   value="${queryVal}"
+                   placeholder="${queryPlaceholder}"
+                   ${isFallback ? 'disabled' : ''}
+                   oninput="markSortConfigDirty(); _validateSortRow(this)">
+        </td>
+        <td class="text-center">
+            <input type="checkbox" class="form-check-input sc-override-cb"
+                   ${overrideChecked} ${overrideDisabled}
+                   onchange="onOverrideToggle(${binNum}, this)">
+        </td>
+        <td class="text-center">
+            <button class="btn btn-link btn-sm p-0 text-danger sc-remove-btn"
+                    onclick="removeSortConfigRow(this)"
+                    title="Remove bin">
+                &times;
+            </button>
+        </td>
+    `;
+    return tr;
 }
 
-async function loadCustomConfigFileList() {
+function _rebuildSortConfigTable(parsed) {
+    const tbody = document.getElementById('sort-config-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    const binCount = parsed.bins;
+    const fallback = parsed.fallback;
+
+    for (let i = 1; i <= binCount; i++) {
+        const query = parsed.binQueries[i] || '';
+        const isOverride = parsed.overrides.has(i);
+        const isFallback = (i === fallback);
+        tbody.appendChild(_renderSortConfigRow(i, query, isOverride, isFallback));
+    }
+
+    document.getElementById('sc-bin-count').value = binCount;
+    document.getElementById('sc-fallback').value = fallback;
+    document.getElementById('sc-bin-limit').value = parsed.limit || '';
+    document.getElementById('sort-config-description').textContent = parsed.description;
+}
+
+// ---------- Preset list ----------
+
+async function loadSortConfigList() {
+    const sel = document.getElementById('sort-preset-select');
+    if (!sel) return;
     try {
         const data = await apiGet('/api/sort/configs');
-        const select = document.getElementById('custom-load-file');
-        if (!select) return;
-        select.innerHTML = '<option value="">-- Load from file --</option>';
-        for (const cfg of data.configs || []) {
-            select.innerHTML += `<option value="${cfg.filename}">${cfg.filename}</option>`;
+        const configs = data.configs || [];
+        sel.innerHTML = '';
+        for (const cfg of configs) {
+            const opt = document.createElement('option');
+            opt.value = cfg.filename;
+            const isBuiltin = BUILTIN_CONFIGS.has(cfg.filename);
+            opt.textContent = cfg.filename + (isBuiltin ? ' (built-in)' : '');
+            sel.appendChild(opt);
         }
-    } catch (e) {}
-}
-
-async function loadCustomConfigFromFile() {
-    const select = document.getElementById('custom-load-file');
-    const filename = select ? select.value : '';
-    if (!filename) return;
-    try {
-        const data = await apiGet(`/api/sort/configs/${filename}`);
-        const content = data.content || '';
-        // Parse the config file format:
-        //   bins: N
-        //   fallback: N
-        //   limit: N
-        //   bin1: query
-        //   bin2: query
-        const lines = content.split('\n');
-        let binCount = 10, fallback = 10, limit = '';
-        const queries = {};
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed) continue;
-            const match = trimmed.match(/^(\w+):\s*(.*)$/);
-            if (!match) continue;
-            const key = match[1].toLowerCase();
-            const val = match[2].trim();
-            if (key === 'bins') binCount = parseInt(val) || 10;
-            else if (key === 'fallback') fallback = parseInt(val) || 10;
-            else if (key === 'limit') limit = val;
-            else if (key.startsWith('bin')) {
-                const num = parseInt(key.replace('bin', ''));
-                if (!isNaN(num)) queries[num] = val;
+        if (configs.length) {
+            // If current file is still in the list, keep selection; else first
+            if (_scFilename && configs.some(c => c.filename === _scFilename)) {
+                sel.value = _scFilename;
+            } else {
+                sel.value = configs[0].filename;
+                await loadSortConfigFile(configs[0].filename);
             }
         }
-        // Apply to UI
-        document.getElementById('custom-bin-count').value = binCount;
-        document.getElementById('custom-fallback').value = fallback;
-        document.getElementById('custom-bin-limit').value = limit;
-        buildCustomQueryInputs();
-        // Fill in queries
-        for (const [num, query] of Object.entries(queries)) {
-            const input = document.getElementById(`custom-query-${num}`);
-            if (input) input.value = query;
-        }
-        addLog(`Loaded custom config: ${filename}`);
     } catch (e) {
-        addLog(`Failed to load config: ${filename}`);
+        addLog('Failed to load sort configs: ' + e);
     }
 }
 
-async function saveCustomConfig() {
-    const filename = prompt('Save as filename (without .txt):');
-    if (!filename) return;
-    const count = parseInt(document.getElementById('custom-bin-count').value) || 10;
-    const fallback = parseInt(document.getElementById('custom-fallback').value) || count;
-    const limit = document.getElementById('custom-bin-limit').value;
+async function loadSortConfigFile(filename) {
+    try {
+        const data = await apiGet(`/api/sort/configs/${encodeURIComponent(filename)}`);
+        const parsed = _parseSortConfigText(data.content || '');
+        _scFilename = filename;
+        _scBuiltin = BUILTIN_CONFIGS.has(filename);
+        _scDirty = false;
+        _rebuildSortConfigTable(parsed);
+        _updateSortConfigToolbar();
+        // Sync the select element
+        const sel = document.getElementById('sort-preset-select');
+        if (sel) sel.value = filename;
+    } catch (e) {
+        addLog(`Failed to load sort config "${filename}": ` + e);
+    }
+}
 
-    let content = `bins: ${count}\nfallback: ${fallback}\n`;
-    if (limit) content += `limit: ${limit}\n`;
+function onSortPresetSelect() {
+    const sel = document.getElementById('sort-preset-select');
+    if (!sel || !sel.value) return;
+    loadSortConfigFile(sel.value);
+}
 
-    for (let i = 1; i <= count; i++) {
-        const input = document.getElementById(`custom-query-${i}`);
-        if (input && input.value.trim()) {
-            content += `bin${i}: ${input.value.trim()}\n`;
+// ---------- Dirty tracking ----------
+
+function markSortConfigDirty() {
+    _scDirty = true;
+    const badge = document.getElementById('sort-config-dirty-badge');
+    if (badge) badge.style.display = '';
+    _updateSortConfigToolbar();
+}
+
+function _clearDirty() {
+    _scDirty = false;
+    const badge = document.getElementById('sort-config-dirty-badge');
+    if (badge) badge.style.display = 'none';
+    _updateSortConfigToolbar();
+}
+
+function _updateSortConfigToolbar() {
+    const saveBtn = document.getElementById('btn-sort-config-save');
+    const delBtn = document.getElementById('btn-sort-config-delete');
+    if (saveBtn) {
+        saveBtn.disabled = _scBuiltin;
+        saveBtn.title = _scBuiltin
+            ? 'Built-in presets are read-only; use Save As'
+            : 'Save changes back to this preset file';
+    }
+    if (delBtn) {
+        delBtn.style.display = (!_scBuiltin && _scFilename) ? '' : 'none';
+    }
+}
+
+// ---------- Bin count change ----------
+
+function onSortConfigBinCountChange() {
+    const binCount = parseInt(document.getElementById('sc-bin-count').value) || 10;
+    let fallback = parseInt(document.getElementById('sc-fallback').value) || binCount;
+    if (fallback > binCount) {
+        fallback = binCount;
+        document.getElementById('sc-fallback').value = binCount;
+    }
+    const tbody = document.getElementById('sort-config-tbody');
+    if (!tbody) return;
+
+    // Preserve existing queries
+    const existing = {};
+    const existingOverrides = new Set();
+    tbody.querySelectorAll('tr[data-bin]').forEach(tr => {
+        const b = parseInt(tr.getAttribute('data-bin'));
+        const inp = tr.querySelector('.sc-query-input');
+        const cb = tr.querySelector('.sc-override-cb');
+        if (inp) existing[b] = inp.value;
+        if (cb && cb.checked) existingOverrides.add(b);
+    });
+
+    tbody.innerHTML = '';
+    for (let i = 1; i <= binCount; i++) {
+        const tr = _renderSortConfigRow(
+            i,
+            existing[i] || '',
+            existingOverrides.has(i),
+            i === fallback
+        );
+        tbody.appendChild(tr);
+    }
+    markSortConfigDirty();
+}
+
+// ---------- Override toggle ----------
+
+function onOverrideToggle(binNum, cb) {
+    const tr = cb.closest('tr');
+    if (!tr) return;
+    if (cb.checked) {
+        tr.classList.add('is-override');
+    } else {
+        tr.classList.remove('is-override');
+    }
+    markSortConfigDirty();
+}
+
+// ---------- Add / remove rows ----------
+
+function addSortConfigBin() {
+    const tbody = document.getElementById('sort-config-tbody');
+    if (!tbody) return;
+    const rows = tbody.querySelectorAll('tr[data-bin]');
+    const nextNum = rows.length + 1;
+    // Update bin count field
+    document.getElementById('sc-bin-count').value = nextNum;
+    tbody.appendChild(_renderSortConfigRow(nextNum, '', false, false));
+    markSortConfigDirty();
+}
+
+function removeSortConfigRow(btn) {
+    const tr = btn.closest('tr');
+    if (!tr) return;
+    tr.remove();
+    // Renumber
+    const tbody = document.getElementById('sort-config-tbody');
+    if (!tbody) return;
+    let i = 1;
+    const fallback = parseInt(document.getElementById('sc-fallback').value) || 0;
+    tbody.querySelectorAll('tr[data-bin]').forEach(row => {
+        row.setAttribute('data-bin', i);
+        const binNumEl = row.querySelector('.bin-num');
+        if (binNumEl) binNumEl.textContent = i;
+        const overrideCb = row.querySelector('.sc-override-cb');
+        if (overrideCb) overrideCb.setAttribute('onchange', `onOverrideToggle(${i}, this)`);
+        const removeBtn = row.querySelector('.sc-remove-btn');
+        if (removeBtn) removeBtn.setAttribute('onclick', `removeSortConfigRow(this)`);
+        i++;
+    });
+    document.getElementById('sc-bin-count').value = i - 1;
+    markSortConfigDirty();
+}
+
+// ---------- Per-row validation ----------
+
+function _validateSortRow(input) {
+    const query = input.value.trim();
+    if (!query) {
+        input.classList.remove('is-invalid');
+        input.setCustomValidity('');
+        return;
+    }
+    fetch('/api/sort/validate-query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query }),
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.valid) {
+            input.classList.remove('is-invalid');
+            input.setCustomValidity('');
+        } else {
+            input.classList.add('is-invalid');
+            input.setCustomValidity(data.error || 'Invalid query');
+            input.title = data.error || 'Invalid query';
+        }
+    })
+    .catch(() => {});
+}
+
+// ---------- Pre-start validation ----------
+
+async function _validateAllSortRows() {
+    const tbody = document.getElementById('sort-config-tbody');
+    if (!tbody) return true;
+    const inputs = tbody.querySelectorAll('.sc-query-input:not(:disabled)');
+    const checks = [];
+    inputs.forEach(inp => {
+        const query = inp.value.trim();
+        if (!query) return;
+        checks.push(
+            fetch('/api/sort/validate-query', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query }),
+            })
+            .then(r => r.json())
+            .then(data => ({ inp, valid: data.valid, error: data.error }))
+        );
+    });
+    const results = await Promise.all(checks);
+    let allValid = true;
+    for (const r of results) {
+        if (!r.valid) {
+            r.inp.classList.add('is-invalid');
+            r.inp.title = r.error || 'Invalid query';
+            allValid = false;
+        } else {
+            r.inp.classList.remove('is-invalid');
         }
     }
+    if (!allValid) {
+        // Ensure the sort config panel is expanded so user can see the error
+        const collapse = document.getElementById('sort-config-collapse');
+        if (collapse && !collapse.classList.contains('show')) {
+            new bootstrap.Collapse(collapse, { toggle: true });
+        }
+    }
+    return allValid;
+}
 
-    await apiPost(`/api/sort/configs/${filename}`, { content });
-    addLog(`Saved config: ${filename}.txt`);
-    loadConfigFileList();
-    loadCustomConfigFileList();
+// ---------- New config ----------
+
+function newSortConfig() {
+    _scFilename = null;
+    _scBuiltin = false;
+    _scDirty = false;
+    const empty = {
+        description: '',
+        bins: 10,
+        fallback: 10,
+        limit: null,
+        overrides: new Set(),
+        binQueries: {},
+    };
+    _rebuildSortConfigTable(empty);
+    _clearDirty();
+    const sel = document.getElementById('sort-preset-select');
+    if (sel) sel.value = '';
+}
+
+// ---------- Save ----------
+
+async function saveSortConfig() {
+    if (!_scFilename || _scBuiltin) {
+        addLog('Cannot overwrite a built-in preset. Use Save As.');
+        return;
+    }
+    const content = serializeSortConfig();
+    const r = await fetch(`/api/sort/configs/${encodeURIComponent(_scFilename)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
+    });
+    if (r.ok) {
+        _clearDirty();
+        addLog(`Saved: ${_scFilename}`);
+    } else {
+        addLog(`Save failed: ${r.status}`);
+    }
+}
+
+async function saveSortConfigAs() {
+    const suggested = _scFilename
+        ? _scFilename.replace(/\.txt$/, '') + '_copy'
+        : 'my_sort';
+    const raw = prompt('Save as (filename without .txt):', suggested);
+    if (!raw) return;
+    const filename = raw.trim().replace(/\.txt$/, '') + '.txt';
+    const content = serializeSortConfig();
+    const r = await fetch(`/api/sort/configs/${encodeURIComponent(filename)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
+    });
+    if (r.ok) {
+        _scFilename = filename;
+        _scBuiltin = false;
+        _clearDirty();
+        addLog(`Saved as: ${filename}`);
+        await loadSortConfigList();
+    } else {
+        addLog(`Save failed: ${r.status}`);
+    }
+}
+
+async function deleteSortConfig() {
+    if (!_scFilename || _scBuiltin) return;
+    if (!confirm(`Delete "${_scFilename}"? This cannot be undone.`)) return;
+    const r = await fetch(`/api/sort/configs/${encodeURIComponent(_scFilename)}`,
+        { method: 'DELETE' });
+    if (r.ok) {
+        _scFilename = null;
+        addLog('Deleted preset');
+        await loadSortConfigList();
+    } else {
+        addLog(`Delete failed: ${r.status}`);
+    }
+}
+
+// ---------- Session lock/unlock ----------
+
+function _lockSortConfigPanel(locked) {
+    const inputs = document.querySelectorAll(
+        '#sort-config-collapse input, #sort-config-collapse select, #sort-config-collapse button'
+    );
+    inputs.forEach(el => { el.disabled = locked; });
+
+    const hint = document.getElementById('sort-config-collapse-hint');
+    if (hint) {
+        hint.textContent = locked ? 'locked while session is active' : 'click to show/hide';
+    }
 }
 
 // =========================================================================
@@ -2004,62 +2134,17 @@ function _testScanDone() {
 // Sort Session
 // =========================================================================
 
-function startSession() {
-    // Require the user to explicitly apply the sort config before
-    // starting. This prevents starting a session with an un-confirmed
-    // or stale config.
-    if (!_sortConfigApplied) {
-        addLog('⚠️ Click "Apply Sort Config" first to confirm your sort mode');
-        const badge = document.getElementById('sort-config-status');
-        if (badge) {
-            badge.className = 'badge bg-danger';
-            badge.textContent = 'Apply config first!';
-        }
-        // Open the sort config panel if it's collapsed
-        const collapse = document.getElementById('sort-config-collapse');
-        if (collapse && !collapse.classList.contains('show')) {
-            new bootstrap.Collapse(collapse, { toggle: true });
-        }
+async function startSession() {
+    // Validate all bin queries before starting. Scroll to first failing row
+    // and block start if any query is invalid.
+    const valid = await _validateAllSortRows();
+    if (!valid) {
+        addLog('Fix invalid queries before starting a session');
         return;
     }
 
-    const mode = _appliedSortMode;
-    let payload = { mode };
-
-    if (mode === 'custom_file') {
-        payload.config_file = document.getElementById('config-file-select').value;
-    } else if (mode === 'custom_manual') {
-        const count = parseInt(document.getElementById('custom-bin-count').value) || 7;
-        const fallback = parseInt(document.getElementById('custom-fallback').value) || count;
-        const limit = document.getElementById('custom-bin-limit').value;
-        const queries = {};
-        // Build overflow map: for each overflow-checked bin, find its
-        // parent bin and build a chain parent -> [parent, overflow1, overflow2, ...]
-        const overflowMap = {};
-        for (let i = 1; i <= count; i++) {
-            const cb = document.getElementById(`custom-overflow-${i}`);
-            const input = document.getElementById(`custom-query-${i}`);
-            if (cb && cb.checked) {
-                // This bin is an overflow target — find its parent
-                const parentSel = document.getElementById(`overflow-parent-${i}`);
-                const parentBin = parentSel ? parseInt(parentSel.value) : null;
-                if (parentBin) {
-                    if (!overflowMap[parentBin]) {
-                        overflowMap[parentBin] = [parentBin];
-                    }
-                    overflowMap[parentBin].push(i);
-                }
-            } else if (input && input.value.trim()) {
-                queries[i] = input.value.trim();
-            }
-        }
-        payload.custom_queries = { bin_count: count, fallback_bin: fallback, queries };
-        if (limit) payload.custom_queries.bin_limit = parseInt(limit);
-        // Send overflow map if any overflow bins were configured
-        if (Object.keys(overflowMap).length > 0) {
-            payload.overflow_map = overflowMap;
-        }
-    }
+    const config_lines = serializeSortConfig();
+    const payload = { config_lines };
 
     const notes = document.getElementById('session-notes')?.value?.trim();
     if (notes) payload.notes = notes;
@@ -2162,27 +2247,10 @@ let _simPollInterval = null;
 
 function startSimulation() {
     const count = parseInt(document.getElementById('sim-card-count').value) || 10;
-    // Use the sort mode from the Sort Session tab's Sort Configuration panel
-    const mode = document.getElementById('sort-mode').value;
-    const payload = { card_count: count, mode };
-
-    // Include custom config if applicable
-    if (mode === 'custom_file') {
-        payload.config_file = document.getElementById('config-file-select').value;
-    } else if (mode === 'custom_manual') {
-        const binCount = parseInt(document.getElementById('custom-bin-count').value) || 10;
-        const fallback = parseInt(document.getElementById('custom-fallback').value) || binCount;
-        const limit = document.getElementById('custom-bin-limit').value;
-        const queries = {};
-        for (let i = 1; i <= binCount; i++) {
-            const input = document.getElementById(`custom-query-${i}`);
-            if (input && input.value.trim()) {
-                queries[i] = input.value.trim();
-            }
-        }
-        payload.custom_queries = { bin_count: binCount, fallback_bin: fallback, queries };
-        if (limit) payload.custom_queries.bin_limit = parseInt(limit);
-    }
+    const config_lines = typeof serializeSortConfig === 'function'
+        ? serializeSortConfig()
+        : '';
+    const payload = { card_count: count, config_lines };
 
     apiPost('/api/sim/test-run', payload);
     document.getElementById('sim-results').innerHTML = '<p class="text-muted small">Running...</p>';
@@ -4104,69 +4172,6 @@ function setRehomeInterval() {
 }
 
 // =========================================================================
-// Set-based Sort Configuration
-// =========================================================================
-
-let _setConfigRows = [];
-
-async function loadSetConfig() {
-    const data = await apiGet('/api/sort/set-config');
-    const container = document.getElementById('set-bin-rows');
-    _setConfigRows = [];
-    container.innerHTML = '';
-    if (data.config && data.config.length > 0) {
-        for (const entry of data.config) {
-            addSetBinRow(entry.bin, entry.sets.join(', '));
-        }
-    } else {
-        // Add 2 default empty rows
-        addSetBinRow(1, '');
-        addSetBinRow(2, '');
-    }
-}
-
-function addSetBinRow(binNum, setsStr) {
-    const container = document.getElementById('set-bin-rows');
-    const idx = container.children.length;
-    const bin = binNum || (idx + 1);
-    const sets = setsStr || '';
-    const row = document.createElement('div');
-    row.className = 'd-flex gap-2 mb-1 align-items-center';
-    row.innerHTML = `
-        <div class="input-group input-group-sm">
-            <span class="input-group-text">Bin</span>
-            <input type="number" class="form-control set-bin-num" value="${bin}" min="1" max="10" style="max-width:70px;">
-            <span class="input-group-text">Sets</span>
-            <input type="text" class="form-control set-bin-codes" value="${sets}" placeholder="e.g. khm, neo, vow">
-            <button class="btn btn-outline-danger btn-sm" onclick="this.closest('.d-flex').remove()">&times;</button>
-        </div>`;
-    container.appendChild(row);
-}
-
-async function saveSetConfig() {
-    const rows = document.querySelectorAll('#set-bin-rows .d-flex');
-    const config = [];
-    for (const row of rows) {
-        const bin = parseInt(row.querySelector('.set-bin-num').value);
-        const setsStr = row.querySelector('.set-bin-codes').value.trim();
-        if (setsStr && bin) {
-            const sets = setsStr.split(',').map(s => s.trim().toLowerCase()).filter(s => s);
-            config.push({ bin, sets });
-        }
-    }
-    await apiPost('/api/sort/set-config', { config: config.length > 0 ? config : null });
-    addLog(`Set sort config applied: ${config.length} bin assignment(s)`);
-}
-
-async function clearSetConfig() {
-    await apiPost('/api/sort/set-config', { config: null });
-    document.getElementById('set-bin-rows').innerHTML = '';
-    addSetBinRow(1, '');
-    addSetBinRow(2, '');
-    addLog('Set sort config cleared (using default)');
-}
-
-// =========================================================================
 // Theme toggle
 // =========================================================================
 
@@ -4240,31 +4245,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // made the whole screen look "dead".
     document.querySelector('a[href="#tab-session"]').addEventListener('shown.bs.tab', () => {
         startCameraFeed('session-camera-feed');
-        // Sync custom bin count AND fallback from hardware config (was
-        // previously triggered by the separate Sort Config tab; that tab
-        // has been merged into the Sort Session tab.)
-        apiGet('/api/bins/config').then(data => {
-            const binCount = Object.keys(data.locations || {}).filter(k => k !== '0').length;
-            if (binCount > 0) {
-                document.getElementById('custom-bin-count').value = binCount;
-                // Also sync fallback to match bin count so SortConfig
-                // validation doesn't reject fallback > bin_count.
-                const fbEl = document.getElementById('custom-fallback');
-                if (fbEl && parseInt(fbEl.value) > binCount) {
-                    fbEl.value = binCount;
-                }
-                // Rebuild inputs to match the new count
-                buildCustomQueryInputs();
-            }
-        }).catch(() => {});
     });
 
-    document.querySelector('a[href="#tab-motion"]').addEventListener('shown.bs.tab', () => {
+    document.querySelector('a[href="#tab-motion"]')?.addEventListener('shown.bs.tab', () => {
         drawMotionCanvas();
-        // Sync sort mode display from Sort Config tab
-        const label = document.getElementById('sort-mode').selectedOptions[0]?.text || 'Color';
-        const simDisplay = document.getElementById('sim-mode-display');
-        if (simDisplay) simDisplay.textContent = label;
     });
 
     // Initial state poll
@@ -4288,15 +4272,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 5000);
 
     updateStateBadge();
-    buildCustomQueryInputs();
 
     // Phase 0A: enrichment sources panel + collection sub-nav
     loadEnrichmentSources();
     wireCollectionSubnav();
 
-    // Phase 0B-1: unified preset panel + storage plan gating
-    loadPresetCatalog();
-    onStoragePlanChange();
+    // Sort Configuration panel
+    loadSortConfigList();
 });
 
 // -------- Phase 0A additions (enrichment sources + collection sub-nav) --------
@@ -4419,109 +4401,6 @@ function exportCullCSV() {
     window.location.href = `/api/collection/cull-candidates/export?max_price=${maxPrice}`;
 }
 
-// ========================================================================
-// Phase 0B-1: unified sort preset panel + storage plan gating
-// ========================================================================
-
-let _presetCache = [];        // last /api/presets response
-let _activePreset = null;     // currently displayed preset (mutable copy)
-let _presetDirty = false;
-
-async function loadPresetCatalog() {
-    const sel = document.getElementById('preset-select');
-    if (!sel) return;
-    try {
-        const data = await apiGet('/api/presets');
-        _presetCache = data.presets || [];
-        sel.innerHTML = '';
-        const groups = { builtin: [], file: [], user: [] };
-        _presetCache.forEach(p => {
-            (groups[p.source] || (groups[p.source] = [])).push(p);
-        });
-        for (const label of ['builtin', 'file', 'user']) {
-            const list = groups[label] || [];
-            if (!list.length) continue;
-            const og = document.createElement('optgroup');
-            og.label = label[0].toUpperCase() + label.slice(1);
-            list.forEach(p => {
-                const o = document.createElement('option');
-                o.value = p.id;
-                o.textContent = p.name;
-                og.appendChild(o);
-            });
-            sel.appendChild(og);
-        }
-        if (_presetCache.length) {
-            sel.value = _presetCache[0].id;
-            onPresetSelect();
-        }
-    } catch (e) {
-        console.warn('loadPresetCatalog failed', e);
-    }
-}
-
-function onPresetSelect() {
-    const sel = document.getElementById('preset-select');
-    if (!sel) return;
-    const preset = _presetCache.find(p => p.id === sel.value);
-    if (!preset) return;
-    _activePreset = JSON.parse(JSON.stringify(preset));
-    _presetDirty = false;
-    renderPreset(_activePreset);
-}
-
-function renderPreset(preset) {
-    const tbody = document.getElementById('preset-table-body');
-    const desc = document.getElementById('preset-description');
-    const badge = document.getElementById('preset-source-badge');
-    const delBtn = document.getElementById('btn-preset-delete');
-    const dirty = document.getElementById('preset-dirty-badge');
-    if (!tbody) return;
-
-    badge.textContent = preset.source;
-    badge.className = 'badge ' + ({
-        builtin: 'bg-secondary',
-        file: 'bg-info text-dark',
-        user: 'bg-success',
-    }[preset.source] || 'bg-secondary');
-    desc.textContent = preset.description || '';
-    delBtn.style.display = preset.source === 'user' ? '' : 'none';
-    dirty.style.display = _presetDirty ? '' : 'none';
-
-    const editable = !!preset.editable;
-    tbody.innerHTML = '';
-    (preset.bins || []).forEach((b, idx) => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td><code>${b.bin}</code></td>
-            <td><input type="text" class="form-control form-control-sm"
-                       data-bin-idx="${idx}" data-bin-field="query"
-                       value="${escapeHtml(b.query || '')}"
-                       ${editable ? '' : 'readonly'}></td>
-            <td><input type="text" class="form-control form-control-sm"
-                       data-bin-idx="${idx}" data-bin-field="description"
-                       value="${escapeHtml(b.description || '')}"
-                       ${editable ? '' : 'readonly'}></td>
-            <td class="text-end"><span class="preset-count text-muted"
-                                       data-bin="${b.bin}">–</span></td>
-        `;
-        tbody.appendChild(tr);
-    });
-    tbody.querySelectorAll('input').forEach(inp => {
-        inp.addEventListener('input', onPresetCellEdit);
-    });
-}
-
-function onPresetCellEdit(ev) {
-    const inp = ev.target;
-    const idx = parseInt(inp.getAttribute('data-bin-idx'), 10);
-    const field = inp.getAttribute('data-bin-field');
-    if (!_activePreset || !_activePreset.bins[idx]) return;
-    _activePreset.bins[idx][field] = inp.value;
-    _presetDirty = true;
-    document.getElementById('preset-dirty-badge').style.display = '';
-}
-
 function escapeHtml(s) {
     return String(s)
         .replace(/&/g, '&amp;')
@@ -4529,86 +4408,6 @@ function escapeHtml(s) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
 }
-
-async function estimatePresetCounts() {
-    if (!_activePreset) return;
-    const btn = document.getElementById('btn-preset-estimate');
-    const t0 = performance.now();
-    if (btn) btn.disabled = true;
-    try {
-        const r = await fetch('/api/presets/estimate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ preset: _activePreset }),
-        });
-        const data = await r.json();
-        const counts = data.counts || {};
-        document.querySelectorAll('.preset-count').forEach(el => {
-            const bin = el.getAttribute('data-bin');
-            const v = counts[bin];
-            el.textContent = (v === undefined || v === null) ? '–' : String(v);
-            el.classList.remove('text-muted');
-        });
-        const dt = Math.round(performance.now() - t0);
-        addLog(`Estimated preset counts in ${dt}ms`);
-    } catch (e) {
-        addLog('Estimate failed: ' + e);
-    } finally {
-        if (btn) btn.disabled = false;
-    }
-}
-
-async function saveAsUserPreset() {
-    if (!_activePreset) return;
-    const name = prompt('Save as — preset name:',
-        (_activePreset.name || 'My preset') + ' (copy)');
-    if (!name) return;
-    const payload = {
-        name,
-        description: _activePreset.description || '',
-        bin_count: _activePreset.bin_count,
-        fallback_bin: _activePreset.fallback_bin,
-        bin_limit: _activePreset.bin_limit || null,
-        bins: _activePreset.bins,
-    };
-    try {
-        const r = await fetch('/api/presets', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-        });
-        if (!r.ok) {
-            const err = await r.json().catch(() => ({}));
-            addLog('Save failed: ' + (err.error || r.status));
-            return;
-        }
-        const saved = await r.json();
-        await loadPresetCatalog();
-        const sel = document.getElementById('preset-select');
-        if (sel) { sel.value = saved.id; onPresetSelect(); }
-        addLog('Saved preset: ' + saved.name);
-    } catch (e) {
-        addLog('Save failed: ' + e);
-    }
-}
-
-async function deleteCurrentUserPreset() {
-    if (!_activePreset || _activePreset.source !== 'user') return;
-    if (!confirm(`Delete user preset "${_activePreset.name}"?`)) return;
-    try {
-        const r = await fetch('/api/presets/' + encodeURIComponent(_activePreset.id),
-            { method: 'DELETE' });
-        if (!r.ok) {
-            addLog('Delete failed: ' + r.status);
-            return;
-        }
-        await loadPresetCatalog();
-    } catch (e) {
-        addLog('Delete failed: ' + e);
-    }
-}
-
-function onStoragePlanChange() {}
 
 function getStoragePlan() {
     const box = document.getElementById('storage-box-select');

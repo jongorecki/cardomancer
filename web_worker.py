@@ -667,9 +667,21 @@ class SortWorker:
             pass
 
     def _cmd_start_session(self, mode='color', config_file=None,
-                           custom_queries=None, overflow_map=None,
-                           notes=None, **kwargs):
-        """Start a new sorting session."""
+                           config_lines=None, custom_queries=None,
+                           overflow_map=None, notes=None, **kwargs):
+        """Start a new sorting session.
+
+        Every session now runs through a SortConfig — no more mode-specific
+        dispatch. Priority order for building the SortConfig:
+
+          1. ``config_lines`` — inline content from the editable UI table.
+          2. ``config_file`` — path or basename of a sort_configs/*.txt file.
+          3. ``custom_queries`` — legacy dict form (bin_count, queries, ...).
+          4. ``mode`` — legacy mode name. Loads sort_configs/<mode>.txt.
+
+        ``mode`` is retained only as a human-readable label shown in the UI
+        and logs. It no longer controls bin assignment.
+        """
         from scan_tracker import ScanTracker
         from sorting import set_sort_config
         from sort_config import SortConfig
@@ -723,63 +735,79 @@ class SortWorker:
         self.sort_times = []
         self.last_card_info = None
 
-        # Handle custom sort configs
-        if mode == 'custom_file' and config_file:
-            filepath = config_file
-            if not os.path.isabs(filepath):
-                filepath = os.path.join(SORT_CONFIGS_DIR, filepath)
-            try:
-                self.sort_config_obj = SortConfig.from_file(filepath)
-                set_sort_config(self.sort_config_obj)
-                import gcode_control
-                _apply_sort_bin_layout(self, gcode_control,
-                                       self.sort_config_obj.bin_count)
-                self.log(f"Custom sort config loaded from {os.path.basename(filepath)}:")
+        # Resolve the SortConfig — unified priority chain. Every session now
+        # runs through SortConfig; the legacy per-mode dispatch is gone.
+        try:
+            if config_lines is not None:
+                # Inline content from the editable UI table.
+                if isinstance(config_lines, str):
+                    lines = config_lines.splitlines()
+                else:
+                    lines = list(config_lines)
+                self.sort_config_obj = SortConfig.from_lines(lines)
+                self.log("Sort config loaded from inline UI content:")
                 self.log(self.sort_config_obj.describe())
-            except Exception as e:
-                self.log(f"ERROR loading sort config '{config_file}': {e}")
-                self.log("FALLING BACK TO COLOR SORT — fix your config and restart the session")
-                self.sort_mode = 'color'
-                self.emit('error', {
-                    'message': f'Custom sort config failed: {e}. Falling back to color sort.',
-                })
 
-        elif mode == 'custom_manual' and custom_queries:
-            try:
+            elif config_file:
+                filepath = config_file
+                if not os.path.isabs(filepath):
+                    filepath = os.path.join(SORT_CONFIGS_DIR, filepath)
+                self.sort_config_obj = SortConfig.from_file(filepath)
+                self.log(
+                    f"Sort config loaded from {os.path.basename(filepath)}:"
+                )
+                self.log(self.sort_config_obj.describe())
+
+            elif custom_queries:
+                # Legacy manual-queries path (kept for API compat until the
+                # UI is fully migrated to inline config_lines posting).
                 bin_count = custom_queries.get('bin_count', 10)
                 fallback_bin = custom_queries.get('fallback_bin', bin_count)
-                # Clamp fallback into valid range in case the UI sync
-                # didn't catch it (common when hardware bin count < 10
-                # and the default fallback=10 was never updated).
                 if fallback_bin > bin_count:
                     self.log(f"WARNING: Fallback bin {fallback_bin} > "
                              f"bin_count {bin_count}, clamping to {bin_count}")
                     fallback_bin = bin_count
                 if fallback_bin < 1:
                     fallback_bin = 1
-                lines = [f'bins: {bin_count}',
-                         f'fallback: {fallback_bin}']
+                lines = [f'bins: {bin_count}', f'fallback: {fallback_bin}']
                 if custom_queries.get('bin_limit'):
                     lines.append('limit: ' + str(custom_queries['bin_limit']))
+                if custom_queries.get('overrides'):
+                    ov_str = ','.join(str(b) for b in custom_queries['overrides'])
+                    lines.append(f'overrides: {ov_str}')
                 for bin_num, query_str in custom_queries.get('queries', {}).items():
                     if query_str.strip():
                         lines.append(f'bin{bin_num}: {query_str}')
-                self.log(f"Building custom sort config from {len(lines)} lines: "
-                         f"{lines}")
+                self.log(f"Building sort config from {len(lines)} lines.")
                 self.sort_config_obj = SortConfig.from_lines(lines)
-                set_sort_config(self.sort_config_obj)
-                import gcode_control
-                _apply_sort_bin_layout(self, gcode_control,
-                                       self.sort_config_obj.bin_count)
-                self.log(f"Custom sort config applied:")
                 self.log(self.sort_config_obj.describe())
-            except Exception as e:
-                self.log(f"ERROR setting up custom sort: {e}")
-                self.log("FALLING BACK TO COLOR SORT — fix your config and restart the session")
-                self.sort_mode = 'color'
-                self.emit('error', {
-                    'message': f'Custom sort config failed: {e}. Falling back to color sort.',
-                })
+
+            else:
+                # Legacy mode name — load the corresponding built-in file
+                # (sort_configs/color.txt, mana_value.txt, etc.).
+                legacy_file = os.path.join(SORT_CONFIGS_DIR, f"{mode}.txt")
+                if os.path.exists(legacy_file):
+                    self.sort_config_obj = SortConfig.from_file(legacy_file)
+                    self.log(f"Built-in sort config '{mode}' loaded:")
+                    self.log(self.sort_config_obj.describe())
+                else:
+                    raise FileNotFoundError(
+                        f"No sort config: mode='{mode}' has no built-in "
+                        f"file at {legacy_file}, and no config_file / "
+                        f"config_lines / custom_queries were provided."
+                    )
+
+            # All paths converge — activate the config.
+            set_sort_config(self.sort_config_obj)
+            _apply_sort_bin_layout(self, gcode_control,
+                                   self.sort_config_obj.bin_count)
+        except Exception as e:
+            self.log(f"ERROR loading sort config: {e}")
+            self.emit('error', {
+                'message': (f'Sort config load failed: {e}. Session NOT '
+                            f'started — fix the config and try again.'),
+            })
+            return
 
         # Apply overflow map from the UI (custom manual mode sends
         # overflow_map alongside custom_queries when overflow bins are
@@ -1001,7 +1029,6 @@ class SortWorker:
         from cards import extract_card_info, CARD_DATA_BY_ID
         from card_identify_hybrid import identify_card, is_card_back
         from foil_detect import detect_foil
-        from sorting import get_bin_number
         from config import PHASH_DISTANCE_THRESHOLD, PHASH_CLOSE_MATCH_DIFF, EXCLUDED_SETS
 
         sort_start = time.time()
@@ -1348,7 +1375,18 @@ class SortWorker:
 
         if card_info:
             card_name = card_info.get('Name', 'Unknown')
-            logical_bin = get_bin_number(card_info, self.sort_mode, card_data=card_data)
+            # Unified routing: SortConfig for all modes (no more legacy
+            # dispatch). get_bin() returns fallback for None/empty card_data,
+            # which is the same behavior the old legacy helpers had for
+            # malformed cards.
+            if self.sort_config_obj is not None:
+                logical_bin = self.sort_config_obj.get_bin(card_data)
+            else:
+                # Defensive: this shouldn't happen since start_session now
+                # always produces a SortConfig, but guard against a race.
+                self.log("WARNING: No sort_config_obj at routing time — "
+                         "sending to bin 10")
+                logical_bin = 10
 
             # Wishlist override
             if self.wishlist_bin is not None:

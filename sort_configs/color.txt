@@ -1,0 +1,16 @@
+# Color sort (built-in)
+# WUBRG + Multicolor + Colorless, with basic/nonbasic lands separated.
+# Lands are checked first so colored lands don't land in a color bin.
+
+bins: 10
+fallback: 10
+
+bin9: t:land is:basic
+bin8: t:land -is:basic
+bin1: c=w -t:land
+bin2: c=u -t:land
+bin3: c=b -t:land
+bin4: c=r -t:land
+bin5: c=g -t:land
+bin7: c:m -t:land
+bin6: c=c -t:land

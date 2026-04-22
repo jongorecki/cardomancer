@@ -1,0 +1,18 @@
+# Set sort (built-in template)
+# Edit to assign specific set codes to specific bins.
+# `s:<code>` matches an exact set. Use `or` to group multiple sets in one bin:
+#   bin1: s:khm or s:neo
+# Commented-out bins below are examples.
+
+bins: 10
+fallback: 9
+
+bin1: s:khm
+bin2: s:neo
+# bin3: s:mid or s:vow
+# bin4: s:dmu or s:bro
+# bin5: s:one or s:mom
+# bin6: s:woe or s:lci
+# bin7: s:mkm or s:otj
+# bin8: s:blb or s:dsk
+# bin9 = fallback (unknown / unassigned sets)

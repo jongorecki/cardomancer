@@ -662,22 +662,13 @@ def api_sort_config_delete(filename):
     return jsonify({'error': 'Config not found'}), 404
 
 
-@app.route('/api/sort/set-config', methods=['GET', 'POST'])
-def api_sort_set_config():
-    """Get or set the set-based sorting configuration."""
-    from sorting import set_set_sort_config, get_set_sort_config
-    if request.method == 'POST':
-        data = request.json or {}
-        config = data.get('config')  # list of {bin, sets} or None to clear
-        set_set_sort_config(config)
-        return jsonify({'updated': True, 'config': config})
-    else:
-        cfg = get_set_sort_config()
-        if cfg:
-            result = [{'bin': b, 'sets': list(codes)} for b, codes in cfg]
-        else:
-            result = None
-        return jsonify({'config': result})
+# ---------------------------------------------------------------------------
+# /api/sort/set-config was the per-mode Set-sort endpoint. It wrote a
+# process-global list of set-code→bin mappings consumed by
+# sorting.get_bin_for_set(). That entire dispatch path was removed when
+# SortConfig took over unified routing; Set-mode now loads
+# sort_configs/set.txt and edits happen through /api/sort/configs/*.
+# ---------------------------------------------------------------------------
 
 
 @app.route('/api/sort/validate-query', methods=['POST'])
@@ -785,6 +776,7 @@ def api_session_start():
     worker.enqueue('start_session',
                    mode=mode,
                    config_file=data.get('config_file'),
+                   config_lines=data.get('config_lines'),
                    custom_queries=data.get('custom_queries'),
                    overflow_map=data.get('overflow_map'),
                    notes=data.get('notes'),
@@ -3105,72 +3097,11 @@ def api_enrichment_probes_run():
 
 
 # ---------------------------------------------------------------------------
-# Sort presets (Phase 0B-1: unified preset UI)
+# Sort presets were previously backed by preset_store.py (Phase 0B-1).
+# That module and its /api/presets/* endpoints are retired — the unified
+# Sort Configuration UI operates directly on sort_configs/*.txt files via
+# /api/sort/configs/* and posts inline config_lines on session start.
 # ---------------------------------------------------------------------------
-import preset_store  # noqa: E402
-
-
-@app.route('/api/presets', methods=['GET'])
-def api_presets_list():
-    """Return every preset (builtin + file + user) in uniform shape."""
-    return jsonify({'presets': preset_store.list_presets()})
-
-
-@app.route('/api/presets/<path:preset_id>', methods=['GET'])
-def api_preset_get(preset_id):
-    preset = preset_store.resolve_preset(preset_id)
-    if preset is None:
-        return jsonify({'error': 'not found'}), 404
-    return jsonify(preset)
-
-
-@app.route('/api/presets', methods=['POST'])
-def api_preset_save():
-    """Save-as: persists a user preset. Body: full preset dict."""
-    data = request.json or {}
-    if not data.get("name"):
-        return jsonify({'error': 'name required'}), 400
-    if not data.get("bins"):
-        return jsonify({'error': 'at least one bin required'}), 400
-    preset = preset_store.save_user_preset(data)
-    return jsonify(preset), 201
-
-
-@app.route('/api/presets/<path:preset_id>', methods=['DELETE'])
-def api_preset_delete(preset_id):
-    if not preset_id.startswith("user:"):
-        return jsonify({'error': 'only user presets are deletable'}), 400
-    ok = preset_store.delete_user_preset(preset_id)
-    if not ok:
-        return jsonify({'error': 'not found'}), 404
-    return jsonify({'deleted': True})
-
-
-@app.route('/api/presets/estimate', methods=['POST'])
-def api_preset_estimate():
-    """Estimate per-bin card counts for a preset against collection.db."""
-    data = request.json or {}
-    preset = data.get('preset')
-    preset_id = data.get('preset_id')
-    if preset is None and preset_id:
-        preset = preset_store.resolve_preset(preset_id)
-    if preset is None:
-        return jsonify({'error': 'preset or preset_id required'}), 400
-
-    import collection_db as _coll
-    try:
-        conn = _coll.get_connection()
-    except Exception as _e:
-        return jsonify({'counts': {}, 'warning': f'collection.db unavailable: {_e}'})
-    try:
-        counts = preset_store.estimate_bin_counts(preset, conn)
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
-    # Keys must be JSON-safe strings.
-    return jsonify({'counts': {str(k): v for k, v in counts.items()}})
 
 
 @app.route('/api/enrichment/card/<oracle_id>', methods=['GET'])

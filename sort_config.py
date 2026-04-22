@@ -16,10 +16,17 @@ class SortConfig:
     """
     Holds a custom sort configuration: bin count, fallback bin, and ordered
     list of (bin_number, query_string, parsed_ast) for bin assignment.
+
+    Override bins (optional):
+        Bins listed in ``override_bins`` are evaluated BEFORE the regular
+        bin_queries. Use-case: "if the card is over $1, put it in bin 8,
+        otherwise do my usual color sort." Declared in the config file as
+        ``overrides: 3,5`` — the listed bin numbers are pulled out of the
+        normal flow and checked first, in the order given.
     """
 
     def __init__(self, bin_count, fallback_bin, bin_queries, bin_limit=None,
-                 otag_cache=None):
+                 otag_cache=None, override_bins=None):
         """
         bin_count:    total number of bins
         fallback_bin: bin number for cards that don't match any query
@@ -28,12 +35,31 @@ class SortConfig:
                       When a bin reaches this limit, cards overflow to the next
                       bin with a matching query.
         otag_cache:   dict of { tag_name: set(oracle_ids) } for otag: queries
+        override_bins: list of bin numbers that take priority over the regular
+                       bin order. Checked first, in the order given. A bin
+                       listed here is NOT also checked in the regular pass.
         """
         self.bin_count = bin_count
         self.fallback_bin = fallback_bin
         self.bin_queries = bin_queries
         self.bin_limit = bin_limit
         self.otag_cache = otag_cache or {}
+        self.override_bins = list(override_bins or [])
+        # Precompute the split so get_bin() stays a flat walk — overrides
+        # first (in override_bins order), then regular bins (in declaration
+        # order). Entries with the same bin number stay grouped together
+        # to preserve overflow semantics.
+        override_set = set(self.override_bins)
+        by_bin: dict = {}
+        for entry in bin_queries:
+            by_bin.setdefault(entry[0], []).append(entry)
+        self._override_queries = []
+        for ov_bn in self.override_bins:
+            for entry in by_bin.get(ov_bn, []):
+                self._override_queries.append(entry)
+        self._regular_queries = [
+            entry for entry in bin_queries if entry[0] not in override_set
+        ]
         # Track how many cards have been placed in each bin
         self.bin_card_counts = {}
         # Enrichment support: populated by from_lines/from_file when needed
@@ -43,12 +69,18 @@ class SortConfig:
     def get_bin(self, card_data):
         """
         Evaluate the card against bin queries in order.
-        Returns the first matching bin that hasn't hit its limit,
-        or fallback_bin if none match.
+
+        Evaluation passes, in order:
+          1. Override bins (listed in ``overrides:`` directive) — checked
+             first, in the order given. First match wins.
+          2. Regular bin queries — declaration order. First match wins.
+          3. Fallback bin — if nothing matched.
 
         When a bin has reached the global bin_limit, the card falls through
         to the next bin with a matching query — this is how overflow works.
         Multiple bins with the same query form a natural overflow chain.
+        Overflow stays within its pass (an overflowed override bin falls
+        through to the next override bin, not back to regular bins).
         """
         if not card_data:
             return self.fallback_bin
@@ -60,23 +92,25 @@ class SortConfig:
             if oracle_id:
                 enrichment_data = self._get_enrichment_data(oracle_id)
 
-        for bin_num, query_str, ast in self.bin_queries:
-            # Skip bins that are at capacity
-            if self.bin_limit is not None:
-                current = self.bin_card_counts.get(bin_num, 0)
-                if current >= self.bin_limit:
-                    continue
+        # Two-pass evaluation: overrides first, then regular.
+        for queries in (self._override_queries, self._regular_queries):
+            for bin_num, query_str, ast in queries:
+                # Skip bins that are at capacity
+                if self.bin_limit is not None:
+                    current = self.bin_card_counts.get(bin_num, 0)
+                    if current >= self.bin_limit:
+                        continue
 
-            try:
-                if evaluate_query(ast, card_data, self.otag_cache,
-                                  enrichment_data=enrichment_data):
-                    self.bin_card_counts[bin_num] = \
-                        self.bin_card_counts.get(bin_num, 0) + 1
-                    return bin_num
-            except Exception as e:
-                print(f"[sort_config] Error evaluating bin {bin_num} "
-                      f"query '{query_str}': {e}")
-                continue
+                try:
+                    if evaluate_query(ast, card_data, self.otag_cache,
+                                      enrichment_data=enrichment_data):
+                        self.bin_card_counts[bin_num] = \
+                            self.bin_card_counts.get(bin_num, 0) + 1
+                        return bin_num
+                except Exception as e:
+                    print(f"[sort_config] Error evaluating bin {bin_num} "
+                          f"query '{query_str}': {e}")
+                    continue
 
         # Nothing matched — log once (first 5 fallbacks) so the user can
         # see which queries are failing without flooding the console.
@@ -148,9 +182,11 @@ class SortConfig:
         """Return a string showing current card counts per bin."""
         lines = []
         limit_str = f"/{self.bin_limit}" if self.bin_limit is not None else ""
+        override_set = set(self.override_bins)
         for bin_num, query_str, _ast in self.bin_queries:
             count = self.bin_card_counts.get(bin_num, 0)
-            lines.append(f"  Bin {bin_num}: {count}{limit_str} cards — {query_str}")
+            marker = "★ " if bin_num in override_set else ""
+            lines.append(f"  {marker}Bin {bin_num}: {count}{limit_str} cards — {query_str}")
         fb_count = self.bin_card_counts.get(self.fallback_bin, 0)
         lines.append(f"  Bin {self.fallback_bin} (fallback): {fb_count}{limit_str} cards")
         return '\n'.join(lines)
@@ -158,12 +194,17 @@ class SortConfig:
     def describe(self):
         """Return a human-readable summary of the sort config."""
         limit_info = f", limit={self.bin_limit}/bin" if self.bin_limit else ""
+        override_info = (
+            f", overrides={self.override_bins}" if self.override_bins else ""
+        )
         lines = [
             f"Custom Sort Config: {self.bin_count} bins, "
-            f"fallback=bin {self.fallback_bin}{limit_info}"
+            f"fallback=bin {self.fallback_bin}{limit_info}{override_info}"
         ]
+        override_set = set(self.override_bins)
         for bin_num, query_str, _ast in self.bin_queries:
-            lines.append(f"  Bin {bin_num}: {query_str}")
+            marker = "★ " if bin_num in override_set else ""
+            lines.append(f"  {marker}Bin {bin_num}: {query_str}")
         unused = set(range(1, self.bin_count + 1))
         used = {bq[0] for bq in self.bin_queries}
         unused -= used
@@ -182,13 +223,20 @@ class SortConfig:
         Format:
             bins: 10
             fallback: 10
+            overrides: 3,5          (optional — comma-separated bin numbers)
+            limit: 50               (optional)
             bin1: c:w t:creature
             bin2: usd>=10
             ...
+
+        The ``overrides:`` directive lists bins that are evaluated BEFORE the
+        regular bin order. Use it to "pull out" high-priority bins (e.g.
+        "cards over $1 always go here, regardless of color").
         """
         bin_count = None
         fallback_bin = None
         bin_limit = None
+        override_bins: list = []
         bin_queries = []
 
         for line_num, raw_line in enumerate(lines, start=1):
@@ -228,6 +276,21 @@ class SortConfig:
                     )
                 continue
 
+            if line.lower().startswith('overrides:'):
+                raw = line.split(':', 1)[1].strip()
+                if not raw:
+                    override_bins = []
+                    continue
+                try:
+                    parts = [p.strip() for p in raw.split(',') if p.strip()]
+                    override_bins = [int(p) for p in parts]
+                except ValueError:
+                    raise ValueError(
+                        f"Line {line_num}: Invalid overrides list "
+                        f"(expected comma-separated ints): {line}"
+                    )
+                continue
+
             # Parse bin definitions: "bin3: query here"
             bin_match = re.match(r'^bin(\d+)\s*:\s*(.+)$', line, re.IGNORECASE)
             if bin_match:
@@ -262,9 +325,25 @@ class SortConfig:
                 raise ValueError(
                     f"Bin {bin_num} is out of range (1-{bin_count})"
                 )
+        # Validate override_bins — must be in-range, must have a query
+        # (evaluating an empty bin as override is a silent no-op, confusing).
+        defined_bins = {bq[0] for bq in bin_queries}
+        for ov_bn in override_bins:
+            if ov_bn < 1 or ov_bn > bin_count:
+                raise ValueError(
+                    f"Override bin {ov_bn} is out of range (1-{bin_count})"
+                )
+            if ov_bn == fallback_bin:
+                raise ValueError(
+                    f"Override bin {ov_bn} cannot be the fallback bin"
+                )
+            if ov_bn not in defined_bins:
+                raise ValueError(
+                    f"Override bin {ov_bn} has no query defined"
+                )
 
         config = cls(bin_count, fallback_bin, bin_queries,
-                     bin_limit=bin_limit)
+                     bin_limit=bin_limit, override_bins=override_bins)
 
         # Pre-fetch otag data if any queries use otag:
         all_otags = set()
@@ -297,6 +376,28 @@ class SortConfig:
         config = cls.from_lines(lines)
         print(f"[sort_config] {config.describe()}")
         return config
+
+    def to_lines(self, description: str = "") -> list:
+        """
+        Serialize this config back to the textual file format.
+        Round-trip with from_lines() is the contract the web UI relies on
+        when saving edited configs as new .txt presets.
+        """
+        out: list = []
+        if description:
+            for desc_line in description.splitlines():
+                out.append(f"# {desc_line}")
+            out.append("")
+        out.append(f"bins: {self.bin_count}")
+        out.append(f"fallback: {self.fallback_bin}")
+        if self.bin_limit is not None:
+            out.append(f"limit: {self.bin_limit}")
+        if self.override_bins:
+            out.append(f"overrides: {','.join(str(b) for b in self.override_bins)}")
+        out.append("")
+        for bin_num, query_str, _ast in self.bin_queries:
+            out.append(f"bin{bin_num}: {query_str}")
+        return out
 
 
 def prompt_manual_config():

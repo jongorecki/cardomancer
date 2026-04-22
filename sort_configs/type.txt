@@ -1,0 +1,16 @@
+# Card Type sort (built-in)
+# Priority: creature > land > artifact > enchantment > instant > sorcery
+#           > battle > planeswalker > fallback (unknown)
+# Creature wins over multi-type cards (e.g. artifact creatures go to bin 1).
+
+bins: 10
+fallback: 9
+
+bin1: t:creature
+bin8: t:land
+bin2: t:artifact
+bin3: t:enchantment
+bin4: t:instant
+bin5: t:sorcery
+bin6: t:battle
+bin7: t:planeswalker

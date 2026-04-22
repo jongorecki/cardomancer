@@ -36,7 +36,7 @@ from cards import (
 from hashing import hash_image_color, compute_distances_for_image, compute_combined_distances
 
 # Sorting
-from sorting import print_sorting_options, draw_info_as_json, get_bin_number, set_sort_config
+from sorting import print_sorting_options, draw_info_as_json, set_sort_config, get_sort_config
 
 # Detection (bounding box)
 from detection import (
@@ -136,7 +136,9 @@ def main():
     current_sorting_mode = SORTING_MODES.get(choice, "color")
     print(f"[main] Selected mode: {current_sorting_mode}")
 
-    # Handle custom sort modes
+    # All sort modes now resolve to a SortConfig. Built-in modes
+    # (color/mana_value/set/price/type) load the corresponding
+    # sort_configs/<mode>.txt file.
     if current_sorting_mode == "custom_file":
         import glob
         # List available config files
@@ -182,6 +184,25 @@ def main():
             print(f"[main] ERROR setting up custom sort: {e}")
             print("[main] Falling back to color sorting.")
             current_sorting_mode = "color"
+
+    # Built-in modes: load the shipped sort_configs/<mode>.txt
+    if current_sorting_mode in ("color", "mana_value", "set", "price", "type"):
+        builtin_path = os.path.join(SORT_CONFIGS_DIR,
+                                    f"{current_sorting_mode}.txt")
+        if os.path.exists(builtin_path):
+            try:
+                sort_cfg = SortConfig.from_file(builtin_path)
+                set_sort_config(sort_cfg)
+                if sort_cfg.bin_count != 10:
+                    configure_bins(sort_cfg.bin_count)
+            except Exception as e:
+                print(f"[main] ERROR loading built-in sort config "
+                      f"'{builtin_path}': {e}")
+                raise SystemExit(1)
+        else:
+            print(f"[main] ERROR: built-in sort config not found at "
+                  f"{builtin_path}")
+            raise SystemExit(1)
 
     # Start scan tracker
     tracker = ScanTracker()
@@ -293,8 +314,13 @@ def main():
                 print(f"[main] Identified: {card_info['Name']} "
                       f"(sets={', '.join(sets)}, method={method})")
                 draw_info_as_json(result_frame, card_info, 10, 30, 20)
-                bin_number = get_bin_number(card_info, current_sorting_mode,
-                                           card_data=card_data)
+                # Unified routing through SortConfig — no more mode dispatch.
+                sort_cfg = get_sort_config()
+                if sort_cfg is None:
+                    print("[main] ERROR: No SortConfig active — cannot route card.")
+                    bin_number = 10
+                else:
+                    bin_number = sort_cfg.get_bin(card_data)
                 cv2.putText(result_frame, f"Bin: {bin_number}", (10, 200),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
                 tracker.record_scan(card_info=card_info, bin_num=bin_number,

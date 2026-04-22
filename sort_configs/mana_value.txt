@@ -1,0 +1,14 @@
+# Mana Value sort (built-in)
+# Buckets by converted mana cost: 0-1, 2, 3, 4, 5, 6, 7, 8+
+
+bins: 10
+fallback: 10
+
+bin1: cmc<=1
+bin2: cmc=2
+bin3: cmc=3
+bin4: cmc=4
+bin5: cmc=5
+bin6: cmc=6
+bin7: cmc=7
+bin8: cmc>=8

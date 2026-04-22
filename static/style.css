@@ -856,3 +856,45 @@ tr.price-mythic { border-left: 3px solid var(--accent-red); }
 .modal-footer {
     border-top-color: var(--border-card);
 }
+
+/* =========================================================================
+ * Sort Configuration — override bins + readonly theming (feature/sort-override)
+ * ========================================================================= */
+
+/* Override row: star prefix + yellow left-border glow */
+.bin-row.is-override {
+    box-shadow: inset 3px 0 0 0 var(--accent-yellow),
+                0 0 8px rgba(224, 167, 64, 0.35);
+    background: rgba(224, 167, 64, 0.08);
+}
+
+.bin-row.is-override .bin-num::before {
+    content: "\2605 ";
+    color: var(--accent-yellow);
+}
+
+/* Query reference box inherits card colors */
+.sort-query-ref-box {
+    background: var(--bg-card);
+    border: 1px solid var(--border-card);
+    color: var(--text-primary);
+}
+
+/* Fix readonly / disabled inputs in dark theme — Bootstrap leaves them with
+   a light bg + inherited light text, making them invisible. */
+.form-control[readonly],
+.form-select[disabled],
+.form-control:disabled {
+    background-color: var(--bg-surface);
+    color: var(--text-secondary);
+    opacity: 0.85;
+    cursor: not-allowed;
+}
+
+/* Light theme overrides for readonly/disabled */
+[data-theme="light"] .form-control[readonly],
+[data-theme="light"] .form-select[disabled],
+[data-theme="light"] .form-control:disabled {
+    background-color: var(--bg-surface);
+    color: var(--text-secondary);
+}

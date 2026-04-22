@@ -262,68 +262,7 @@
             <!-- SORT SESSION TAB -->
             <!-- ============================================================ -->
             <div class="tab-pane fade" id="tab-session">
-                <!-- Unified sort preset table (Phase 0B-1) -->
-                <div class="row mb-2">
-                    <div class="col-12">
-                        <div class="card">
-                            <div class="card-header d-flex justify-content-between align-items-center"
-                                 style="cursor:pointer;"
-                                 data-bs-toggle="collapse"
-                                 data-bs-target="#preset-panel-collapse">
-                                <span>Sort Preset</span>
-                                <small class="text-muted">click to show/hide</small>
-                            </div>
-                            <div id="preset-panel-collapse" class="collapse show">
-                                <div class="card-body">
-                                    <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
-                                        <label class="form-label mb-0"><strong>Preset</strong></label>
-                                        <select class="form-select form-select-sm"
-                                                id="preset-select"
-                                                style="width:auto; min-width:220px;"
-                                                onchange="onPresetSelect()"></select>
-                                        <span id="preset-source-badge" class="badge bg-secondary">–</span>
-                                        <span id="preset-dirty-badge" class="badge bg-warning"
-                                              style="display:none;">modified</span>
-                                        <button class="btn btn-sm btn-outline-primary"
-                                                id="btn-preset-estimate"
-                                                onclick="estimatePresetCounts()">
-                                            Estimate counts
-                                        </button>
-                                        <button class="btn btn-sm btn-outline-success"
-                                                id="btn-preset-save-as"
-                                                onclick="saveAsUserPreset()">
-                                            Save As…
-                                        </button>
-                                        <button class="btn btn-sm btn-outline-danger"
-                                                id="btn-preset-delete"
-                                                onclick="deleteCurrentUserPreset()"
-                                                style="display:none;">
-                                            Delete
-                                        </button>
-                                    </div>
-                                    <p class="text-muted small mb-2" id="preset-description"></p>
-                                    <div class="table-responsive">
-                                        <table class="table table-sm table-borderless align-middle mb-0" id="preset-table">
-                                            <thead>
-                                                <tr>
-                                                    <th style="width:4rem;">Bin #</th>
-                                                    <th>Query</th>
-                                                    <th>Description</th>
-                                                    <th style="width:8rem;">Est. count</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody id="preset-table-body">
-                                                <tr><td colspan="4" class="text-muted">Loading…</td></tr>
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Sort Configuration (legacy controls — kept for Set/Custom modes) -->
+                <!-- Unified Sort Configuration card (feature/sort-override) -->
                 <div class="row mb-2">
                     <div class="col-12">
                         <div class="card">
@@ -331,139 +270,147 @@
                                  style="cursor:pointer;"
                                  data-bs-toggle="collapse"
                                  data-bs-target="#sort-config-collapse">
-                                <span>Sort Configuration (advanced)</span>
-                                <small class="text-muted">click to show/hide</small>
+                                <span>
+                                    Sort Configuration
+                                    <span id="sort-config-dirty-badge" class="badge bg-warning text-dark ms-2"
+                                          style="display:none;">modified</span>
+                                </span>
+                                <small class="text-muted" id="sort-config-collapse-hint">click to show/hide</small>
                             </div>
                             <div id="sort-config-collapse" class="collapse show">
                                 <div class="card-body">
-                                    <div class="row">
-                                        <div class="col-md-4">
-                                            <label class="form-label mb-1"><strong>Sort Mode</strong></label>
-                                            <select class="form-select" id="sort-mode" onchange="onSortModeChange()">
-                                                <option value="color">Color (W/U/B/R/G/Colorless/Multi/Lands)</option>
-                                                <option value="mana_value">Mana Value (CMC 1-7, 8+)</option>
-                                                <option value="set">Set</option>
-                                                <option value="price">Price Tiers</option>
-                                                <option value="type">Card Type</option>
-                                                <option value="custom_file">Custom (from file)</option>
-                                                <option value="custom_manual">Custom (manual queries)</option>
-                                            </select>
-                                            <div id="sort-mode-desc" class="mt-2 text-muted small"></div>
-                                            <div class="mt-2 d-flex align-items-center gap-2">
-                                                <button class="btn btn-sm btn-primary" id="btn-apply-sort-config" onclick="applySortConfig()">Apply Sort Config</button>
-                                                <span id="sort-config-status" class="badge bg-secondary">Not applied</span>
-                                            </div>
 
-                                            <!-- Set sort config (shown when mode=set) -->
-                                            <div class="card mt-3" id="set-config-panel" style="display:none;">
-                                                <div class="card-header d-flex justify-content-between align-items-center py-1">
-                                                    <small>Set Assignments</small>
-                                                    <button class="btn btn-sm btn-outline-primary py-0" onclick="addSetBinRow()">+ Add Bin</button>
-                                                </div>
-                                                <div class="card-body p-2">
-                                                    <p class="small text-muted mb-2">Assign set codes to bins. Cards not matching any bin go to the fallback. Use comma-separated 3-letter set codes (e.g. <code>khm, neo, vow</code>).</p>
-                                                    <div id="set-bin-rows"></div>
-                                                    <div class="mt-2 d-flex gap-2">
-                                                        <button class="btn btn-sm btn-success" onclick="saveSetConfig()">Apply Set Config</button>
-                                                        <button class="btn btn-sm btn-outline-secondary" onclick="clearSetConfig()">Clear</button>
-                                                    </div>
-                                                </div>
-                                            </div>
+                                    <!-- Preset toolbar -->
+                                    <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                                        <label class="form-label mb-0"><strong>Preset</strong></label>
+                                        <select class="form-select form-select-sm"
+                                                id="sort-preset-select"
+                                                style="width:auto; min-width:220px;"
+                                                onchange="onSortPresetSelect()"></select>
+                                        <button class="btn btn-sm btn-outline-secondary"
+                                                id="btn-sort-config-new"
+                                                onclick="newSortConfig()">
+                                            New
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-primary"
+                                                id="btn-sort-config-save"
+                                                onclick="saveSortConfig()"
+                                                title="Save changes back to this preset file">
+                                            Save
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-success"
+                                                id="btn-sort-config-save-as"
+                                                onclick="saveSortConfigAs()">
+                                            Save As&hellip;
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-danger"
+                                                id="btn-sort-config-delete"
+                                                onclick="deleteSortConfig()"
+                                                style="display:none;"
+                                                title="Delete this user preset file">
+                                            Delete
+                                        </button>
+                                    </div>
 
-                                            <!-- Custom file selector -->
-                                            <div class="card mt-3" id="custom-file-panel" style="display:none;">
-                                                <div class="card-header py-1"><small>Load Config File</small></div>
-                                                <div class="card-body p-2">
-                                                    <select class="form-select form-select-sm" id="config-file-select">
-                                                        <option value="">-- Select a config file --</option>
-                                                    </select>
-                                                    <div class="mt-2">
-                                                        <button class="btn btn-sm btn-primary" onclick="loadConfigFile()">Load</button>
-                                                    </div>
-                                                    <pre class="mt-2 small" id="config-file-preview" style="max-height:200px; overflow:auto;"></pre>
-                                                </div>
-                                            </div>
+                                    <!-- Description line -->
+                                    <p class="text-muted small mb-2" id="sort-config-description"></p>
+
+                                    <!-- bins / fallback / limit row -->
+                                    <div class="row g-2 mb-2">
+                                        <div class="col-auto">
+                                            <label class="form-label">Bins</label>
+                                            <input type="number" class="form-control form-control-sm"
+                                                   id="sc-bin-count" value="10" min="1" max="20"
+                                                   style="width:75px;"
+                                                   onchange="onSortConfigBinCountChange()">
                                         </div>
-                                        <div class="col-md-8">
-                                            <!-- Custom manual queries -->
-                                            <div class="card" id="custom-manual-panel" style="display:none;">
-                                                <div class="card-header py-1"><small>Custom Bin Queries</small></div>
-                                                <div class="card-body p-2">
-                                                    <div class="row g-2 mb-2">
-                                                        <div class="col-auto">
-                                                            <label class="form-label">Bins</label>
-                                                            <input type="number" class="form-control form-control-sm" id="custom-bin-count" value="7" min="1" max="20" onchange="buildCustomQueryInputs(); _markSortConfigDirty()">
-                                                        </div>
-                                                        <div class="col-auto">
-                                                            <label class="form-label">Fallback Bin</label>
-                                                            <input type="number" class="form-control form-control-sm" id="custom-fallback" value="7" min="1" onchange="_markSortConfigDirty()">
-                                                        </div>
-                                                        <div class="col-auto">
-                                                            <label class="form-label">Bin Limit</label>
-                                                            <input type="number" class="form-control form-control-sm" id="custom-bin-limit" placeholder="unlimited" min="1" onchange="_markSortConfigDirty()">
-                                                        </div>
-                                                    </div>
-                                                    <div id="custom-query-inputs"></div>
-                                                    <div class="mt-2 d-flex gap-2 flex-wrap align-items-center">
-                                                        <button class="btn btn-sm btn-outline-success" onclick="saveCustomConfig()">Save to File</button>
-                                                        <!--
-                                                          Phase 0B-1: "Load custom from file" button removed.
-                                                          sort_configs/*.txt files are now auto-imported as
-                                                          read-only presets on startup via preset_store.py;
-                                                          select them from the Sort Preset panel above.
-                                                          The backing DOM is retained for the legacy
-                                                          loadCustomConfigFromFile() JS path (dead unless
-                                                          called programmatically).
-                                                        -->
-                                                        <input type="hidden" id="custom-load-file" value="">
-                                                    </div>
+                                        <div class="col-auto">
+                                            <label class="form-label">Fallback bin</label>
+                                            <input type="number" class="form-control form-control-sm"
+                                                   id="sc-fallback" value="10" min="1"
+                                                   style="width:75px;"
+                                                   onchange="markSortConfigDirty()">
+                                        </div>
+                                        <div class="col-auto">
+                                            <label class="form-label">Bin limit</label>
+                                            <input type="number" class="form-control form-control-sm"
+                                                   id="sc-bin-limit" placeholder="unlimited" min="1"
+                                                   style="width:110px;"
+                                                   onchange="markSortConfigDirty()">
+                                        </div>
+                                    </div>
 
-                                                    <!-- Query reference -->
-                                                    <div class="mt-3">
-                                                        <a class="small text-muted text-decoration-none" data-bs-toggle="collapse" href="#query-reference" role="button">
-                                                            ▸ Query reference
-                                                        </a>
-                                                        <div class="collapse" id="query-reference">
-                                                            <div class="mt-2 p-2 rounded small" style="background:var(--bg-card);border:1px solid var(--border-card);color:var(--text-primary)">
+                                    <!-- Bin table -->
+                                    <div class="table-responsive">
+                                        <table class="table table-sm table-borderless align-middle mb-0"
+                                               id="sort-config-table">
+                                            <thead>
+                                                <tr>
+                                                    <th style="width:3.5rem;">Bin</th>
+                                                    <th>Query</th>
+                                                    <th style="width:6.5rem;" class="text-center">Override</th>
+                                                    <th style="width:3rem;"></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="sort-config-tbody">
+                                                <tr><td colspan="4" class="text-muted">Loading&hellip;</td></tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
 
-                                                                <p class="mb-1 fw-semibold">Basic fields</p>
-                                                                <table class="table table-sm table-borderless mb-2" style="font-size:0.8rem">
-                                                                    <tbody>
-                                                                        <tr><td class="text-nowrap pe-3"><code>c:r</code></td><td>Color — W U B R G or C (colorless). Combine: <code>c:wr</code></td></tr>
-                                                                        <tr><td class="text-nowrap pe-3"><code>t:creature</code></td><td>Type line contains word. Also: <code>t:land</code>, <code>t:artifact</code>, <code>t:instant</code></td></tr>
-                                                                        <tr><td class="text-nowrap pe-3"><code>cmc&lt;=3</code></td><td>Mana value. Operators: <code>&lt; &lt;= = &gt;= &gt;</code></td></tr>
-                                                                        <tr><td class="text-nowrap pe-3"><code>usd&lt;1.00</code></td><td>TCGPlayer price in USD</td></tr>
-                                                                        <tr><td class="text-nowrap pe-3"><code>r:mythic</code></td><td>Rarity — common uncommon rare mythic</td></tr>
-                                                                        <tr><td class="text-nowrap pe-3"><code>otag:removal</code></td><td>Scryfall function tag. Fetched from API on load.</td></tr>
-                                                                    </tbody>
-                                                                </table>
+                                    <div class="mt-2">
+                                        <button class="btn btn-sm btn-outline-secondary"
+                                                onclick="addSortConfigBin()">
+                                            + Add bin
+                                        </button>
+                                    </div>
 
-                                                                <p class="mb-1 fw-semibold">Enrichment fields <span class="badge bg-info text-dark ms-1" style="font-size:0.7rem">requires enrichment refresh</span></p>
-                                                                <table class="table table-sm table-borderless mb-2" style="font-size:0.8rem">
-                                                                    <tbody>
-                                                                        <tr><td class="text-nowrap pe-3"><code>staple:universal</code></td><td>In top EDHREC inclusion lists (appears in &gt;5% of decks)</td></tr>
-                                                                        <tr><td class="text-nowrap pe-3"><code>staple:cedh</code></td><td>Appears in &gt;15% of top-16 cEDH tournament decks</td></tr>
-                                                                        <tr><td class="text-nowrap pe-3"><code>staple:archetype</code></td><td>Top card in ≥3 EDHREC archetypes</td></tr>
-                                                                        <tr><td class="text-nowrap pe-3"><code>staple:any</code></td><td>Any staple tier (universal, cedh, or archetype)</td></tr>
-                                                                        <tr><td class="text-nowrap pe-3"><code>salt&gt;2</code></td><td>EDHREC salt score above threshold. Range ≈ 0–4.</td></tr>
-                                                                        <tr><td class="text-nowrap pe-3"><code>combo:true</code></td><td>Appears in a Commander Spellbook combo</td></tr>
-                                                                    </tbody>
-                                                                </table>
+                                    <!-- Query reference (collapsible) -->
+                                    <div class="mt-3">
+                                        <a class="small text-muted text-decoration-none"
+                                           data-bs-toggle="collapse"
+                                           href="#sort-query-reference"
+                                           role="button">
+                                            &#9658; Query reference
+                                        </a>
+                                        <div class="collapse" id="sort-query-reference">
+                                            <div class="mt-2 p-2 rounded small sort-query-ref-box">
 
-                                                                <p class="mb-1 fw-semibold">Logic &amp; grouping</p>
-                                                                <div class="text-muted" style="font-size:0.8rem">
-                                                                    Space = AND &nbsp;|&nbsp; <code>OR</code> &nbsp;|&nbsp; <code>-</code> = NOT &nbsp;|&nbsp; <code>(…)</code> = group<br>
-                                                                    Example: <code>-staple:any usd&lt;1.00</code> — cheap non-staples (junk pile)<br>
-                                                                    Example: <code>staple:cedh OR combo:true</code> — high-value targets<br>
-                                                                    Example: <code>(c:w OR c:u) t:creature cmc&lt;=3</code> — cheap Azorius creatures
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
+                                                <p class="mb-1 fw-semibold">Basic fields</p>
+                                                <table class="table table-sm table-borderless mb-2" style="font-size:0.8rem">
+                                                    <tbody>
+                                                        <tr><td class="text-nowrap pe-3"><code>c:r</code></td><td>Color &mdash; W U B R G or C (colorless). Combine: <code>c:wr</code></td></tr>
+                                                        <tr><td class="text-nowrap pe-3"><code>t:creature</code></td><td>Type line contains word. Also: <code>t:land</code>, <code>t:artifact</code>, <code>t:instant</code></td></tr>
+                                                        <tr><td class="text-nowrap pe-3"><code>cmc&lt;=3</code></td><td>Mana value. Operators: <code>&lt; &lt;= = &gt;= &gt;</code></td></tr>
+                                                        <tr><td class="text-nowrap pe-3"><code>usd&lt;1.00</code></td><td>TCGPlayer price in USD</td></tr>
+                                                        <tr><td class="text-nowrap pe-3"><code>r:mythic</code></td><td>Rarity &mdash; common uncommon rare mythic</td></tr>
+                                                        <tr><td class="text-nowrap pe-3"><code>otag:removal</code></td><td>Scryfall function tag. Fetched from API on load.</td></tr>
+                                                    </tbody>
+                                                </table>
+
+                                                <p class="mb-1 fw-semibold">Enrichment fields <span class="badge bg-info text-dark ms-1" style="font-size:0.7rem">requires enrichment refresh</span></p>
+                                                <table class="table table-sm table-borderless mb-2" style="font-size:0.8rem">
+                                                    <tbody>
+                                                        <tr><td class="text-nowrap pe-3"><code>staple:universal</code></td><td>In top EDHREC inclusion lists (appears in &gt;5% of decks)</td></tr>
+                                                        <tr><td class="text-nowrap pe-3"><code>staple:cedh</code></td><td>Appears in &gt;15% of top-16 cEDH tournament decks</td></tr>
+                                                        <tr><td class="text-nowrap pe-3"><code>staple:archetype</code></td><td>Top card in &ge;3 EDHREC archetypes</td></tr>
+                                                        <tr><td class="text-nowrap pe-3"><code>staple:any</code></td><td>Any staple tier (universal, cedh, or archetype)</td></tr>
+                                                        <tr><td class="text-nowrap pe-3"><code>salt&gt;2</code></td><td>EDHREC salt score above threshold. Range &asymp; 0&ndash;4.</td></tr>
+                                                        <tr><td class="text-nowrap pe-3"><code>combo:true</code></td><td>Appears in a Commander Spellbook combo</td></tr>
+                                                    </tbody>
+                                                </table>
+
+                                                <p class="mb-1 fw-semibold">Logic &amp; grouping</p>
+                                                <div class="text-muted" style="font-size:0.8rem">
+                                                    Space = AND &nbsp;|&nbsp; <code>OR</code> &nbsp;|&nbsp; <code>-</code> = NOT &nbsp;|&nbsp; <code>(&hellip;)</code> = group<br>
+                                                    Example: <code>-staple:any usd&lt;1.00</code> &mdash; cheap non-staples (junk pile)<br>
+                                                    Example: <code>staple:cedh OR combo:true</code> &mdash; high-value targets<br>
+                                                    Example: <code>(c:w OR c:u) t:creature cmc&lt;=3</code> &mdash; cheap Azorius creatures
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
+
                                 </div>
                             </div>
                         </div>

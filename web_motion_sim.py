@@ -145,12 +145,30 @@ class SortSimulator:
     def _run_simulation(self, card_count, sort_mode, sort_config, emit_fn):
         """Run the simulation in a background thread."""
         try:
+            import os
             from cards import CARD_DATA_BY_ID, extract_card_info, card_is_allowed
-            from sorting import get_bin_number, set_sort_config
-            from config import EXCLUDED_SETS
+            from sorting import set_sort_config, get_sort_config
+            from sort_config import SortConfig
+            from config import EXCLUDED_SETS, SORT_CONFIGS_DIR
 
+            # Unified routing: the simulation needs a SortConfig just like
+            # the real worker. If the caller didn't supply one, fall back to
+            # loading sort_configs/<sort_mode>.txt (built-in modes now ship
+            # as .txt files).
             if sort_config:
                 set_sort_config(sort_config)
+            elif get_sort_config() is None and sort_mode:
+                candidate = os.path.join(SORT_CONFIGS_DIR, f"{sort_mode}.txt")
+                if os.path.exists(candidate):
+                    try:
+                        set_sort_config(SortConfig.from_file(candidate))
+                    except Exception as e:
+                        if emit_fn:
+                            emit_fn('error', {
+                                'message': f'Simulation SortConfig load failed: {e}',
+                            })
+                        self.running = False
+                        return
 
             # Get pool of allowed cards
             allowed_ids = [
@@ -180,7 +198,8 @@ class SortSimulator:
 
                 card_data = CARD_DATA_BY_ID.get(card_id, {})
                 card_info = extract_card_info(card_id)
-                bin_num = get_bin_number(card_info, sort_mode, card_data=card_data)
+                _cfg = get_sort_config()
+                bin_num = _cfg.get_bin(card_data) if _cfg is not None else 10
                 target_x = bin_locs.get(bin_num, 150.0)
 
                 card_name = card_info.get('Name', 'Unknown') if card_info else 'Unknown'

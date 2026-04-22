@@ -125,7 +125,13 @@
       "Bash(find /d/Card_Sorter/Scripts/scan_logs -type d -name \"scan_images\" -exec dirname {} \\\\;)",
       "Bash(xargs -I {} bash -c 'echo \"{}:\" && find \"{}\" -type f \\\\\\( -name \"*.jpg\" -o -name \"*.png\" -o -name \"*.jpeg\" -o -name \"*.bmp\" -o -name \"*.tiff\" \\\\\\) | wc -l')",
       "Bash(ls D:/Card_Sorter/Scripts/scan_logs/session_20260412_154026/*.json)",
-      "Bash(python -c \"from detection import detect_card_on_staging, _find_card_contour_color_seg, load_staging_roi, invalidate_staging_roi_cache; print\\('All imports OK'\\)\")"
+      "Bash(python -c \"from detection import detect_card_on_staging, _find_card_contour_color_seg, load_staging_roi, invalidate_staging_roi_cache; print\\('All imports OK'\\)\")",
+      "Bash(gh auth *)",
+      "Bash(git --version)",
+      "Read(//c/Program Files/GitHub CLI/**)",
+      "Read(//c/Users/Jon/AppData/Local/GitHubCLI/**)",
+      "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" --version)",
+      "Bash(git config *)"
     ]
   }
 }

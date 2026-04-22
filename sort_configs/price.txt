@@ -1,0 +1,13 @@
+# Price Tiers sort (built-in)
+# USD buckets:
+#   < $0.50 / $0.50-1 / $1-5 / $5-10 / $10+
+# Cards with no price go to fallback.
+
+bins: 10
+fallback: 10
+
+bin1: usd<0.5
+bin2: usd>=0.5 usd<1
+bin3: usd>=1 usd<5
+bin4: usd>=5 usd<10
+bin5: usd>=10

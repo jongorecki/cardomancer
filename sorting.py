@@ -1,239 +1,62 @@
 # sorting.py
-# Contains logic for sorting cards into bins based on chosen mode.
-# Also provides a function to print sorting options.
+# ---------------------------------------------------------------------------
+# Sorting state + shared display helpers.
+#
+# Prior to 2026-04-22 this module also contained per-mode bin-assignment
+# helpers (get_bin_for_color, get_bin_for_price, ...) dispatched by
+# get_bin_number(info, mode). Sort routing is now unified: every session
+# runs through a SortConfig loaded from sort_configs/*.txt (or inline
+# from the UI). The built-in modes (color / mana_value / set / price /
+# type) are shipped as regular .txt files in sort_configs/.
+# ---------------------------------------------------------------------------
 
 import json
+
 import cv2
 
-# Active custom sort config (set when using custom_file or custom_manual modes)
+# Active custom sort config — set by web_worker / main when a session starts.
 _active_sort_config = None
-
-# Active set sort configuration: list of (bin_number, set_codes_set)
-# When None, falls back to the legacy hardcoded mapping
-_active_set_config = None
 
 
 def set_sort_config(config):
-    """Set the active custom sort configuration."""
+    """Set the active sort configuration (called by session start)."""
     global _active_sort_config
     _active_sort_config = config
 
 
 def get_sort_config():
-    """Get the active custom sort configuration."""
+    """Get the active sort configuration, or None if no session is running."""
     return _active_sort_config
 
+
 def print_sorting_options():
-    """
-    Print the menu of sorting options to the console.
+    """Print the menu of sorting options to the console (CLI entry point).
+
+    Built-in modes (color / mana_value / set / price / type) are backed by
+    sort_configs/*.txt files — the output below is just a one-line teaser
+    for each. Full bin definitions live in the .txt files.
     """
     print("Choose your sorting method:")
-    print("1 - Color:")
-    print("    White (W): Bin 1")
-    print("    Blue (U): Bin 2")
-    print("    Black (B): Bin 3")
-    print("    Red (R): Bin 4")
-    print("    Green (G): Bin 5")
-    print("    Colorless: Bin 6")
-    print("    Multicolor: Bin 7")
-    print("    Nonbasic lands: Bin 8")
-    print("    Basic lands: Bin 9")
-    print("    Errors: Bin 10")
+    print("1 - Color        (sort_configs/color.txt)")
+    print("2 - Mana Value   (sort_configs/mana_value.txt)")
+    print("3 - Set          (sort_configs/set.txt)")
+    print("4 - Price Tiers  (sort_configs/price.txt)")
+    print("5 - Card Type    (sort_configs/type.txt)")
     print()
-    print("2 - CMC:")
-    print("    1: Bin 1")
-    print("    2: Bin 2")
-    print("    3: Bin 3")
-    print("    4: Bin 4")
-    print("    5: Bin 5")
-    print("    6: Bin 6")
-    print("    7: Bin 7")
-    print("    8+: Bin 8")
-    print("    Errors: Bin 10")
+    print("6 - Custom (from file):  Load a custom sort_configs/*.txt file.")
+    print("7 - Custom (manual):     Define queries interactively at the prompt.")
     print()
-    print("3 - Set:")
-    print("    KHM: Bin 1")
-    print("    NEO: Bin 2")
-    print("    Unknown sets: Bin 9")
-    print("    Errors: Bin 10")
-    print()
-    print("4 - Price:")
-    print("    Under $0.5: Bin 1")
-    print("    $0.5 to $1: Bin 2")
-    print("    $1 to $5: Bin 3")
-    print("    $5 to $10: Bin 4")
-    print("    Above $10: Bin 5")
-    print("    Errors: Bin 10")
-    print()
-    print("5 - Type:")
-    print("    Creature: Bin 1")
-    print("    Artifact: Bin 2")
-    print("    Enchantment: Bin 3")
-    print("    Instant: Bin 4")
-    print("    Sorcery: Bin 5")
-    print("    Battle: Bin 6")
-    print("    Planeswalker: Bin 7")
-    print("    Land: Bin 8")
-    print("    Unknown: Bin 9")
-    print("    Errors: Bin 10")
-    print()
-    print("6 - Custom (from file):")
-    print("    Load bin definitions from a .txt config file.")
-    print("    Uses Scryfall-like query syntax (e.g., c:w, t:creature, usd>=10)")
-    print()
-    print("7 - Custom (manual):")
-    print("    Define bin queries interactively at the command prompt.")
+    print("All modes use Scryfall-like query syntax (c:w, t:creature, usd>=10,")
+    print("cmc<=3, r:mythic, otag:removal). The `overrides:` directive")
+    print("promotes specific bins to be checked first.")
     print()
 
 
 def draw_info_as_json(frame, info, start_x=10, start_y=30, line_height=20):
-    """
-    Draw the card info as JSON text on the provided frame for debugging and visualization.
-    """
+    """Draw card info JSON on frame for debugging / visualization."""
     json_str = json.dumps(info, indent=2)
     lines = json_str.split('\n')
     for i, line in enumerate(lines):
         y = start_y + i * line_height
         cv2.putText(frame, line, (start_x, y),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-
-
-# Functions for determining the bin number based on card attributes
-def is_basic_land(name):
-    basic_lands = ["plains", "island", "swamp", "mountain", "forest", "wastes"]
-    return name.lower() in basic_lands
-
-def is_land_card(types):
-    return "land" in types
-
-def get_bin_for_color(info):
-    if is_land_card(info.get("Types", [])):
-        if is_basic_land(info.get("Name", "")):
-            return 9  # Basic lands
-        else:
-            return 8  # Nonbasic lands
-
-    colors = info.get("Colors", [])
-    if not colors:
-        return 6  # Colorless
-    elif len(colors) > 1:
-        return 7  # Multicolor
-    else:
-        c = colors[0]
-        if c == "W": return 1
-        if c == "U": return 2
-        if c == "B": return 3
-        if c == "R": return 4
-        if c == "G": return 5
-    return 6
-
-def get_bin_for_mana_value(info):
-    mv = info.get("CMC", 0)
-    if mv <= 1: return 1
-    elif mv == 2: return 2
-    elif mv == 3: return 3
-    elif mv == 4: return 4
-    elif mv == 5: return 5
-    elif mv == 6: return 6
-    elif mv == 7: return 7
-    else: return 8
-
-def set_set_sort_config(config):
-    """Set the active set sort configuration.
-
-    config: list of dicts with 'bin' and 'sets' keys.
-            Each 'sets' value is a list of set codes (or a range like 'khm-neo').
-            Example: [{'bin': 1, 'sets': ['khm', 'neo']}, {'bin': 2, 'sets': ['mid', 'vow']}]
-    """
-    global _active_set_config
-    if config is None:
-        _active_set_config = None
-        return
-
-    parsed = []
-    for entry in config:
-        bin_num = int(entry['bin'])
-        codes = set()
-        for s in entry.get('sets', []):
-            codes.add(s.lower().strip())
-        if codes:
-            parsed.append((bin_num, codes))
-    _active_set_config = parsed
-
-
-def get_set_sort_config():
-    """Get the active set sort configuration."""
-    return _active_set_config
-
-
-def get_bin_for_set(info):
-    set_code = info.get("Set", "???").lower()
-
-    if _active_set_config:
-        for bin_num, codes in _active_set_config:
-            if set_code in codes:
-                return bin_num
-        # Fallback bin = last bin configured + 1, capped at 10
-        return min(10, max(b for b, _ in _active_set_config) + 1)
-
-    # Legacy hardcoded fallback
-    if set_code == "khm": return 1
-    elif set_code == "neo": return 2
-    else: return 9
-
-def get_bin_for_price(info):
-    price_str = info.get("Price", "null")
-    if price_str == "null":
-        return 10
-    try:
-        price = float(price_str.strip('$'))
-    except:
-        return 10
-
-    if price < 0.5: return 1
-    elif price < 1.0: return 2
-    elif price < 5.0: return 3
-    elif price < 10.0: return 4
-    else: return 5
-
-def get_bin_for_type(info):
-    types = info.get("Types", [])
-    # Priority order for multi-type cards:
-    # 1. Creature wins over everything (enchantment creatures, artifact creatures, etc.)
-    # 2. Land wins over remaining types (artifact lands, enchantment lands)
-    # 3. Single-type cards fall through to their own bin
-    if "creature" in types: return 1
-    if "land" in types: return 8
-    if "artifact" in types: return 2
-    if "enchantment" in types: return 3
-    if "instant" in types: return 4
-    if "sorcery" in types: return 5
-    if "battle" in types: return 6
-    if "planeswalker" in types: return 7
-    return 9
-
-def get_bin_number(info, mode, card_data=None):
-    if not info:
-        return 10  # Error bin
-    if mode == "color":
-        return get_bin_for_color(info)
-    elif mode == "mana_value":
-        return get_bin_for_mana_value(info)
-    elif mode == "set":
-        return get_bin_for_set(info)
-    elif mode == "price":
-        return get_bin_for_price(info)
-    elif mode == "type":
-        return get_bin_for_type(info)
-    elif mode in ("custom_file", "custom_manual"):
-        if _active_sort_config is None:
-            print("[sorting] WARNING: No custom sort config loaded, using fallback.")
-            return 10
-        if card_data is None:
-            print("[sorting] WARNING: No card data for custom query eval, using fallback.")
-            return _active_sort_config.fallback_bin
-        return _active_sort_config.get_bin(card_data)
-    elif mode == "test_scan":
-        return 1  # All cards go to bin 1 (scan-only test mode)
-    else:
-        return 10  # Default to Error bin if mode unknown

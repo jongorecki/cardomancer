@@ -399,5 +399,221 @@ class TestSortConfigEnrichment(unittest.TestCase):
             mock_lookup.assert_not_called()
 
 
+class TestOverrideBins(unittest.TestCase):
+    """Override bins are evaluated BEFORE regular bin_queries."""
+
+    def _build(self, bin_queries_raw, bin_count=5, fallback=5,
+               override_bins=None, limit=None):
+        parsed = [(bn, qs, parse_query(qs)) for bn, qs in bin_queries_raw]
+        return SortConfig(
+            bin_count, fallback, parsed,
+            bin_limit=limit, override_bins=override_bins,
+        )
+
+    def test_override_priority_over_regular_match(self):
+        # Bin 1 would normally win on c:r, but bin 3 is marked as an
+        # override for "usd>=1" and that matches first.
+        config = self._build(
+            [(1, "c:r"), (3, "usd>=1")],
+            override_bins=[3],
+        )
+        # RED_CREATURE has usd=5.00 and is red. Override wins.
+        self.assertEqual(config.get_bin(RED_CREATURE), 3)
+
+    def test_override_falls_through_when_not_matched(self):
+        # Override bin 3 wants "usd>=100" — no card qualifies. Regular
+        # flow should still run and route by color.
+        config = self._build(
+            [(1, "c:r"), (2, "c:w"), (3, "usd>=100")],
+            override_bins=[3],
+        )
+        self.assertEqual(config.get_bin(RED_CREATURE), 1)
+        self.assertEqual(config.get_bin(WHITE_CREATURE), 2)
+
+    def test_override_order_respected(self):
+        # Both bin 3 and bin 4 would match. overrides=[4,3] means bin 4
+        # gets first crack.
+        config = self._build(
+            [(1, "c:r"), (3, "usd>=1"), (4, "cmc<=1")],
+            override_bins=[4, 3],
+        )
+        # RED_CREATURE: cmc=1.0 matches bin 4 (first in override list)
+        self.assertEqual(config.get_bin(RED_CREATURE), 4)
+
+    def test_override_overflow_stays_within_overrides(self):
+        # Two overrides sharing the same query: bin 2 fills, then
+        # overflow to bin 3. Bin 1 (regular, also c:r) should NOT get
+        # cards while overrides have capacity.
+        config = self._build(
+            [(1, "c:r"), (2, "c:r"), (3, "c:r")],
+            override_bins=[2, 3],
+            limit=1,
+        )
+        self.assertEqual(config.get_bin(RED_CREATURE), 2)  # override 1
+        self.assertEqual(config.get_bin(RED_CREATURE), 3)  # override 2
+        # Both overrides now full. Regular bin 1 finally gets one.
+        self.assertEqual(config.get_bin(RED_CREATURE), 1)
+
+    def test_empty_override_list_behaves_like_none(self):
+        config = self._build(
+            [(1, "c:r"), (2, "c:w")],
+            override_bins=[],
+        )
+        self.assertEqual(config.get_bin(RED_CREATURE), 1)
+        self.assertEqual(config.get_bin(WHITE_CREATURE), 2)
+
+    def test_describe_marks_override_bins_with_star(self):
+        config = self._build(
+            [(1, "c:r"), (3, "usd>=1")],
+            override_bins=[3],
+        )
+        desc = config.describe()
+        self.assertIn("overrides=[3]", desc)
+        # Star marker appears on the override bin line.
+        self.assertIn("★ Bin 3:", desc)
+        self.assertNotIn("★ Bin 1:", desc)
+
+    def test_status_marks_override_bins_with_star(self):
+        config = self._build(
+            [(1, "c:r"), (3, "usd>=1")],
+            override_bins=[3],
+        )
+        config.get_bin(RED_CREATURE)
+        status = config.get_status()
+        self.assertIn("★ Bin 3:", status)
+        self.assertNotIn("★ Bin 1:", status)
+
+
+class TestOverridesDirectiveParsing(unittest.TestCase):
+    """from_lines() parsing of the `overrides:` directive."""
+
+    def test_basic_overrides(self):
+        lines = [
+            "bins: 5", "fallback: 5",
+            "overrides: 2,3",
+            "bin1: c:r", "bin2: c:w", "bin3: usd>=1",
+        ]
+        config = SortConfig.from_lines(lines)
+        self.assertEqual(config.override_bins, [2, 3])
+
+    def test_overrides_with_spaces(self):
+        lines = [
+            "bins: 5", "fallback: 5",
+            "overrides:  2 ,  3 ",
+            "bin1: c:r", "bin2: c:w", "bin3: usd>=1",
+        ]
+        config = SortConfig.from_lines(lines)
+        self.assertEqual(config.override_bins, [2, 3])
+
+    def test_empty_overrides(self):
+        lines = [
+            "bins: 5", "fallback: 5",
+            "overrides:",
+            "bin1: c:r",
+        ]
+        config = SortConfig.from_lines(lines)
+        self.assertEqual(config.override_bins, [])
+
+    def test_overrides_non_integer(self):
+        lines = [
+            "bins: 5", "fallback: 5",
+            "overrides: abc",
+            "bin1: c:r",
+        ]
+        with self.assertRaises(ValueError):
+            SortConfig.from_lines(lines)
+
+    def test_overrides_bin_out_of_range(self):
+        lines = [
+            "bins: 5", "fallback: 5",
+            "overrides: 99",
+            "bin1: c:r",
+        ]
+        with self.assertRaises(ValueError):
+            SortConfig.from_lines(lines)
+
+    def test_overrides_bin_equals_fallback_rejected(self):
+        # Declaring the fallback as an override is nonsense — the
+        # fallback has no query to evaluate.
+        lines = [
+            "bins: 5", "fallback: 5",
+            "overrides: 5",
+            "bin1: c:r",
+        ]
+        with self.assertRaises(ValueError):
+            SortConfig.from_lines(lines)
+
+    def test_overrides_bin_without_query_rejected(self):
+        # Override bin 3 listed but never defined with a bin3: line.
+        lines = [
+            "bins: 5", "fallback: 5",
+            "overrides: 3",
+            "bin1: c:r",
+        ]
+        with self.assertRaises(ValueError):
+            SortConfig.from_lines(lines)
+
+
+class TestToLines(unittest.TestCase):
+    """to_lines() serialization and roundtrip with from_lines()."""
+
+    def test_basic_serialization(self):
+        config = SortConfig.from_lines([
+            "bins: 3", "fallback: 3",
+            "bin1: c:w", "bin2: c:r",
+        ])
+        out = config.to_lines()
+        self.assertIn("bins: 3", out)
+        self.assertIn("fallback: 3", out)
+        self.assertIn("bin1: c:w", out)
+        self.assertIn("bin2: c:r", out)
+
+    def test_serialization_includes_limit(self):
+        config = SortConfig.from_lines([
+            "bins: 3", "fallback: 3", "limit: 25",
+            "bin1: c:w",
+        ])
+        out = config.to_lines()
+        self.assertIn("limit: 25", out)
+
+    def test_serialization_includes_overrides(self):
+        config = SortConfig.from_lines([
+            "bins: 5", "fallback: 5",
+            "overrides: 2,3",
+            "bin1: c:r", "bin2: c:w", "bin3: usd>=1",
+        ])
+        out = config.to_lines()
+        self.assertTrue(
+            any(line.startswith("overrides:") and "2" in line and "3" in line
+                for line in out),
+            f"Expected 'overrides: 2,3' in {out}",
+        )
+
+    def test_roundtrip(self):
+        """to_lines → from_lines produces equivalent config."""
+        original = SortConfig.from_lines([
+            "bins: 5", "fallback: 5", "limit: 30",
+            "overrides: 2,3",
+            "bin1: c:r", "bin2: c:w", "bin3: usd>=1",
+            "bin4: t:creature",
+        ])
+        reloaded = SortConfig.from_lines(original.to_lines())
+        self.assertEqual(reloaded.bin_count, original.bin_count)
+        self.assertEqual(reloaded.fallback_bin, original.fallback_bin)
+        self.assertEqual(reloaded.bin_limit, original.bin_limit)
+        self.assertEqual(reloaded.override_bins, original.override_bins)
+        self.assertEqual(
+            [(b, q) for b, q, _ in reloaded.bin_queries],
+            [(b, q) for b, q, _ in original.bin_queries],
+        )
+
+    def test_serialization_with_description(self):
+        config = SortConfig.from_lines([
+            "bins: 3", "fallback: 3", "bin1: c:w",
+        ])
+        out = config.to_lines(description="My custom sort")
+        self.assertIn("# My custom sort", out)
+
+
 if __name__ == "__main__":
     unittest.main()
