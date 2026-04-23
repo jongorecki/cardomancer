@@ -33,9 +33,12 @@ from foil_detect import (
     FOIL_BIAS,
     W_DELTA_BRIGHT_FRAC,
     W_DELTA_MEAN_S,
-    W_HUE_RANGE_BRIGHT,
+    W_DELTA_N_BRIGHT_CLUSTERS,
+    W_DELTA_STD_S_BRIGHT,
+    W_DELTA_LAPLACIAN_ENERGY,
     BRIGHT_V_THRESH,
     MIN_BRIGHT_PIXELS,
+    MIN_CLUSTER_PIXELS,
 )
 
 
@@ -281,91 +284,89 @@ class TestSyntheticOldLightingSignalDirection(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestScoreFormulaRegression(unittest.TestCase):
-    """Pin the confidence formula to the 2026-04-22 retune on real
-    new-lighting data (50 foils + 319 nonfoils). Each fixture row is
-    a realistic (dbf, dms, dhr) triple observed on actual scans and
-    the resulting score the formula must produce.
+    """Pin the 5-feature Level-2 confidence formula (2026-04-23 retune
+    on 70 foils + 375 nonfoils). Each fixture row is a realistic
+    (dbf, dms, dnc, dss, dle) tuple and the score the formula must
+    produce.
 
     If this test fails, it means weights / bias / threshold changed
     and downstream behavior will differ. Retune via _foil_tune.py and
     update the pinned values here only after confirming the new
     precision / recall on a labeled set."""
 
-    # (label, dbf, dms, dhr, expected_confidence, expected_is_foil)
-    # Representative samples spanning the confidence distribution.
-    FIXTURES = [
-        # Strong foil (session 51 Mountain mom #280, was the one flagged
-        # even under old weights)
-        ("foil", +0.129, -12.29, +68.0,   None, False),
-        # Mid-range foil (Astelli Reclaimer eoe #288, score just under
-        # default threshold)
-        ("foil", -0.203, -40.17, +73.0,   None, False),
-        # Typical nonfoil (brighter scan, near-zero saturation delta)
-        ("nonfoil", +0.145, +0.9, -10.0,  None, False),
-        # Clear nonfoil (bright scan, negative saturation delta)
-        ("nonfoil", +0.230, -8.0, -55.0,  None, False),
-        # All-zero deltas -> score == bias alone
-        ("neutral", 0.0, 0.0, 0.0,        None, False),
-    ]
-
     def test_pinned_weights_and_bias(self):
         """Pin each coefficient exactly — any change requires updating
         this test deliberately."""
-        self.assertAlmostEqual(W_DELTA_BRIGHT_FRAC, -18.92, places=4)
-        self.assertAlmostEqual(W_DELTA_MEAN_S,       +0.0474, places=5)
-        self.assertAlmostEqual(W_HUE_RANGE_BRIGHT,   -0.0057, places=5)
-        self.assertAlmostEqual(FOIL_BIAS,            +0.294,  places=4)
-        self.assertAlmostEqual(FOIL_CONFIDENCE_THRESHOLD, 1.50, places=4)
+        self.assertAlmostEqual(W_DELTA_BRIGHT_FRAC,       -22.7420, places=4)
+        self.assertAlmostEqual(W_DELTA_MEAN_S,             +0.08221, places=5)
+        self.assertAlmostEqual(W_DELTA_N_BRIGHT_CLUSTERS,  -0.01683, places=5)
+        self.assertAlmostEqual(W_DELTA_STD_S_BRIGHT,       -0.02960, places=5)
+        self.assertAlmostEqual(W_DELTA_LAPLACIAN_ENERGY,   -0.00347, places=5)
+        self.assertAlmostEqual(FOIL_BIAS,                  -0.1815,  places=4)
+        self.assertAlmostEqual(FOIL_CONFIDENCE_THRESHOLD,  +1.75,    places=4)
 
-    def test_formula_reproduces_expected_scores(self):
-        """For each fixture row, the scoring formula must yield the
-        score computed by hand from the pinned constants."""
-        for label, dbf, dms, dhr, _, _ in self.FIXTURES:
-            expected = (FOIL_BIAS
-                        + W_DELTA_BRIGHT_FRAC * dbf
-                        + W_DELTA_MEAN_S     * dms
-                        + W_HUE_RANGE_BRIGHT * dhr)
-            # Construct a minimal synthetic pair that produces exactly
-            # these deltas. Easier: call the scoring formula directly
-            # via internal arithmetic (deltas are inputs, not signals
-            # we derive from images here).
-            # This test guards the arithmetic only; image->delta
-            # correctness is covered by TestSyntheticOldLightingSignalDirection
-            # and TestComputeBrightStats.
-            score = (FOIL_BIAS
-                     + W_DELTA_BRIGHT_FRAC * dbf
-                     + W_DELTA_MEAN_S     * dms
-                     + W_HUE_RANGE_BRIGHT * dhr)
-            self.assertAlmostEqual(score, expected, places=6,
-                                   msg=f"label={label} inputs=({dbf},{dms},{dhr})")
+    def test_dhr_no_longer_imported(self):
+        """Sanity: the dropped W_HUE_RANGE_BRIGHT constant should
+        truly be gone from the module (forces anyone importing it to
+        notice and update)."""
+        self.assertFalse(hasattr(foil_detect, "W_HUE_RANGE_BRIGHT"),
+            "delta_hue_range was dropped in the Level-2 retune; "
+            "remove the W_HUE_RANGE_BRIGHT constant from foil_detect.")
 
     def test_snapshot_scores_match_expectation(self):
-        """These are the actual confidences the module should produce
-        for representative real-scan signal values. If any of these
-        drift by more than 0.001 the model has changed silently."""
-        # Values computed from pinned constants — if the constants change
-        # without updating these, the test will fail. That's the point.
+        """Pinned scores for representative 5-tuple signal inputs.
+        If any drifts by more than 0.001, the model has changed
+        silently. Inputs span the full confidence range."""
+        # (dbf, dms, dnc, dss, dle, expected_confidence, label)
         cases = [
-            # (dbf, dms, dhr, expected_confidence)
-            (+0.129, -12.29, +68.0,  -3.1168),  # Mountain mom #280:
-            #   an old-physics foil that scores BELOW threshold under new
-            #   weights (real foils under new lighting look different).
-            (-0.203, -40.17, +73.0,  +1.8146),  # Astelli Reclaimer:
-            #   a new-physics foil — would score just above +1.5 threshold.
-            (+0.145,  +0.9,  -10.0,  -2.3497),  # typical nonfoil (class mean)
-            (+0.230,  -8.0,  -55.0,  -4.1233),  # clear nonfoil
-            ( 0.0,     0.0,    0.0,  +0.2940),  # zero deltas -> bias alone
+            # Zero deltas -> just the bias
+            (0.0,    0.0,    0,   0.0,    0.0,   -0.1815, "zero deltas"),
+            # Strong nonfoil: bright scan, smooth bright structure
+            (+0.230, -8.0,  +30, -10.0, -150.0, -5.7582, "strong nonfoil"),
+            # Typical nonfoil (close to class means)
+            (+0.145, +0.9,   +5,  -3.0,  -90.0, -3.0882, "typical nonfoil"),
+            # Mid-range foil (Astelli-Reclaimer-style: dms strong, fewer
+            # clusters, higher residual sat std). Just above +1.75
+            # threshold so fires as foil.
+            (-0.20,  -40.0, -65, +20.0,  -75.0, +1.8407, "mid foil"),
+            # Strong foil — multiple signals all align
+            (-0.10,  +50.0, -80, +25.0,  -50.0, +6.9831, "strong foil"),
+            # Old-physics foil (Mountain mom #280) — expected MISS even
+            # under the new model: this card's physics still don't match
+            # the new-lighting profile (basic-land bright sky failure
+            # mode). Pin it so we'd notice if a future retune catches it.
+            (+0.13,  -12.0, -29,  +7.0,  -45.0, -3.6875, "old-physics foil"),
         ]
-        for dbf, dms, dhr, expected in cases:
+        for dbf, dms, dnc, dss, dle, expected, label in cases:
             score = (FOIL_BIAS
-                     + W_DELTA_BRIGHT_FRAC * dbf
-                     + W_DELTA_MEAN_S     * dms
-                     + W_HUE_RANGE_BRIGHT * dhr)
+                     + W_DELTA_BRIGHT_FRAC       * dbf
+                     + W_DELTA_MEAN_S            * dms
+                     + W_DELTA_N_BRIGHT_CLUSTERS * dnc
+                     + W_DELTA_STD_S_BRIGHT      * dss
+                     + W_DELTA_LAPLACIAN_ENERGY  * dle)
             self.assertAlmostEqual(
                 score, expected, delta=0.001,
-                msg=f"Confidence drift for ({dbf},{dms},{dhr}): "
+                msg=f"Confidence drift for {label} "
+                    f"({dbf},{dms},{dnc},{dss},{dle}): "
                     f"got {score:.4f}, expected {expected:.4f}"
             )
+
+    def test_threshold_classifies_pinned_cases_correctly(self):
+        """At the shipped threshold (+1.75), the strong-foil and mid-foil
+        snapshots should fire; the nonfoil and old-physics-foil snapshots
+        should not. Documents the precision/recall trade-off in test form."""
+        score_strong_foil = +6.9831
+        score_mid_foil    = +1.8407
+        score_nonfoil     = -3.0882
+        score_old_physics = -3.6875
+        self.assertGreaterEqual(score_strong_foil, FOIL_CONFIDENCE_THRESHOLD)
+        self.assertGreaterEqual(score_mid_foil,    FOIL_CONFIDENCE_THRESHOLD)
+        self.assertLess(score_nonfoil,    FOIL_CONFIDENCE_THRESHOLD)
+        # Documented false negative — the model still misses old-physics
+        # foils. If a future retune picks this up, score_old_physics will
+        # rise and this assertion will need to flip. Keep this here as a
+        # tracking marker.
+        self.assertLess(score_old_physics, FOIL_CONFIDENCE_THRESHOLD)
 
 
 # ---------------------------------------------------------------------------
@@ -468,6 +469,214 @@ class TestBuildPrintingToRep(unittest.TestCase):
             foil_detect.PRINTINGS_MAP_PATH = orig_path
             foil_detect._PRINTING_TO_REP = orig_inv
             os.unlink(bad_path)
+
+
+# ---------------------------------------------------------------------------
+# Level-2 diagnostic signals (instrumentation, not yet scored)
+# ---------------------------------------------------------------------------
+
+def _make_dark_with_bright_spots(n_spots, spot_size=12, sat=200, hue=10,
+                                 size=(1040, 745)):
+    """Make a dark image with N bright separated rectangular hotspots.
+    Spots are arranged on a grid so they don't merge in the morph close.
+
+    Each spot is `spot_size`px square with V=240 and the given hue/sat.
+    """
+    h, w = size
+    hsv = np.zeros((h, w, 3), dtype=np.uint8)
+    hsv[:, :, 2] = 50  # dark background, well below BRIGHT_V_THRESH
+
+    # Lay out n_spots on a square-ish grid with generous spacing so the
+    # 3x3 morph close in the detector won't bridge them.
+    cols = int(np.ceil(np.sqrt(n_spots)))
+    rows = int(np.ceil(n_spots / cols))
+    spacing_y = h // (rows + 1)
+    spacing_x = w // (cols + 1)
+    placed = 0
+    for ri in range(rows):
+        for ci in range(cols):
+            if placed >= n_spots:
+                break
+            cy = (ri + 1) * spacing_y
+            cx = (ci + 1) * spacing_x
+            y0, y1 = cy - spot_size // 2, cy + spot_size // 2
+            x0, x1 = cx - spot_size // 2, cx + spot_size // 2
+            hsv[y0:y1, x0:x1, 0] = hue
+            hsv[y0:y1, x0:x1, 1] = sat
+            hsv[y0:y1, x0:x1, 2] = 240
+            placed += 1
+    return cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+
+
+def _make_dark_with_rainbow_spots(n_spots, spot_size=12, size=(1040, 745)):
+    """Like _make_dark_with_bright_spots but each spot has a different
+    hue + saturation, simulating a foil's rainbow specular hotspots."""
+    h, w = size
+    hsv = np.zeros((h, w, 3), dtype=np.uint8)
+    hsv[:, :, 2] = 50
+
+    cols = int(np.ceil(np.sqrt(n_spots)))
+    rows = int(np.ceil(n_spots / cols))
+    spacing_y = h // (rows + 1)
+    spacing_x = w // (cols + 1)
+    rng = np.random.default_rng(123)
+    placed = 0
+    for ri in range(rows):
+        for ci in range(cols):
+            if placed >= n_spots:
+                break
+            cy = (ri + 1) * spacing_y
+            cx = (ci + 1) * spacing_x
+            y0, y1 = cy - spot_size // 2, cy + spot_size // 2
+            x0, x1 = cx - spot_size // 2, cx + spot_size // 2
+            hue = int(rng.integers(0, 180))
+            sat = int(rng.integers(50, 255))
+            hsv[y0:y1, x0:x1, 0] = hue
+            hsv[y0:y1, x0:x1, 1] = sat
+            hsv[y0:y1, x0:x1, 2] = 240
+            placed += 1
+    return cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+
+
+class TestNewBrightStatsFields(unittest.TestCase):
+    """Verify the three Level-2 diagnostic fields show up in
+    _compute_bright_stats output and behave as expected on synthetic
+    inputs designed to isolate each signal."""
+
+    def test_fields_present_on_bright_image(self):
+        bright = _make_solid_hsv(10, 200, 240)
+        stats = _compute_bright_stats(bright)
+        self.assertIn("n_bright_clusters", stats)
+        self.assertIn("std_s_bright", stats)
+        self.assertIn("laplacian_energy_bright", stats)
+        self.assertIsInstance(stats["n_bright_clusters"], int)
+        self.assertIsInstance(stats["std_s_bright"], float)
+        self.assertIsInstance(stats["laplacian_energy_bright"], float)
+
+    def test_fields_none_when_insufficient_bright(self):
+        dark = _make_solid_hsv(0, 0, 100)
+        stats = _compute_bright_stats(dark)
+        # All three new fields should also degrade gracefully
+        self.assertIsNone(stats["n_bright_clusters"])
+        self.assertIsNone(stats["std_s_bright"])
+        self.assertIsNone(stats["laplacian_energy_bright"])
+
+    def test_uniform_bright_yields_one_cluster(self):
+        """A solid bright fill is one connected component."""
+        bright = _make_solid_hsv(10, 200, 240)
+        stats = _compute_bright_stats(bright)
+        self.assertEqual(stats["n_bright_clusters"], 1)
+
+    def test_many_separated_spots_yield_many_clusters(self):
+        """40 spaced bright spots on dark background => ~40 clusters.
+        (The morph close shouldn't bridge them given the spacing.)"""
+        img = _make_dark_with_bright_spots(40)
+        stats = _compute_bright_stats(img)
+        # Allow a small slop — some spots near edges may get clipped
+        self.assertGreater(stats["n_bright_clusters"], 30,
+            f"expected many clusters, got {stats['n_bright_clusters']}")
+        self.assertLessEqual(stats["n_bright_clusters"], 40)
+
+    def test_uniform_bright_yields_low_saturation_std(self):
+        """All bright pixels share the same saturation -> std ≈ 0."""
+        bright = _make_solid_hsv(10, 200, 240)
+        stats = _compute_bright_stats(bright)
+        self.assertLess(stats["std_s_bright"], 1.0)
+
+    def test_rainbow_spots_yield_high_saturation_std(self):
+        """Random hue+sat hotspots -> wide saturation distribution."""
+        img = _make_dark_with_rainbow_spots(40)
+        stats = _compute_bright_stats(img)
+        # Spots span sat 50..255 -> std should be tens
+        self.assertGreater(stats["std_s_bright"], 30,
+            f"expected wide sat std, got {stats['std_s_bright']:.1f}")
+
+    def test_uniform_bright_yields_low_laplacian_energy(self):
+        """Smooth uniform fill has Laplacian ≈ 0 everywhere."""
+        bright = _make_solid_hsv(10, 200, 240)
+        stats = _compute_bright_stats(bright)
+        self.assertLess(stats["laplacian_energy_bright"], 1.0)
+
+    def test_spotty_bright_yields_higher_laplacian_energy(self):
+        """Many sharp bright/dark transitions raise mean |Laplacian|
+        within the bright mask. The bright pixels live at the spot
+        interiors but the Laplacian kernel reaches out to the dark
+        ring, so the boundary pixels score high."""
+        spotty = _make_dark_with_bright_spots(40)
+        smooth = _make_solid_hsv(10, 200, 240)
+        spotty_stats = _compute_bright_stats(spotty)
+        smooth_stats = _compute_bright_stats(smooth)
+        self.assertGreater(spotty_stats["laplacian_energy_bright"],
+                           smooth_stats["laplacian_energy_bright"] + 5)
+
+
+class TestDetectFoilExposesNewDeltas(unittest.TestCase):
+    """detect_foil() must surface the three new deltas in result['signals']
+    so _foil_tune.py and the review tool can read them."""
+
+    def test_new_deltas_present(self):
+        ref = _make_reference_normal()
+        scan = _make_old_lighting_foil_scan(ref)
+        result = detect_foil(scan, reference_img=ref)
+        self.assertEqual(result["reason"], "ok")
+        s = result["signals"]
+        self.assertIn("delta_n_bright_clusters", s)
+        self.assertIn("delta_std_s_bright", s)
+        self.assertIn("delta_laplacian_energy", s)
+        for k in ("delta_n_bright_clusters",
+                  "delta_std_s_bright",
+                  "delta_laplacian_energy"):
+            self.assertIsInstance(s[k], float, f"{k} should be float")
+
+    def test_new_deltas_near_zero_when_scan_equals_ref(self):
+        """If the scan is essentially the reference, the cluster-count
+        and saturation-std deltas should be near zero. Laplacian energy
+        is intentionally sensitive to per-pixel noise (it's a high-pass
+        filter), so a noise-augmented scan can shift it noticeably even
+        without specular content — that's a property of the signal, not
+        a bug. We assert it stays bounded but don't pin it tight."""
+        ref = _make_reference_normal()
+        # nonfoil scan is the ref + small noise
+        scan = _make_nonfoil_scan_from_reference(ref)
+        result = detect_foil(scan, reference_img=ref)
+        s = result["signals"]
+        self.assertAlmostEqual(s["delta_n_bright_clusters"], 0, delta=2)
+        self.assertAlmostEqual(s["delta_std_s_bright"], 0.0, delta=3.0)
+        # Laplacian: just bound it — under ±5 pixel noise we observe
+        # ~25 units of delta even for a non-foil. The classifier will
+        # have to learn to discount this baseline.
+        self.assertLess(abs(s["delta_laplacian_energy"]), 50)
+
+    def test_rainbow_spotty_scan_lifts_cluster_and_std(self):
+        """A scan with many rainbow hotspots vs a uniform-bright reference
+        should produce positive delta_n_bright_clusters AND positive
+        delta_std_s_bright. This is the foil-vs-sky discrimination case."""
+        ref = _make_solid_hsv(10, 200, 240)  # uniform bright "sky"
+        scan = _make_dark_with_rainbow_spots(40)
+        result = detect_foil(scan, reference_img=ref)
+        self.assertEqual(result["reason"], "ok")
+        s = result["signals"]
+        # Rainbow scan has ~40 clusters; ref has 1 -> delta should be >> 0
+        self.assertGreater(s["delta_n_bright_clusters"], 25,
+            f"got {s['delta_n_bright_clusters']}")
+        self.assertGreater(s["delta_std_s_bright"], 20,
+            f"got {s['delta_std_s_bright']:.1f}")
+
+    def test_new_deltas_contribute_to_confidence(self):
+        """After the Level-2 retune the 3 new deltas ARE in the scoring
+        formula. Verify the confidence matches the full 5-feature sum
+        (and does NOT include the dropped dhr signal)."""
+        ref = _make_reference_normal()
+        scan = _make_old_lighting_foil_scan(ref)
+        result = detect_foil(scan, reference_img=ref)
+        s = result["signals"]
+        expected = (FOIL_BIAS
+                    + W_DELTA_BRIGHT_FRAC       * s["delta_bright_frac"]
+                    + W_DELTA_MEAN_S            * s["delta_mean_s"]
+                    + W_DELTA_N_BRIGHT_CLUSTERS * s["delta_n_bright_clusters"]
+                    + W_DELTA_STD_S_BRIGHT      * s["delta_std_s_bright"]
+                    + W_DELTA_LAPLACIAN_ENERGY  * s["delta_laplacian_energy"])
+        self.assertAlmostEqual(result["confidence"], expected, places=4)
 
 
 if __name__ == "__main__":

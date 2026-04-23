@@ -19,28 +19,46 @@
 # promos) have naturally bright saturated art and would trip a single-
 # threshold detector. The reference-relative deltas correct for that.
 #
-# Three signals combine into a single confidence score:
+# Five signals combine into a single confidence score (Level-2 model,
+# 2026-04-23 retune). Signs and magnitudes shown for the new-lighting
+# directional LED setup.
 #
 #   S1: delta_bright_frac = bright_frac(scan) - bright_frac(ref)
 #       Foils are DARKER or equal vs their reference under LED scan
 #       (most light reflects off-angle). Non-foils are brighter (diffuse).
-#       Observed foil mean: -0.03. Non-foil mean: +0.15.
+#       Strongest signal — Cohen's d ~ -1.7, single-feature AUC 0.90.
 #
 #   S2: delta_mean_s = mean_s_bright(scan) - mean_s_bright(ref)
 #       Foil bright pixels are SATURATED rainbow hotspots (one hue per
 #       spot), while non-foil bright pixels match the reference's
 #       desaturated white/light regions.
-#       Observed foil mean: +44. Non-foil mean: 0.
+#       Cohen's d ~ +1.3, single-feature AUC 0.84.
 #
-#   S3: hue_range_bright = spread of hue values in bright pixels
-#       Weak signal under current lighting; near-zero weight in the model.
+#   S3: delta_n_bright_clusters = #connected-components in bright mask
+#       Foils have FEWER large bright clusters than ref because off-angle
+#       reflection drops many would-be bright pixels below the V=220
+#       threshold. Cohen's d ~ -0.4, single-feature AUC 0.65.
+#
+#   S4: delta_std_s_bright = std of saturation among bright pixels
+#       After dms accounts for the saturation level, residual variance
+#       turns out to be slightly LOWER in foil scans than in their refs
+#       relative to nonfoils — opposite the univariate intuition (this is
+#       multicollinearity with dms). AUC 0.67.
+#
+#   S5: delta_laplacian_energy = mean |Laplacian(V)| within bright mask
+#       Bright zones in foil scans preserve more high-frequency content
+#       (specular edge transitions) than diffuse-bright nonfoil zones do.
+#       Weakest signal — coefficient ~ -0.003. AUC 0.67.
+#
+#   delta_hue_range is computed for diagnostics but NOT scored. Its
+#   coefficient collapsed to ~0 in the multi-feature fit.
 #
 # Public API:
 #   detect_foil(card_img, card_id=None, reference_img=None) -> dict
 #
-# Tuning note: default threshold tuned for 92% precision / 72% recall on
-# the 2026-04-22 labeled set. Re-tune via _foil_tune.py when lighting or
-# camera changes significantly.
+# Tuning note: default threshold tuned for 91% precision / 74% recall on
+# the 2026-04-23 labeled set (445 samples). Re-tune via _foil_tune.py
+# when lighting or camera changes significantly.
 # ---------------------------------------------------------------------------
 
 import json
@@ -67,49 +85,78 @@ _PRINTING_TO_REP: Optional[dict] = None
 BRIGHT_V_THRESH = 220          # HSV V above this = "bright pixel"
 MIN_BRIGHT_PIXELS = 500        # need this many to trust the signal
 
+# --- Specular cluster filter ---
+# After bright-mask morph-close, only count connected components of at least
+# this many pixels as a "cluster". Suppresses single-pixel JPEG noise and
+# isolated speckles. 25 = ~5x5 region.
+MIN_CLUSTER_PIXELS = 25
+
 # --- Score weights ---
 #
-# Tuned 2026-04-22 via logistic regression on:
+# Tuned 2026-04-23 via logistic regression on:
 #   - Session 51 (58 confirmed foils, new lighting)
-#   - Session 44 (401 casual scans, 12 foils relabeled after manual review)
-# Total training set: 50 foils + 319 nonfoils = 369 labeled samples.
+#   - Session 44 (387 casual scans, 12 foils relabeled after manual review)
+# Total training set: 70 foils + 375 nonfoils = 445 labeled samples.
 #
-# All weight signs FLIPPED from the original old-lighting calibration —
-# under the new brighter directional LED, foil physics read differently:
+# This is the Level-2 multi-signal upgrade. Two new structural bright-mask
+# signals were added on top of the original (dbf, dms) pair, and the
+# noise-floor `delta_hue_range` signal was dropped after the multi-feature
+# fit confirmed its coefficient was effectively zero (|w * range| < 0.2).
+#
+# All weight signs follow the new-lighting physics:
 #   - Foils reflect most light off-angle, so scan appears DARKER than the
 #     Scryfall ref (dbf < 0) where nonfoils read BRIGHTER (dbf > 0).
-#   - Foil bright pixels are saturated rainbow hotspots (dms > 0), not the
-#     desaturated whites the original model expected.
-#   - Hue range provides a small additional signal.
+#   - Foil bright pixels are saturated rainbow hotspots (dms > 0).
+#   - Foils have FEWER large bright clusters than ref (dnc < 0), because
+#     off-angle reflection drops many would-be bright pixels below the
+#     V=220 threshold.
+#   - Foils' bright pixels span a narrower saturation range vs ref than
+#     nonfoils do (dss < 0 in this multi-feature regime, after dms accounts
+#     for the saturation level itself — multicollinearity flips the sign
+#     vs the univariate AUC analysis).
+#   - Foils preserve more high-frequency content within bright zones than
+#     nonfoils do vs their reference renders (dle weight is small but real).
 #
 # See plans/handoff/ (foil retune notes) and _foil_tune.py for the fit.
-W_DELTA_BRIGHT_FRAC = -18.92      # was +3.0
-W_DELTA_MEAN_S      = +0.0474     # was -0.025
-W_HUE_RANGE_BRIGHT  = -0.0057     # was +0.005
-FOIL_BIAS           = +0.294      # new: logistic regression intercept
+W_DELTA_BRIGHT_FRAC       = -22.7420   # was -18.92
+W_DELTA_MEAN_S            = +0.08221   # was +0.0474
+W_DELTA_N_BRIGHT_CLUSTERS = -0.01683   # NEW (Level-2)
+W_DELTA_STD_S_BRIGHT      = -0.02960   # NEW (Level-2)
+W_DELTA_LAPLACIAN_ENERGY  = -0.00347   # NEW (Level-2)
+FOIL_BIAS                 = -0.1815    # was +0.294
+# delta_hue_range is no longer scored — see _compute_bright_stats; it's
+# still computed for diagnostics but contributes 0 to the confidence.
 
 # --- Classification threshold ---
 # confidence >= this -> is_foil = True
 #
-# Calibration on 50 foils + 319 nonfoils (2026-04-22 retune):
-#   - +1.25 -> 90% precision, 72% recall (4 FP / 36 TP)
-#   - +1.50 -> 92% precision, 72% recall (3 FP / 36 TP)    <-- default
-#   - +2.20 -> 96% precision, 48% recall (1 FP / 24 TP)
+# Calibration on 70 foils + 375 nonfoils (2026-04-23 Level-2 retune):
+#   - +0.75 -> 87% precision, 86% recall (9 FP / 60 TP)  <- best F1 = 0.863
+#   - +1.25 -> 90% precision, 79% recall (6 FP / 55 TP)
+#   - +1.75 -> 91% precision, 74% recall (5 FP / 52 TP)  <-- default
+#   - +2.25 -> 94% precision, 69% recall (3 FP / 48 TP)
 #
-# +1.50 picked as default: best F1 on training set, 42x recall
-# improvement over the prior old-lighting calibration which only flagged
-# 1/58 foils (1.7% recall).
-FOIL_CONFIDENCE_THRESHOLD = 1.50
+# +1.75 picked as default: keeps precision ≥91% (matching the user's
+# prior comfort bar) while extracting ~6 points more recall than the
+# shipped 3-feature model at the same precision target.
+FOIL_CONFIDENCE_THRESHOLD = 1.75
 
 
 def _compute_bright_stats(img_bgr):
     """
-    Compute bright-pixel saturation + hue statistics for a single image.
+    Compute bright-pixel statistics for a single image.
+
+    Includes the original 4 fields used by the scoring formula plus 3
+    Level-2 diagnostic fields (n_bright_clusters, std_s_bright,
+    laplacian_energy_bright) that are NOT yet in the scoring formula —
+    these are surfaced for instrumentation while we evaluate whether
+    they separate foils from nonfoils on real data.
 
     :param img_bgr: BGR uint8 numpy array
     :returns: dict with:
-        bright_frac, n_bright, mean_s_bright, hue_range_bright
-        If too few bright pixels, mean_s_bright and hue_range_bright are None.
+        bright_frac, n_bright, mean_s_bright, hue_range_bright,
+        n_bright_clusters, std_s_bright, laplacian_energy_bright
+        If too few bright pixels, the post-mask fields are None.
     """
     if img_bgr is None or img_bgr.size == 0:
         return None
@@ -128,6 +175,9 @@ def _compute_bright_stats(img_bgr):
             "bright_frac": bright_frac,
             "mean_s_bright": None,
             "hue_range_bright": None,
+            "n_bright_clusters": None,
+            "std_s_bright": None,
+            "laplacian_energy_bright": None,
         }
 
     s_bright = s[bright_mask]
@@ -139,11 +189,43 @@ def _compute_bright_stats(img_bgr):
     # For a rainbow scatter (foil), spread approaches 90+.
     hue_range = float(np.percentile(h_bright, 90) - np.percentile(h_bright, 10))
 
+    # --- Level-2 diagnostic signals (instrumentation, not scored) ---
+
+    # std_s_bright: spread of saturation among bright pixels.
+    # Foils: rainbow hotspots span saturation values -> high std.
+    # Diffuse-bright (sky, paper-white): uniform saturation -> low std.
+    std_s = float(s_bright.std())
+
+    # n_bright_clusters: count of distinct specular hotspots after
+    # noise-suppression close. Foils: many small hotspots (-> high count).
+    # Full-art bright skies / matte-bright cards: one or two large blobs
+    # (-> low count). This is the signal that should specifically rescue
+    # the basic-land foil failure mode.
+    mask_u8 = bright_mask.astype(np.uint8)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    mask_closed = cv2.morphologyEx(mask_u8, cv2.MORPH_CLOSE, kernel)
+    num_components, labels = cv2.connectedComponents(mask_closed)
+    if num_components > 1:
+        # bincount[0] is background (label 0); skip it
+        sizes = np.bincount(labels.flatten())[1:]
+        n_clusters = int((sizes >= MIN_CLUSTER_PIXELS).sum())
+    else:
+        n_clusters = 0
+
+    # laplacian_energy_bright: mean |Laplacian(V)| over bright pixels.
+    # Specular reflections have sharp intensity transitions; diffuse
+    # bright regions are smooth. Foils -> higher Laplacian energy.
+    lap = cv2.Laplacian(v, cv2.CV_32F, ksize=3)
+    laplacian_energy = float(np.abs(lap)[bright_mask].mean())
+
     return {
         "n_bright": n_bright,
         "bright_frac": bright_frac,
         "mean_s_bright": mean_s,
         "hue_range_bright": hue_range,
+        "n_bright_clusters": n_clusters,
+        "std_s_bright": std_s,
+        "laplacian_energy_bright": laplacian_energy,
     }
 
 
@@ -299,19 +381,38 @@ def detect_foil(card_img, card_id: Optional[str] = None,
     out["signals"]["delta_mean_s"] = delta_mean_s
     out["signals"]["delta_hue_range"] = delta_hue_range
 
-    # --- 4. Score ---
-    # Under the current LED scanner, foil indicators (signs matched to
-    # observed class means — see W_* definitions above):
-    #   delta_bright_frac < 0   (foils look darker than ref; nonfoils brighter)
-    #   delta_mean_s      > 0   (bright pixels in foil scans are saturated
-    #                            rainbow hotspots vs. Scryfall's desaturated
-    #                            whites)
-    #   delta_hue_range   < 0   (weak signal; near-zero weight)
+    # --- 3b. Level-2 deltas (now scored) ---
+    def _delta(field):
+        a = scan_stats.get(field)
+        b = ref_stats.get(field)
+        if a is None or b is None:
+            return 0.0
+        return float(a - b)
+
+    delta_n_bright_clusters = _delta("n_bright_clusters")
+    delta_std_s_bright = _delta("std_s_bright")
+    delta_laplacian_energy = _delta("laplacian_energy_bright")
+    out["signals"]["delta_n_bright_clusters"] = delta_n_bright_clusters
+    out["signals"]["delta_std_s_bright"] = delta_std_s_bright
+    out["signals"]["delta_laplacian_energy"] = delta_laplacian_energy
+
+    # --- 4. Score (5-feature Level-2 model) ---
+    # Sign of each contribution under new-lighting physics — see W_*
+    # definitions for the full reasoning:
+    #   delta_bright_frac        < 0  (foils darker than ref)
+    #   delta_mean_s             > 0  (foil bright pixels saturated)
+    #   delta_n_bright_clusters  < 0  (foils have fewer surviving clusters)
+    #   delta_std_s_bright       < 0  (residual after dms accounts for level)
+    #   delta_laplacian_energy   < 0  (residual high-freq, weakest signal)
+    # delta_hue_range is computed for diagnostics but no longer scored
+    # (its weight collapsed to ~0 in the multi-feature fit).
     confidence = (
         FOIL_BIAS
-        + W_DELTA_BRIGHT_FRAC * delta_bright_frac
-        + W_DELTA_MEAN_S     * delta_mean_s
-        + W_HUE_RANGE_BRIGHT * delta_hue_range
+        + W_DELTA_BRIGHT_FRAC       * delta_bright_frac
+        + W_DELTA_MEAN_S            * delta_mean_s
+        + W_DELTA_N_BRIGHT_CLUSTERS * delta_n_bright_clusters
+        + W_DELTA_STD_S_BRIGHT      * delta_std_s_bright
+        + W_DELTA_LAPLACIAN_ENERGY  * delta_laplacian_energy
     )
 
     out["confidence"] = float(confidence)

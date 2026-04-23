@@ -77,9 +77,14 @@ def collect_signals(session_id: int, crop_dir: str, label: int):
             "name": name,
             "set_num": f"{set_code} #{num}",
             "label": label,
+            # Original (already-scored) signals
             "dbf": sig["delta_bright_frac"],
             "dms": sig["delta_mean_s"],
             "dhr": sig["delta_hue_range"],
+            # Level-2 diagnostic signals (not yet scored)
+            "dnc": sig.get("delta_n_bright_clusters", 0.0),
+            "dss": sig.get("delta_std_s_bright", 0.0),
+            "dle": sig.get("delta_laplacian_energy", 0.0),
             "current_conf": r["confidence"],
         })
     return out
@@ -107,134 +112,259 @@ foil = foil + foil_s44
 print(f"Total training set: {len(foil)} foils + {len(nonfoil)} nonfoils")
 
 all_samples = foil + nonfoil
+# X holds the original 3 signals used by the current scoring formula.
+# X_all holds all 6 signals (original + 3 Level-2 diagnostics) for
+# instrumentation. We DO NOT re-fit the model with the new signals here
+# — that's a separate, deliberate step after we evaluate which new
+# signals actually separate the classes.
 X = np.array([[s["dbf"], s["dms"], s["dhr"]] for s in all_samples])
+X_all = np.array([[s["dbf"], s["dms"], s["dhr"],
+                   s["dnc"], s["dss"], s["dle"]] for s in all_samples])
 y = np.array([s["label"] for s in all_samples])
+
+ALL_FEATURE_NAMES = ("dbf", "dms", "dhr", "dnc", "dss", "dle")
+ALL_FEATURE_FULL = (
+    "delta_bright_frac",
+    "delta_mean_s",
+    "delta_hue_range",
+    "delta_n_bright_clusters",      # NEW: specular cluster count
+    "delta_std_s_bright",            # NEW: bright-pixel saturation variance
+    "delta_laplacian_energy",        # NEW: Laplacian energy in bright mask
+)
 
 # ---------------------------------------------------------------------------
 # Distribution summary
 
 def summarize(name, arr):
-    print(f"  {name:<16} n={len(arr):<4} "
-          f"min={arr.min():+8.3f}  "
-          f"p25={np.percentile(arr, 25):+8.3f}  "
-          f"p50={np.percentile(arr, 50):+8.3f}  "
-          f"p75={np.percentile(arr, 75):+8.3f}  "
-          f"max={arr.max():+8.3f}  "
-          f"mean={arr.mean():+8.3f}")
+    print(f"  {name:<24} n={len(arr):<4} "
+          f"min={arr.min():+9.3f}  "
+          f"p25={np.percentile(arr, 25):+9.3f}  "
+          f"p50={np.percentile(arr, 50):+9.3f}  "
+          f"p75={np.percentile(arr, 75):+9.3f}  "
+          f"max={arr.max():+9.3f}  "
+          f"mean={arr.mean():+9.3f}")
 
-print("\n=== FOIL signals ===")
-summarize("dbf (foil)", X[y == 1, 0])
-summarize("dms (foil)", X[y == 1, 1])
-summarize("dhr (foil)", X[y == 1, 2])
+print("\n=== FOIL signals (all 6) ===")
+for i, name in enumerate(ALL_FEATURE_NAMES):
+    summarize(f"{name} (foil)", X_all[y == 1, i])
 
-print("\n=== NONFOIL signals ===")
-summarize("dbf (nonfoil)", X[y == 0, 0])
-summarize("dms (nonfoil)", X[y == 0, 1])
-summarize("dhr (nonfoil)", X[y == 0, 2])
+print("\n=== NONFOIL signals (all 6) ===")
+for i, name in enumerate(ALL_FEATURE_NAMES):
+    summarize(f"{name} (nonfoil)", X_all[y == 0, i])
 
 print("\n=== Class difference (foil_mean - nonfoil_mean) ===")
-for i, name in enumerate(("dbf", "dms", "dhr")):
-    fm = X[y == 1, i].mean()
-    nm = X[y == 0, i].mean()
-    print(f"  {name}: foil={fm:+8.3f}  nonfoil={nm:+8.3f}  diff={fm-nm:+8.3f}")
+for i, name in enumerate(ALL_FEATURE_NAMES):
+    fm = X_all[y == 1, i].mean()
+    nm = X_all[y == 0, i].mean()
+    fs = X_all[y == 1, i].std() + 1e-9
+    ns = X_all[y == 0, i].std() + 1e-9
+    pooled_sd = np.sqrt((fs**2 + ns**2) / 2)
+    cohens_d = (fm - nm) / pooled_sd
+    print(f"  {name}: foil={fm:+9.3f}  nonfoil={nm:+9.3f}  "
+          f"diff={fm-nm:+9.3f}  Cohen's_d={cohens_d:+.2f}")
+
+# ---------------------------------------------------------------------------
+# Per-signal AUC — answers "if I used ONLY this signal as a classifier,
+# how well would it discriminate?". 0.5 = random. >0.7 = useful.
+# Computed from rank statistic: AUC = (sum_ranks_pos - n_pos*(n_pos+1)/2)
+#                                     / (n_pos * n_neg)
+def single_signal_auc(scores, labels):
+    """AUC where higher score => more positive."""
+    n_pos = int((labels == 1).sum())
+    n_neg = int((labels == 0).sum())
+    if n_pos == 0 or n_neg == 0:
+        return float("nan")
+    order = np.argsort(scores, kind="mergesort")
+    ranks = np.empty_like(order, dtype=float)
+    ranks[order] = np.arange(1, len(scores) + 1)
+    pos_rank_sum = ranks[labels == 1].sum()
+    return (pos_rank_sum - n_pos * (n_pos + 1) / 2) / (n_pos * n_neg)
+
+print("\n=== Per-signal AUC (1.0=perfect, 0.5=random) ===")
+print("  Direction-aware: tries both signs and reports the better one,")
+print("  so a signal that goes the 'wrong way' still scores fairly.")
+auc_table = []
+for i, name in enumerate(ALL_FEATURE_NAMES):
+    auc_pos = single_signal_auc(X_all[:, i], y)
+    auc_neg = single_signal_auc(-X_all[:, i], y)
+    best = max(auc_pos, auc_neg)
+    sign = "+" if auc_pos >= auc_neg else "-"
+    auc_table.append((name, best, sign))
+
+# Sort by AUC for easy reading
+auc_table.sort(key=lambda t: t[1], reverse=True)
+for name, auc, sign in auc_table:
+    full = ALL_FEATURE_FULL[ALL_FEATURE_NAMES.index(name)]
+    marker = "  ***" if auc >= 0.70 else ("  ** " if auc >= 0.65 else "  -  ")
+    print(f"  {name} (sign {sign})  AUC={auc:.3f}{marker}  {full}")
 
 # ---------------------------------------------------------------------------
 # Logistic regression — scipy minimize with L2 regularization and class weights
+#
+# We fit TWO models for comparison:
+#   1) Original 3-feature model (dbf, dms, dhr) — what's currently shipped
+#   2) Full 6-feature model (+ dnc, dss, dle) — the Level-2 upgrade candidate
+# The threshold sweep is reported for both so we can see exactly how much
+# the new signals add (or don't).
 
-# Feature scale varies wildly (dbf ~0.1, dms ~50, dhr ~100). Standardize first.
-mu = X.mean(axis=0)
-sd = X.std(axis=0) + 1e-9
-Xs = (X - mu) / sd
-
-# Class weights to counter imbalance
 n_foil = (y == 1).sum()
 n_nonfoil = (y == 0).sum()
-w = np.where(y == 1, n_nonfoil / n_foil, 1.0)
+class_w = np.where(y == 1, n_nonfoil / n_foil, 1.0)
 
-def neg_log_likelihood(params, X, y, w, reg=0.01):
+
+def neg_log_likelihood(params, X_, y_, w_, reg=0.01):
     b0 = params[0]
     b = params[1:]
-    z = b0 + X @ b
+    z = b0 + X_ @ b
     # stable log(1 + exp(-z*y_signed)) using logaddexp
-    y_signed = 2 * y - 1  # 0/1 -> -1/+1
+    y_signed = 2 * y_ - 1  # 0/1 -> -1/+1
     losses = np.logaddexp(0, -z * y_signed)
-    return (w * losses).sum() + reg * (b @ b)
+    return (w_ * losses).sum() + reg * (b @ b)
 
-x0 = np.zeros(4)
-result = optimize.minimize(neg_log_likelihood, x0, args=(Xs, y, w),
-                           method="L-BFGS-B")
-b0_s = result.x[0]
-b_s = result.x[1:]
 
-# Convert standardized coefs back to raw-feature space so weights work on
-# the original (dbf, dms, dhr) values directly.
-# score = b0_s + sum((X_i - mu_i)/sd_i * b_s_i)
-#       = (b0_s - sum(mu_i/sd_i * b_s_i)) + sum(b_s_i/sd_i * X_i)
-b_raw = b_s / sd
-b0_raw = b0_s - (mu / sd) @ b_s
+def fit_lr(X_in, y_in, w_in, feature_names):
+    """Fit standardized logistic regression, return (b0_raw, b_raw, scores)."""
+    mu_ = X_in.mean(axis=0)
+    sd_ = X_in.std(axis=0) + 1e-9
+    Xs_ = (X_in - mu_) / sd_
 
-# Compute scores for all samples (these are log-odds, not the old confidence)
-scores = b0_raw + X @ b_raw
+    x0_ = np.zeros(X_in.shape[1] + 1)
+    res = optimize.minimize(neg_log_likelihood, x0_,
+                            args=(Xs_, y_in, w_in), method="L-BFGS-B")
+    b0_s_ = res.x[0]
+    b_s_ = res.x[1:]
+    # Convert standardized coefs back to raw-feature space:
+    # score = b0_s + sum((X_i - mu_i)/sd_i * b_s_i)
+    #       = (b0_s - sum(mu_i/sd_i * b_s_i)) + sum(b_s_i/sd_i * X_i)
+    b_raw_ = b_s_ / sd_
+    b0_raw_ = b0_s_ - (mu_ / sd_) @ b_s_
+    scores_ = b0_raw_ + X_in @ b_raw_
+    return b0_raw_, b_raw_, scores_
 
-print("\n=== Fitted logistic regression (raw-feature space) ===")
-print(f"  intercept (bias)      : {b0_raw:+.4f}")
-print(f"  W_delta_bright_frac   : {b_raw[0]:+.4f}    (was +3.0000)")
-print(f"  W_delta_mean_s        : {b_raw[1]:+.6f}    (was -0.0250)")
-print(f"  W_delta_hue_range     : {b_raw[2]:+.6f}    (was +0.0050)")
 
-# ---------------------------------------------------------------------------
-# Threshold sweep
-
-print("\n=== Threshold sweep on training set ===")
-print(f"{'thresh':<8} {'TP':<4} {'FP':<4} {'FN':<4} {'prec':<7} {'recall':<7} {'F1':<6}")
-best_f1 = 0.0
-best_t = None
-for t in np.arange(-3.0, 3.01, 0.25):
-    pred = scores >= t
-    tp = int((pred & (y == 1)).sum())
-    fp = int((pred & (y == 0)).sum())
-    fn = int((~pred & (y == 1)).sum())
-    prec = tp / (tp + fp) if tp + fp else 0.0
-    rec = tp / (tp + fn) if tp + fn else 0.0
-    f1 = 2 * prec * rec / (prec + rec) if prec + rec else 0.0
-    if f1 > best_f1:
-        best_f1 = f1
-        best_t = t
-    print(f"{t:+.2f}   {tp:<4} {fp:<4} {fn:<4} {prec:<7.2%} {rec:<7.2%} {f1:<6.3f}")
-
-print(f"\nBest F1 threshold: {best_t:+.2f} (F1 = {best_f1:.3f})")
-
-# Also: threshold for 95% and 90% precision
-for target in (0.95, 0.90, 0.80):
-    best_for_prec = None
-    for t in np.arange(-3.0, 3.01, 0.05):
-        pred = scores >= t
-        tp = int((pred & (y == 1)).sum())
-        fp = int((pred & (y == 0)).sum())
-        fn = int((~pred & (y == 1)).sum())
+def threshold_sweep(scores_, y_in, label):
+    """Print sweep + return best-F1 (t, F1) and the precision-target rows."""
+    print(f"\n=== Threshold sweep — {label} ===")
+    print(f"{'thresh':<8} {'TP':<4} {'FP':<4} {'FN':<4} "
+          f"{'prec':<7} {'recall':<7} {'F1':<6}")
+    best_f1_ = 0.0
+    best_t_ = None
+    for t in np.arange(-3.0, 3.01, 0.25):
+        pred = scores_ >= t
+        tp = int((pred & (y_in == 1)).sum())
+        fp = int((pred & (y_in == 0)).sum())
+        fn = int((~pred & (y_in == 1)).sum())
         prec = tp / (tp + fp) if tp + fp else 0.0
         rec = tp / (tp + fn) if tp + fn else 0.0
-        if prec >= target and (best_for_prec is None or rec > best_for_prec[2]):
-            best_for_prec = (t, prec, rec, tp, fp)
-    if best_for_prec:
-        t, prec, rec, tp, fp = best_for_prec
-        print(f"  {int(target*100)}% precision @ threshold {t:+.2f}: "
-              f"prec={prec:.2%}, recall={rec:.2%} ({tp} TP / {fp} FP)")
-    else:
-        print(f"  {int(target*100)}% precision: UNREACHABLE")
+        f1 = 2 * prec * rec / (prec + rec) if prec + rec else 0.0
+        if f1 > best_f1_:
+            best_f1_ = f1
+            best_t_ = t
+        print(f"{t:+.2f}   {tp:<4} {fp:<4} {fn:<4} "
+              f"{prec:<7.2%} {rec:<7.2%} {f1:<6.3f}")
+    print(f"\nBest F1 threshold ({label}): "
+          f"{best_t_:+.2f} (F1 = {best_f1_:.3f})")
+
+    targets = {}
+    for target in (0.95, 0.90, 0.80):
+        best_for_prec = None
+        for t in np.arange(-3.0, 3.01, 0.05):
+            pred = scores_ >= t
+            tp = int((pred & (y_in == 1)).sum())
+            fp = int((pred & (y_in == 0)).sum())
+            fn = int((~pred & (y_in == 1)).sum())
+            prec = tp / (tp + fp) if tp + fp else 0.0
+            rec = tp / (tp + fn) if tp + fn else 0.0
+            if prec >= target and (best_for_prec is None
+                                   or rec > best_for_prec[2]):
+                best_for_prec = (t, prec, rec, tp, fp)
+        targets[target] = best_for_prec
+        if best_for_prec:
+            t, prec, rec, tp, fp = best_for_prec
+            print(f"  {int(target*100)}% precision @ threshold {t:+.2f}: "
+                  f"prec={prec:.2%}, recall={rec:.2%} "
+                  f"({tp} TP / {fp} FP)")
+        else:
+            print(f"  {int(target*100)}% precision: UNREACHABLE")
+    return best_t_, best_f1_, targets
+
+
+# --- Fit 1: original 3-feature model ----------------------------------------
+print("\n" + "=" * 70)
+print("MODEL A: 3-feature (dbf, dms, dhr) — what's currently shipped")
+print("=" * 70)
+b0_raw, b_raw, scores = fit_lr(X, y, class_w, ALL_FEATURE_NAMES[:3])
+print(f"  intercept (bias)       : {b0_raw:+.6f}")
+for i, name in enumerate(("dbf", "dms", "dhr")):
+    print(f"  W_{name:<4}                : {b_raw[i]:+.6f}")
+best_t_3, best_f1_3, targets_3 = threshold_sweep(scores, y, "3-feature")
+
+# --- Fit 2: full 6-feature model --------------------------------------------
+print("\n" + "=" * 70)
+print("MODEL B: 6-feature (+ dnc, dss, dle) — Level-2 upgrade candidate")
+print("=" * 70)
+b0_raw_full, b_raw_full, scores_full = fit_lr(X_all, y, class_w,
+                                              ALL_FEATURE_NAMES)
+print(f"  intercept (bias)       : {b0_raw_full:+.6f}")
+for i, name in enumerate(ALL_FEATURE_NAMES):
+    flag = "  <-- NEW" if name in ("dnc", "dss", "dle") else ""
+    print(f"  W_{name:<4}                : {b_raw_full[i]:+.6f}{flag}")
+best_t_6, best_f1_6, targets_6 = threshold_sweep(scores_full, y, "6-feature")
+
+# --- Fit 3: 5-feature model (drop dhr — confirmed noise) --------------------
+# In the 6-feature fit, dhr's coefficient is ~10x smaller than dnc/dss
+# and ~100x smaller than dms. Confirm we lose nothing by dropping it.
+X_5 = np.array([[s["dbf"], s["dms"], s["dnc"], s["dss"], s["dle"]]
+                for s in all_samples])
+FEATURE_NAMES_5 = ("dbf", "dms", "dnc", "dss", "dle")
+print("\n" + "=" * 70)
+print("MODEL C: 5-feature (drop dhr) — cleanup of Model B")
+print("=" * 70)
+b0_raw_5, b_raw_5, scores_5 = fit_lr(X_5, y, class_w, FEATURE_NAMES_5)
+print(f"  intercept (bias)       : {b0_raw_5:+.6f}")
+for i, name in enumerate(FEATURE_NAMES_5):
+    flag = "  <-- NEW" if name in ("dnc", "dss", "dle") else ""
+    print(f"  W_{name:<4}                : {b_raw_5[i]:+.6f}{flag}")
+best_t_5, best_f1_5, targets_5 = threshold_sweep(scores_5, y, "5-feature")
+
+# --- Side-by-side improvement summary ---------------------------------------
+print("\n" + "=" * 70)
+print("SIDE-BY-SIDE: 3-feat (shipped) vs 6-feat vs 5-feat (no dhr)")
+print("=" * 70)
+print(f"  Best F1:  3-feat={best_f1_3:.3f} @ t={best_t_3:+.2f}   "
+      f"6-feat={best_f1_6:.3f} @ t={best_t_6:+.2f}   "
+      f"5-feat={best_f1_5:.3f} @ t={best_t_5:+.2f}")
+for target in (0.95, 0.90, 0.80):
+    r3 = targets_3.get(target)
+    r6 = targets_6.get(target)
+    r5 = targets_5.get(target)
+    rec3 = r3[2] if r3 else 0.0
+    rec6 = r6[2] if r6 else 0.0
+    rec5 = r5[2] if r5 else 0.0
+    print(f"  Recall @ {int(target*100)}% precision:  "
+          f"3-feat={rec3:.2%}   6-feat={rec6:.2%}   5-feat={rec5:.2%}")
 
 # ---------------------------------------------------------------------------
 # Flag possible foils hiding in the 'nonfoil' session 44 data
 
-print("\n=== Top scoring 'nonfoil' candidates (possibly actually foil) ===")
+print("\n=== Top 'nonfoil' candidates per the 6-feature model ===")
+print("     (3-feature top candidates have been reviewed in two prior rounds.)")
 print("     If any of these are actually foil, relabel + re-run this script.")
-nonfoil_scores = [(s, scores[i]) for i, s in enumerate(all_samples) if s["label"] == 0]
-nonfoil_scores.sort(key=lambda x: x[1], reverse=True)
-for s, sc in nonfoil_scores[:15]:
+nonfoil_full_scores = [(s, scores_full[i])
+                       for i, s in enumerate(all_samples) if s["label"] == 0]
+nonfoil_full_scores.sort(key=lambda x: x[1], reverse=True)
+for s, sc in nonfoil_full_scores[:15]:
     print(f"  s{s['session']:<3} scan={s['scan']:>3}  score={sc:+.3f}  "
           f"{s['name'][:40]:<40}  ({s['set_num']})")
 
-# Also save signal arrays for follow-up analysis
+# Also save signal arrays for follow-up analysis. Includes both the
+# original 3-feature X (used by the current model) and the full
+# 6-feature X_all so downstream scripts can experiment with the new
+# signals without re-collecting them.
 np.savez(r"D:\Card_Sorter\Scripts\foil_multisignal\tune_data.npz",
-         X=X, y=y, scores=scores, b_raw=b_raw, b0_raw=b0_raw)
-print("\nSaved tune_data.npz")
+         X=X, X_all=X_all, y=y,
+         scores=scores, b_raw=b_raw, b0_raw=b0_raw,
+         scores_full=scores_full,
+         b_raw_full=b_raw_full, b0_raw_full=b0_raw_full,
+         feature_names=np.array(ALL_FEATURE_NAMES))
+print("\nSaved tune_data.npz (3-feature + 6-feature fits)")
