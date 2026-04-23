@@ -23,9 +23,9 @@ SERIAL_PORT     = 'COM3'
 BAUD_RATE       = 250000       # Matches Marlin BAUDRATE setting
 
 # Feedrates (mm/min)
-Z_FEEDRATE      = 8000         # Z travel speed (133mm/s)
+Z_FEEDRATE      = 12000        # Z travel speed (200mm/s) — benchmarked max reliable
 Z_PROBE_FEEDRATE = 3600        # Z probe speed (60mm/s) — kept slow for accuracy
-X_FEEDRATE      = 12000        # X travel speed (200mm/s)
+X_FEEDRATE      = 27000        # X travel speed (450mm/s) — benchmarked max reliable
 
 # X positions (mm)
 X_DETECTION_POSITION = 100.0   # X position for camera detection (offset from source bin)

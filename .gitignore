@@ -37,6 +37,19 @@ sim_debug.log
 sim_start.log
 layout_test_failures/
 foil_signal1/
+foil_multisignal/*.jpg
+foil_multisignal/*.npz
+foil_review.html
+foil_candidates_review*.html
+pytest_output.txt
+
+# One-off diagnostic / investigation scripts (kept locally, not versioned).
+# Tuning tool _foil_tune.py IS versioned so future retunes can use it.
+_db_inspect.py
+_foil_signal_audit.py
+_noref_check.py
+_foil_candidates_review.py
+_foil_candidates_review_r2.py
 
 # Large data files (user regenerates locally)
 downloaded_cards/
