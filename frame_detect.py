@@ -43,8 +43,19 @@ _CONFIDENCE_MARGIN_SCALE = 30.0
 _signatures_cache = None
 
 
+def _hex_to_bits(hex_str: str) -> np.ndarray:
+    """Convert a 16-char phash hex string to a 64-element uint8 bit
+    array. imagehash.hex_to_hash() returns an 8x8 bool numpy array; we
+    flatten it for vectorized Hamming distance."""
+    return imagehash.hex_to_hash(hex_str).hash.flatten().astype(np.uint8)
+
+
 def _load_signatures():
-    """Lazy-load frame_signatures.json and parse phash hex strings."""
+    """Lazy-load frame_signatures.json and parse phash hex strings.
+    Stores each (frame, fe_str, region) as a packed numpy uint8 matrix
+    of shape (N_refs, 64) so Hamming distance against a query hash can
+    be done in a single vectorized XOR+sum instead of ~1650 per-combo
+    Python calls into the imagehash library."""
     global _signatures_cache
     if _signatures_cache is not None:
         return _signatures_cache
@@ -56,10 +67,14 @@ def _load_signatures():
     for frame, effects_map in raw.items():
         parsed[frame] = {}
         for fe_str, regions in effects_map.items():
-            parsed[frame][fe_str] = {
-                region: [imagehash.hex_to_hash(h) for h in hashes]
-                for region, hashes in regions.items()
-            }
+            parsed[frame][fe_str] = {}
+            for region, hashes in regions.items():
+                if not hashes:
+                    parsed[frame][fe_str][region] = np.zeros((0, 64), dtype=np.uint8)
+                    continue
+                parsed[frame][fe_str][region] = np.stack(
+                    [_hex_to_bits(h) for h in hashes]
+                )
     _signatures_cache = parsed
     return parsed
 
@@ -76,7 +91,8 @@ def _compute_scan_region_phashes(card_img):
     Compute phash for each stable border region of a rectified card.
 
     :param card_img: BGR numpy array. Resized to 745x1040 if not already.
-    :return: dict[region_name, imagehash.ImageHash]
+    :return: dict[region_name, np.ndarray uint8 shape (64,)] — the
+        64-bit flattened phash ready for vectorized Hamming distance.
     """
     if card_img.shape[:2] != (HEIGHT, WIDTH):
         card_img = cv2.resize(card_img, (WIDTH, HEIGHT))
@@ -86,15 +102,24 @@ def _compute_scan_region_phashes(card_img):
     out = {}
     for name, (y0, y1, x0, x1) in STABLE_REGIONS.items():
         crop = pil.crop((x0, y0, x1, y1))
-        out[name] = imagehash.phash(crop)
+        h = imagehash.phash(crop)
+        out[name] = h.hash.flatten().astype(np.uint8)
     return out
 
 
-def _min_distance(query_hash, reference_hashes):
-    """Minimum Hamming distance between query and any reference. None if empty."""
-    if not reference_hashes:
+def _min_distance(query_bits, ref_matrix):
+    """Minimum Hamming distance between query and any reference.
+
+    :param query_bits: uint8 numpy array of shape (64,).
+    :param ref_matrix: uint8 numpy array of shape (N, 64) — packed at
+        load time by _load_signatures().
+    :return: int min Hamming distance, or None if ref_matrix is empty.
+    """
+    if ref_matrix is None or ref_matrix.shape[0] == 0:
         return None
-    return min(query_hash - r for r in reference_hashes)
+    # Broadcasting XOR is equivalent to != for 0/1 bit arrays and is
+    # ~2x faster than `!=` in practice.
+    return int((ref_matrix ^ query_bits).sum(axis=1).min())
 
 
 def detect_frame(
@@ -150,7 +175,7 @@ def detect_frame(
         total = 0
         ok = True
         for region_name, scan_hash in scan_phashes.items():
-            d = _min_distance(scan_hash, region_refs.get(region_name, []))
+            d = _min_distance(scan_hash, region_refs.get(region_name))
             if d is None:
                 ok = False
                 break
