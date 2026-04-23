@@ -73,10 +73,20 @@ BASE_FRAME_EFFECTS = frozenset({
 #           shifted but the ROI is forgiving.
 FRAME_ROI: dict[str, Optional[Tuple[int, int, int, int]]] = {
     "1993": None,
-    "1997": (640, 485, 80, 45),
-    "2003": (660, 600, 70, 55),
-    "2015": (660, 600, 70, 55),
-    "future": (660, 600, 70, 55),
+    # 1997 spans classic 1997 layout (symbol at bottom-right of art box,
+    # ~y=500-540 for 6ED through Scourge) and modern retro-frame reprints
+    # (e.g. RVR, DMR — symbol sits near the type line ~y=600-650).
+    "1997": (600, 495, 110, 160),
+    # 2003 must be wide enough to cover Mirrodin block's long crescent
+    # symbol (x=555-685 on clean PNG).
+    "2003": (555, 580, 140, 55),
+    # Tight crop — just the symbol rectangle, no bevel/drop-shadow padding.
+    # The outer frame border is identical across all 2015 sets, so
+    # including it makes matchTemplate score card-frame pixels instead
+    # of the symbol itself. Symbol occupies the center ~50x55 of the
+    # 70x75 ROI we validated visually.
+    "2015": (650, 590, 50, 55),
+    "future": (555, 580, 140, 55),
 }
 
 
