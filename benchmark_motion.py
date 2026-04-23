@@ -184,9 +184,10 @@ def benchmark_x_axis():
     x_end = 750.0
     travel_mm = x_end - x_start
 
-    # Feedrate range: 6000 to 36000 mm/min in 3000 steps
-    # (100 mm/s to 600 mm/s)
-    feedrates = list(range(6000, 39000, 3000))
+    # Feedrate range: 6000 to 27000 mm/min in 3000 steps
+    # (100 mm/s to 450 mm/s). Capped at 27000 because 30000-36000
+    # showed intermittent position errors under our machine's mechanics.
+    feedrates = list(range(6000, 28000, 3000))
 
     print(f"  Travel distance: {travel_mm:.0f}mm  (X={x_start} -> X={x_end})")
     print(f"  Testing {len(feedrates)} feedrates: "
@@ -287,7 +288,9 @@ def benchmark_z_axis():
     z_bottom = 100.0     # Safe bottom — well above any bin contact
     travel_mm = z_top - z_bottom
 
-    feedrates = list(range(4000, 22000, 2000))
+    # Capped at 12000 — benchmarked max reliable. 14000 showed failures,
+    # sweep stays below that line for regression runs.
+    feedrates = list(range(4000, 13000, 2000))
 
     print(f"  Travel distance: {travel_mm:.0f}mm  (Z={z_top} -> Z={z_bottom})")
     print(f"  Testing {len(feedrates)} feedrates: "
