@@ -2,7 +2,7 @@
 
 ## STATUS
 
-Phases 1, 2, and 3 complete (2026-04-22). Phases 4–7 pending.
+Phases 1–4 complete (2026-04-22). Phases 5–7 pending.
 
 Being built in parallel with foil detection (`plans/foil_detection_plan.md`)
 on branch `feature/printing-disambiguation`.
@@ -268,36 +268,67 @@ LIST_STAMP_THRESHOLD = 0.55  # confidence required to commit Stage 2
 
 ---
 
-## Phase 4: Set-Icon Asset Pipeline
+## Phase 4: Set-Icon Asset Pipeline — DONE 2026-04-22
 
-One-time build, cached on disk, refreshed when new sets release.
+**Module:** `fetch_set_symbols.py`
+**Tests:** `tests/test_fetch_set_symbols.py` (11 tests, passing)
+**Cache location:** `card_data/set_symbols/{svg,png,edge}/` (gitignored — regen locally)
 
-### Steps
+### What shipped
 
-1. **`fetch_set_symbols.py`** — pull the `/sets` endpoint from Scryfall,
-   read each set's `icon_svg_uri`, download the SVG to
-   `card_data/set_symbols/svg/{set_code}.svg`.
-2. **Rasterize at multiple scales** (32 px, 48 px, 64 px tall) to
-   `card_data/set_symbols/png/{set_code}_{size}.png`. Rationale: set
-   icons on cards are small; scale matches the ROI size we'll crop at
-   for different frame eras and resolutions.
-3. **Monochrome normalization** — convert to black-on-transparent.
-   Discard rarity tint. Reason: rarity color is unreliable on foils,
-   under damage, or under varied lighting.
-4. **Edge template** — run `cv2.Canny` on each rasterized template and
-   cache alongside: `card_data/set_symbols/edge/{set_code}_{size}.png`.
-5. **Refresh schedule** — hook into the existing Scryfall bulk refresh
-   job. New sets release roughly every 6 weeks; weekly or monthly
-   refresh is fine.
+1. `fetch_set_symbols.py` pulls `/sets` from Scryfall (1031 records),
+   downloads each `icon_svg_uri` to `card_data/set_symbols/svg/{set}.svg`,
+   rasterizes at 32/48/64 px tall, and writes
+   `card_data/set_symbols/png/{set}_{size}.png` (monochrome, icon=bright,
+   bg=0) plus `card_data/set_symbols/edge/{set}_{size}.png` (Canny).
+2. Dependencies added: `svglib` + `reportlab` for SVG rasterization
+   (pure-Python, no Cairo system deps).
+3. Rerun-safe — already-cached files are skipped. `--force` redoes all
+   downloads + renders; `--rasterize-only` skips network.
+4. Pairwise phash distances computed on the 48 px rasters;
+   `card_data/set_symbols/confusable_pairs.json` lists all pairs within
+   Hamming distance 8 for Phase 6 to consult.
 
-### Assets to consider
+### Key decisions vs. the original draft
 
-- Scryfall's SVG icons are sometimes stylized (fancy lines, outlines,
-  small details that alias at 32 px). Alternatives: Gatherer's set
-  symbols, the MSE symbol library, hand-curating hard sets.
-- Some set icons are visually very similar (several Masters sets).
-  Log pairwise template distances across all sets during this phase
-  and flag any pairs with Hamming distance < threshold.
+- **White-bg render, not transparent alpha.** `reportlab.renderPM` on
+  Windows returns RGB with no usable alpha channel. Rendering against
+  pure white and inverting luminance (`monochrome_normalize`) gives the
+  same "icon=bright" convention Canny and `matchTemplate` expect.
+- **Rarity tint discarded by collapsing to luminance.** The plan
+  specified discarding rarity tint; RGB→grayscale→invert does exactly
+  this regardless of the input fill color.
+- **Confusable report is a diagnostic, not a block list.** ~96% of
+  pairs at distance=0 are intentional — promo variants (`p10e` ↔ `10e`)
+  and token subsets (`t2x2` ↔ `2x2`) legitimately share a set symbol.
+  Phase 6 will treat these as "can't disambiguate by icon; fall through
+  to next stage" rather than filter them out up front.
+
+### API (as shipped)
+
+```python
+# Top-level: rerun-safe pipeline entry point
+python fetch_set_symbols.py [--force | --rasterize-only]
+
+# Module-level helpers (exported for Phase 6 / tests):
+def rasterize_svg(svg_path, size) -> Optional[np.ndarray]   # RGB, size tall
+def monochrome_normalize(rgb) -> np.ndarray                 # icon bright, bg 0
+def make_edge_template(mono) -> np.ndarray                  # Canny(low=100, high=200)
+def compute_confusable_pairs(png_dir, size, threshold) -> List[(a, b, dist)]
+```
+
+### Remaining polish (not blocking)
+
+- **Refresh hook.** Plan called for tying refresh to the Scryfall bulk
+  refresh job. Not wired yet — today refresh is manual
+  (`python fetch_set_symbols.py`). Wire into `update_all.py` once Phase
+  6 is consuming the cache.
+- **Alias curation.** Scryfall's SVGs for a few sets have fancy outlines
+  that alias badly at 32 px. If Phase 7 validation flags misses on
+  those sets, consider hand-curating replacements into
+  `card_data/set_symbols/svg/` — the pipeline will re-render them.
+- **Rasterization quality at 32 px** — evaluate after Phase 7 realism
+  tests. May need to drop the 32 px rung and use 48/64 only.
 
 ---
 
