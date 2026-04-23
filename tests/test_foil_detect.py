@@ -29,6 +29,7 @@ from foil_detect import (
     detect_foil,
     _compute_bright_stats,
     _load_reference,
+    _load_reference_back,
     FOIL_CONFIDENCE_THRESHOLD,
     FOIL_BIAS,
     W_DELTA_BRIGHT_FRAC,
@@ -677,6 +678,142 @@ class TestDetectFoilExposesNewDeltas(unittest.TestCase):
                     + W_DELTA_STD_S_BRIGHT      * s["delta_std_s_bright"]
                     + W_DELTA_LAPLACIAN_ENERGY  * s["delta_laplacian_energy"])
         self.assertAlmostEqual(result["confidence"], expected, places=4)
+
+
+# ---------------------------------------------------------------------------
+# DFC back-face handling (Pattern 1 FP fix, 2026-04-23)
+# ---------------------------------------------------------------------------
+class TestDFCBackFaceHandling(unittest.TestCase):
+    """Verify that for transform/MDFC cards detect_foil auto-corrects
+    when the scanned face differs from the front-face reference PNG.
+
+    Real-world failure this catches: MOM battles identified via the
+    front-face hash (horizontal battle art) but actually scanned from
+    the back (vertical creature art). Without this fix the scan vs ref
+    brightness delta is garbage and mimics a foil signature.
+    """
+
+    def setUp(self):
+        # Build a temp REFERENCE_DIR containing a front and back PNG
+        # for a known card_id. Each face has a distinct bright_frac so
+        # the "closer brightness" heuristic has something to pick
+        # between.
+        self.tmpdir = tempfile.mkdtemp()
+        self.card_id = "dfc-card-uuid-4242"
+
+        # Front: a BRIGHT reference (big bright band in top half)
+        #   -> bright_frac ~ 0.50
+        front = np.zeros((1040, 745, 3), dtype=np.uint8) + 100  # dim gray
+        front[:520, :, :] = 250  # top half near white -> V > 220
+        cv2.imwrite(
+            os.path.join(self.tmpdir, f"{self.card_id}.png"), front)
+
+        # Back: a DARK reference (only a thin bright stripe)
+        #   -> bright_frac ~ 0.05
+        back = np.zeros((1040, 745, 3), dtype=np.uint8) + 50  # very dark
+        back[:50, :, :] = 250  # thin bright strip
+        cv2.imwrite(
+            os.path.join(self.tmpdir, f"{self.card_id}__back.png"), back)
+
+        # Patch the module's reference dir
+        self._orig_ref_dir = foil_detect.REFERENCE_DIR
+        foil_detect.REFERENCE_DIR = self.tmpdir
+        # Reset printings-map cache (not needed for this test, but keep
+        # it clean)
+        self._orig_inv = foil_detect._PRINTING_TO_REP
+        foil_detect._PRINTING_TO_REP = {}
+
+    def tearDown(self):
+        foil_detect.REFERENCE_DIR = self._orig_ref_dir
+        foil_detect._PRINTING_TO_REP = self._orig_inv
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_load_reference_back_finds_back_png(self):
+        img = _load_reference_back(self.card_id)
+        self.assertIsNotNone(img,
+            "back-face PNG should be found via direct lookup")
+        self.assertEqual(img.shape, (1040, 745, 3))
+
+    def test_load_reference_back_returns_none_when_no_back_png(self):
+        img = _load_reference_back("nonexistent-card-id")
+        self.assertIsNone(img)
+
+    def test_load_reference_back_returns_none_for_empty_card_id(self):
+        self.assertIsNone(_load_reference_back(None))
+        self.assertIsNone(_load_reference_back(""))
+
+    def test_bright_scan_matches_front_face(self):
+        """A bright scan (bright_frac ~ 0.50) should pick the front
+        face (bright_frac ~ 0.50) over the back (bright_frac ~ 0.05)."""
+        bright_scan = np.zeros((1040, 745, 3), dtype=np.uint8) + 100
+        bright_scan[:520, :, :] = 250
+        result = detect_foil(bright_scan, card_id=self.card_id)
+        self.assertEqual(result["reason"], "ok")
+        self.assertEqual(result["signals"]["matched_face"], "front")
+
+    def test_dark_scan_matches_back_face(self):
+        """A dark scan (bright_frac ~ 0.05) should pick the back face
+        (bright_frac ~ 0.05) over the front (bright_frac ~ 0.50). This
+        is the MOM battle failure mode — scanner captured the creature
+        back but identifier mapped to the front card_id."""
+        dark_scan = np.zeros((1040, 745, 3), dtype=np.uint8) + 50
+        dark_scan[:50, :, :] = 250
+        result = detect_foil(dark_scan, card_id=self.card_id)
+        self.assertEqual(result["reason"], "ok")
+        self.assertEqual(result["signals"]["matched_face"], "back",
+            "dark scan should match the dark back-face reference, "
+            "not the bright front")
+
+    def test_dfc_back_scan_does_not_trigger_false_foil(self):
+        """Regression guard for the exact MOM-battle FP pattern.
+
+        Before this fix: scan of back (dark creature) was always
+        compared to front (bright battle) -> dbf strongly negative ->
+        scored as high-confidence foil.
+
+        After this fix: the back-face reference is picked, scan vs
+        matching face has near-zero dbf, confidence stays near 0."""
+        dark_scan = np.zeros((1040, 745, 3), dtype=np.uint8) + 50
+        dark_scan[:50, :, :] = 250  # matches back-face pattern
+        result = detect_foil(dark_scan, card_id=self.card_id)
+        self.assertEqual(result["reason"], "ok")
+        self.assertLess(
+            result["confidence"], FOIL_CONFIDENCE_THRESHOLD,
+            f"dark scan of DFC back-face must not score as foil; "
+            f"got confidence={result['confidence']:.3f}")
+        # Sanity: the scan-vs-back dbf should be near zero
+        self.assertLess(
+            abs(result["signals"]["delta_bright_frac"]), 0.10,
+            "scan vs correctly-picked back-face ref should have "
+            "near-zero dbf")
+
+    def test_explicit_reference_img_bypasses_face_picking(self):
+        """When the caller passes reference_img explicitly, don't
+        second-guess them — use the provided reference as-is."""
+        bright_scan = np.zeros((1040, 745, 3), dtype=np.uint8) + 100
+        bright_scan[:520, :, :] = 250
+        # Pass an arbitrary reference that doesn't match the scan
+        some_ref = np.zeros((1040, 745, 3), dtype=np.uint8) + 200
+        result = detect_foil(bright_scan,
+                             card_id=self.card_id,
+                             reference_img=some_ref)
+        self.assertEqual(result["reason"], "ok")
+        # matched_face remains "front" (the default) because the
+        # face-picking branch didn't run
+        self.assertEqual(result["signals"]["matched_face"], "front")
+
+    def test_no_back_png_falls_through_to_front_only(self):
+        """Cards without a __back.png (layout=normal) should use the
+        front reference, unchanged from the prior behavior."""
+        # Remove the back PNG for this test
+        os.remove(os.path.join(self.tmpdir, f"{self.card_id}__back.png"))
+        dark_scan = np.zeros((1040, 745, 3), dtype=np.uint8) + 50
+        dark_scan[:50, :, :] = 250
+        result = detect_foil(dark_scan, card_id=self.card_id)
+        self.assertEqual(result["reason"], "ok")
+        self.assertEqual(result["signals"]["matched_face"], "front",
+            "with no back PNG available, matched_face must stay 'front'")
 
 
 if __name__ == "__main__":

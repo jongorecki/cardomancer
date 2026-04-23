@@ -53,12 +53,19 @@
 #   delta_hue_range is computed for diagnostics but NOT scored. Its
 #   coefficient collapsed to ~0 in the multi-feature fit.
 #
+# Transform / MDFC back-face handling:
+#   For cards with a `{card_id}__back.png` reference (battles, sieges,
+#   transforms), the scan might be of the front or the back. detect_foil
+#   picks the matching face via perceptual-hash distance so the brightness
+#   deltas compare scan-vs-same-face rather than scan-vs-wrong-art (which
+#   masquerades as a foil signal). See _load_reference_back().
+#
 # Public API:
 #   detect_foil(card_img, card_id=None, reference_img=None) -> dict
 #
-# Tuning note: default threshold tuned for 91% precision / 74% recall on
-# the 2026-04-23 labeled set (445 samples). Re-tune via _foil_tune.py
-# when lighting or camera changes significantly.
+# Tuning note: default threshold tuned for 96% precision / 71% recall on
+# the 2026-04-23 labeled set (445 samples) with DFC face-picking in place.
+# Re-tune via _foil_tune.py when lighting or camera changes significantly.
 # ---------------------------------------------------------------------------
 
 import json
@@ -130,15 +137,20 @@ FOIL_BIAS                 = -0.1815    # was +0.294
 # --- Classification threshold ---
 # confidence >= this -> is_foil = True
 #
-# Calibration on 70 foils + 375 nonfoils (2026-04-23 Level-2 retune):
-#   - +0.75 -> 87% precision, 86% recall (9 FP / 60 TP)  <- best F1 = 0.863
-#   - +1.25 -> 90% precision, 79% recall (6 FP / 55 TP)
-#   - +1.75 -> 91% precision, 74% recall (5 FP / 52 TP)  <-- default
-#   - +2.25 -> 94% precision, 69% recall (3 FP / 48 TP)
+# Calibration on 70 foils + 375 nonfoils (2026-04-23 Level-2 retune +
+# DFC back-face face-picking):
+#   - +1.25 -> 95% precision, 76% recall (3 FP / 53 TP)
+#   - +1.75 -> 96% precision, 71% recall (2 FP / 50 TP)  <-- default
+#   - +2.25 -> 98% precision, 67% recall (1 FP / 47 TP)
 #
-# +1.75 picked as default: keeps precision ≥91% (matching the user's
-# prior comfort bar) while extracting ~6 points more recall than the
-# shipped 3-feature model at the same precision target.
+# +1.75 retained as default: the DFC face-picking fix raised precision
+# from 91% to 96% at this threshold by eliminating 3 MOM-battle FPs
+# (scans 6, 8, 14 were scan-of-back vs ref-of-front art mismatches).
+# Cost: 2 battle-foil-back scans now score below threshold (they were
+# previously caught via the same art-mismatch artifact). Net trade at
+# +1.75: +5pp precision / -3pp recall. A future retune could recover
+# recall by lowering the threshold to ~+1.25 where precision is still
+# 95%.
 FOIL_CONFIDENCE_THRESHOLD = 1.75
 
 
@@ -292,6 +304,37 @@ def _load_reference(card_id):
     return None
 
 
+def _load_reference_back(card_id):
+    """Load the BACK-FACE reference PNG for a transform/MDFC card.
+
+    Returns BGR image or None if no back face exists. Mirrors
+    _load_reference()'s resolution order:
+      1. `{card_id}__back.png`
+      2. `{rep_id}__back.png` via printings_map fallback
+
+    Exists so detect_foil() can auto-correct when the scanner captures
+    the creature/back side of a transform card but the identifier's
+    canonical PNG is the horizontally-oriented front (battle, siege,
+    etc.). Comparing against a totally different face's art produces
+    garbage brightness deltas and mimics the foil signature.
+    """
+    if not card_id:
+        return None
+
+    path = os.path.join(REFERENCE_DIR, f"{card_id}__back.png")
+    if os.path.isfile(path):
+        return cv2.imread(path)
+
+    inv = _build_printing_to_rep()
+    rep_id = inv.get(card_id)
+    if rep_id and rep_id != card_id:
+        rep_path = os.path.join(REFERENCE_DIR, f"{rep_id}__back.png")
+        if os.path.isfile(rep_path):
+            return cv2.imread(rep_path)
+
+    return None
+
+
 def detect_foil(card_img, card_id: Optional[str] = None,
                 reference_img=None,
                 threshold: float = FOIL_CONFIDENCE_THRESHOLD) -> dict:
@@ -355,7 +398,59 @@ def detect_foil(card_img, card_id: Optional[str] = None,
         out["reason"] = "invalid_reference"
         return out
 
+    # --- 2b. Transform-DFC back-face check ---
+    # When the card is a transform/MDFC (battle, siege, etc.), {card_id}.png
+    # is the front face but the scanner may have captured the back. The
+    # front face (e.g. horizontal battle art) is completely different from
+    # the back face (vertical creature), which blows up the brightness
+    # deltas and produces spurious high foil confidence. If a __back.png
+    # exists, compare scan perceptual-hash distance to both refs and pick
+    # the one that actually matches what was scanned.
+    #
+    # Why phash rather than bright_frac: the LED scanner brightens the
+    # scan non-uniformly vs the Scryfall renders, so scan_bf isn't
+    # reliably close to the matching ref's bf — especially when the back
+    # ref is stored at lower resolution (some cards). phash is
+    # resolution- and brightness-invariant and captures structural
+    # similarity. Empirically: all 3 MOM battle FPs in session 44
+    # (scans 6, 8, 14) picked back correctly via phash; scan 14 flipped
+    # to front under the pure bright_frac heuristic.
+    #
+    # Only runs when the caller didn't hand us a specific reference_img —
+    # that path explicitly opts out of face-picking.
+    matched_face = "front"
+    if reference_img is None and card_id:
+        ref_back_img = _load_reference_back(card_id)
+        if ref_back_img is not None:
+            # Lazy-import imagehash/PIL so cards without __back.png never
+            # pay the import cost.
+            try:
+                from PIL import Image
+                import imagehash
+                scan_rgb = cv2.cvtColor(card_img, cv2.COLOR_BGR2RGB)
+                front_rgb = cv2.cvtColor(ref_img, cv2.COLOR_BGR2RGB)
+                back_rgb = cv2.cvtColor(ref_back_img, cv2.COLOR_BGR2RGB)
+                scan_h = imagehash.phash(Image.fromarray(scan_rgb))
+                front_h = imagehash.phash(Image.fromarray(front_rgb))
+                back_h = imagehash.phash(Image.fromarray(back_rgb))
+                dist_front = scan_h - front_h
+                dist_back = scan_h - back_h
+                if dist_back < dist_front:
+                    ref_back_resized = _resize_to_match(ref_back_img,
+                                                        card_img)
+                    back_stats = _compute_bright_stats(ref_back_resized)
+                    if back_stats is not None:
+                        ref_img = ref_back_img
+                        ref_resized = ref_back_resized
+                        ref_stats = back_stats
+                        matched_face = "back"
+            except ImportError:
+                # imagehash/PIL not available — silently keep front ref.
+                # This preserves the pre-fix behavior as a safe fallback.
+                pass
+
     out["signals"]["reference"] = ref_stats
+    out["signals"]["matched_face"] = matched_face
 
     # --- 3. Compute deltas ---
     delta_bright_frac = (scan_stats["bright_frac"]
