@@ -162,6 +162,59 @@ class TestRunCascade(unittest.TestCase):
             self.assertEqual(result["source"], pd.SOURCE_FULLY_DISAMBIGUATED)
             self.assertEqual(result["final_card_id"], "id-2")
 
+    def test_icon_commits_when_sets_disagree(self):
+        """Two same-frame, non-list candidates disagreeing on set -> Stage 3 fires."""
+        cards = [_card("id-1", "dmu", frame="2015"),
+                 _card("id-2", "neo", frame="2015")]
+        with patch.object(pd, "identify_set_icon",
+                          return_value=("dmu", 0.9)) as mock_icon:
+            result = pd._run_cascade(_dummy_img(), "id-2", cards)
+            mock_icon.assert_called_once()
+            self.assertEqual(result["source"], pd.SOURCE_ICON_DISAMBIGUATED)
+            self.assertEqual(result["final_card_id"], "id-1")
+            self.assertEqual(result["icon_set_pick"], "dmu")
+            self.assertEqual(result["icon_confidence"], 0.9)
+
+    def test_icon_low_confidence_does_not_commit(self):
+        """identify_set_icon returns (None, conf) -> no filtering; cheapest fallback."""
+        cards = [_card("id-1", "dmu", frame="2015", usd="0.25"),
+                 _card("id-2", "neo", frame="2015", usd="0.50")]
+        with patch.object(pd, "identify_set_icon",
+                          return_value=(None, 0.3)):
+            result = pd._run_cascade(_dummy_img(), "id-1", cards)
+            self.assertEqual(result["source"], pd.SOURCE_CHEAPEST_FALLBACK)
+            self.assertEqual(result["icon_confidence"], 0.3)
+            self.assertIsNone(result["icon_set_pick"])
+
+    def test_icon_skipped_when_all_survivors_share_set(self):
+        """Same-set candidates (shouldn't happen, but if it does) -> Stage 3 skipped."""
+        cards = [_card("id-1", "dmu", frame="2015"),
+                 _card("id-2", "dmu", frame="2015")]
+        with patch.object(pd, "identify_set_icon") as mock_icon:
+            pd._run_cascade(_dummy_img(), "id-1", cards)
+            mock_icon.assert_not_called()
+
+    def test_frame_plus_icon_fully_disambiguated(self):
+        """Stage 1 + Stage 3 both commit -> fully_disambiguated."""
+        cards = [_card("id-1", "dmu", frame="2015"),
+                 _card("id-2", "neo", frame="2015"),
+                 _card("id-3", "lea", frame="1993")]
+        with patch.object(
+            pd, "detect_frame",
+            return_value={
+                "best_frame": "2015",
+                "best_frame_effects": (),
+                "distance": 1,
+                "margin": 25.0,
+                "confidence": 0.9,
+                "scores": None,
+            },
+        ), patch.object(pd, "identify_set_icon",
+                        return_value=("neo", 0.88)):
+            result = pd._run_cascade(_dummy_img(), "id-1", cards)
+            self.assertEqual(result["source"], pd.SOURCE_FULLY_DISAMBIGUATED)
+            self.assertEqual(result["final_card_id"], "id-2")
+
     def test_all_filtered_out_falls_back(self):
         """Detectors erroneously filter everything -> fallback to cheapest."""
         cards = [_card("id-1", "xln", frame="2015", usd="0.10"),

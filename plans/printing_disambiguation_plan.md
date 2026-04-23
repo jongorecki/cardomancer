@@ -2,7 +2,7 @@
 
 ## STATUS
 
-Phases 1–5 complete (2026-04-22). Phases 6–7 pending.
+Phases 1–6 complete (2026-04-22). Phase 7 pending.
 
 Being built in parallel with foil detection (`plans/foil_detection_plan.md`)
 on branch `feature/printing-disambiguation`.
@@ -378,53 +378,76 @@ inside a 745×1040 frame.
 
 ---
 
-## Phase 6: Set-Icon Detection Module
+## Phase 6: Set-Icon Detection Module — DONE 2026-04-22
 
-New module `set_icon.py`. Fills in Stage 3 stubbed by Phase 3.
+**Module:** `set_icon.py`
+**Tests:** `tests/test_set_icon.py` (10 tests, passing)
+**Cascade wiring:** updated `printing_disambiguation._run_cascade` to
+  call `identify_set_icon()` as Stage 3 (was a no-op stub).
+**New tests in cascade suite:** 4 (stage-3 commit, stage-3 low-confidence
+  no-commit, stage-3 skipped when all survivors share a set, and
+  frame+icon fully-disambiguated).
 
-### API
+### What shipped
 
 ```python
 def identify_set_icon(
     card_img: np.ndarray,
     candidate_set_codes: list[str],
-    frame: str,
-    frame_effects: list[str] | None,
+    frame: Optional[str],
+    frame_effects: Optional[Iterable[str]] = None,
     debug: bool = False,
-) -> tuple[str | None, float]:
-    """Disambiguate which set among candidates by matching the set icon.
-    Returns (best_set_code, confidence). (None, 0.0) when ambiguous or
-    no ROI applies."""
+) -> Tuple[Optional[str], float]:
+    """Returns (best_set_code, confidence) or (None, <=best_score> or 0.0)
+    when: ROI disabled, no candidate has a cached template, below
+    SET_ICON_THRESHOLD, or below SET_ICON_MARGIN over runner-up."""
 ```
 
-### Algorithm
+Algorithm as planned: ROI lookup → grayscale-to-Canny on the ROI →
+per-candidate scale/rotation search over the cached edge template
+pyramid → TM_CCOEFF_NORMED, take max → threshold + margin gate.
 
-1. Look up ROI via `get_symbol_roi(frame, frame_effects)`. If `None`,
-   return `(None, 0.0)`.
-2. Crop ROI from `card_img`.
-3. Preprocess: grayscale → Canny edges.
-4. For each `set_code` in candidates:
-   - Load cached edge template at closest size
-   - Try 2–3 scales (0.9×, 1.0×, 1.1×)
-   - Try rotation tolerance (±5°)
-   - `cv2.matchTemplate` with `TM_CCOEFF_NORMED`; take max score
-5. Return top scorer if `max_score > THRESHOLD` and
-   `max_score - second_best > MARGIN`; else `(None, confidence)`.
+### Key decisions / deviations
 
-### Constants (tune from data)
+- **Template size fixed at 32 px.** The plan said "closest size." In
+  practice the smallest rung (32 px) fits inside every ROI in
+  `set_symbol_roi.FRAME_ROI` (smallest is 70×45) with enough margin for
+  matchTemplate to slide. Using a larger template would require
+  per-frame ROI-size logic; the 32 px choice simplifies and still
+  matches because the template pyramid's 0.9×/1.0×/1.1× search absorbs
+  scale residual.
+- **`@lru_cache` on `_load_template`.** Cascade can hit the same set
+  code repeatedly across sessions; memoize the disk reads.
+- **Scoring gap uses `runner_up` absolute score, not (top - all others)
+  max.** Simpler and matches how the plan described it.
+- **Cascade update:** Stage 3 runs only when `len({c.set for c in
+  surviving}) >= 2`. Frame info passed in is `frame_pick` (if Stage 1
+  committed) or the first surviving candidate's frame — both consistent
+  with that candidate's symbol location.
+- **New `SOURCE_ICON_DISAMBIGUATED` label** added to the enum. Result
+  dict gains `icon_confidence` and `icon_set_pick` keys. `fully_disambiguated`
+  now fires when **any 2 of the 3 stages** commit, not only frame+stamp.
+
+### Constants (as shipped — tune from Phase 7 data)
 
 ```python
-SET_ICON_THRESHOLD = 0.55
-SET_ICON_MARGIN = 0.10
-SET_ICON_SCALES = [0.9, 1.0, 1.1]
-SET_ICON_ROTATIONS = [-5, 0, 5]
+TEMPLATE_SIZE        = 32
+SET_ICON_THRESHOLD   = 0.55
+SET_ICON_MARGIN      = 0.10
+SET_ICON_SCALES      = (0.9, 1.0, 1.1)
+SET_ICON_ROTATIONS   = (-5, 0, 5)
+CANNY_LOW, CANNY_HIGH = 100, 200
 ```
 
-### Wiring
+### Remaining polish (not blocking)
 
-Replace the Stage 3 stub from Phase 3 with a real call to
-`identify_set_icon()`. Filter `same_art` by the winning set code when
-confidence exceeds threshold.
+- Phase 7 will tune thresholds against labeled scans
+- Confusable-pair awareness: when top two candidates share a symbol
+  per `confusable_pairs.json` (distance ≤ ~4), short-circuit to
+  `(None, 0.0)` instead of making a low-margin pick. Wire after Phase 7
+  data shows how often this matters
+- Optional debug-artifact writes (edge ROI, per-candidate heatmaps)
+  once diagnostics need them
 
 ---
 

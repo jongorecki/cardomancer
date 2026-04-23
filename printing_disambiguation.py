@@ -41,6 +41,7 @@ from list_stamp import (
     detect_list_stamp,
     is_list_candidate_pair,
 )
+from set_icon import identify_set_icon
 
 # Confidence required to commit Stage 1's frame pick. Frame detection
 # returns confidence = margin/scale, so ~0.6 means a 18-hash-distance
@@ -54,6 +55,7 @@ SOURCE_NO_ART_GROUP = "no_art_group"
 SOURCE_NO_CANDIDATES = "no_candidates"
 SOURCE_FRAME_DISAMBIGUATED = "frame_disambiguated"
 SOURCE_STAMP_DISAMBIGUATED = "stamp_disambiguated"
+SOURCE_ICON_DISAMBIGUATED = "icon_disambiguated"
 SOURCE_FULLY_DISAMBIGUATED = "fully_disambiguated"
 SOURCE_CHEAPEST_FALLBACK = "cheapest_fallback"
 
@@ -77,6 +79,8 @@ def disambiguate_printing(
         frame_pick              tuple | None — (frame, frame_effects_tuple)
         stamp_confidence        float | None — Stage 2 confidence (if ran)
         stamp_has_stamp         bool | None  — Stage 2 decision
+        icon_confidence         float | None — Stage 3 confidence (if ran)
+        icon_set_pick           str | None   — Stage 3 winning set_code
         candidates_considered   list[str]    — same-art candidate ids at entry
         candidates_surviving    list[str]    — ids after cascade filtering
     """
@@ -105,6 +109,8 @@ def _empty_result(card_id: Optional[str], source: str) -> dict:
         "frame_pick": None,
         "stamp_confidence": None,
         "stamp_has_stamp": None,
+        "icon_confidence": None,
+        "icon_set_pick": None,
         "candidates_considered": [],
         "candidates_surviving": [],
     }
@@ -138,6 +144,8 @@ def _run_cascade(
             "frame_pick": None,
             "stamp_confidence": None,
             "stamp_has_stamp": None,
+            "icon_confidence": None,
+            "icon_set_pick": None,
             "candidates_considered": candidate_ids,
             "candidates_surviving": candidate_ids,
         }
@@ -147,8 +155,11 @@ def _run_cascade(
     frame_pick = None
     stamp_confidence: Optional[float] = None
     stamp_has_stamp: Optional[bool] = None
+    icon_confidence: Optional[float] = None
+    icon_set_pick: Optional[str] = None
     frame_committed = False
     stamp_committed = False
+    icon_committed = False
 
     # --- Stage 1: frame / frame_effects ---
     frames = {frame_combo_from_card(c) for c in surviving}
@@ -184,25 +195,53 @@ def _run_cascade(
                          if c.get("set") not in LIST_LIKE_SETS]
             stamp_committed = True
 
-    # --- Stage 3: set icon (Phase 6 — stubbed) ---
-    # When implemented, this stage will filter `surviving` by matching
-    # the scan's set icon against templates for each remaining
-    # candidate's set_code.
+    # --- Stage 3: set icon ---
+    # Runs only if more than one surviving candidate disagrees on
+    # `set`. We pass the most likely frame + frame_effects (either
+    # what Stage 1 committed, or the first surviving candidate's
+    # combo) so the ROI lookup is consistent.
+    surviving_sets = {c.get("set") for c in surviving}
+    if len(surviving_sets) >= 2:
+        if frame_pick is not None:
+            icon_frame = frame_pick[0]
+            icon_frame_effects = frame_pick[1]
+        else:
+            icon_frame = surviving[0].get("frame")
+            icon_frame_effects = surviving[0].get("frame_effects") or ()
+        candidate_set_codes = sorted(
+            {c.get("set") for c in surviving if c.get("set")}
+        )
+        icon_set_pick, icon_confidence = identify_set_icon(
+            card_img,
+            candidate_set_codes,
+            icon_frame,
+            icon_frame_effects,
+            debug=debug,
+        )
+        if icon_set_pick is not None:
+            surviving = [c for c in surviving
+                         if c.get("set") == icon_set_pick]
+            icon_committed = True
 
     surviving_ids = [c.get("id") for c in surviving]
 
     # --- Decide source label ---
+    committed_count = sum(
+        1 for x in (frame_committed, stamp_committed, icon_committed) if x
+    )
     if len(surviving) == 1:
         final_id = surviving[0].get("id")
-        if frame_committed and stamp_committed:
+        if committed_count >= 2:
             source = SOURCE_FULLY_DISAMBIGUATED
+        elif icon_committed:
+            source = SOURCE_ICON_DISAMBIGUATED
         elif stamp_committed:
             source = SOURCE_STAMP_DISAMBIGUATED
         elif frame_committed:
             source = SOURCE_FRAME_DISAMBIGUATED
         else:
             # Only one candidate survived, but we didn't actually
-            # commit either detector — the candidate list was already
+            # commit any detector — the candidate list was already
             # narrow or detectors were low-confidence but a single
             # candidate remained after filtering.
             source = SOURCE_SINGLE_MATCH
@@ -224,6 +263,8 @@ def _run_cascade(
         "frame_pick": frame_pick,
         "stamp_confidence": stamp_confidence,
         "stamp_has_stamp": stamp_has_stamp,
+        "icon_confidence": icon_confidence,
+        "icon_set_pick": icon_set_pick,
         "candidates_considered": candidate_ids,
         "candidates_surviving": surviving_ids,
     }
