@@ -1,14 +1,14 @@
 """Unit tests for set_icon.py.
 
-Synthetic tests construct a card image that embeds a known set's edge
-template inside the modern-frame ROI. Integration tests that need real
-card scans live in tests/test_printing_disambiguation.py.
+Synthetic tests construct a card image that embeds a known set's
+averaged-from-PNGs grayscale template inside the modern-frame ROI.
+Integration tests that need real card scans live in
+tests/test_printing_disambiguation.py.
 """
 
 import os
 import sys
 import unittest
-from unittest.mock import patch
 
 import cv2
 import numpy as np
@@ -16,6 +16,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import set_icon as si
+from set_symbol_roi import get_symbol_roi
 
 
 def _blank_card() -> np.ndarray:
@@ -29,45 +30,49 @@ def _paint_template_into_roi(
 ) -> np.ndarray:
     """Paste a grayscale template into the (x, y, w, h) ROI of a BGR card."""
     x, y, w, h = roi
-    # Center the template inside the ROI (the ROI is larger than the
-    # template by design).
     th, tw = template_gray.shape[:2]
-    ox = x + (w - tw) // 2
-    oy = y + (h - th) // 2
+    ox = x + max(0, (w - tw) // 2)
+    oy = y + max(0, (h - th) // 2)
     card[oy:oy + th, ox:ox + tw] = np.stack([template_gray] * 3, axis=-1)
     return card
 
 
-class TestLoadTemplate(unittest.TestCase):
+# Use dmu — dmu_2015_edge.png and dmu_2015_gray.png are both built by
+# build_png_roi_templates.py and the set has only one frame treatment.
+_DMU_EDGE = os.path.join(si._TEMPLATE_DIR, "dmu_2015_edge.png")
+_DMU_GRAY = os.path.join(si._TEMPLATE_DIR, "dmu_2015_gray.png")
 
-    def test_unknown_set_returns_none(self):
-        self.assertIsNone(si._load_template("zzz_not_a_set"))
 
-    def test_known_set_returns_array(self):
-        # xln is cached by fetch_set_symbols.py
-        path = os.path.join(si._EDGE_DIR, "xln_32.png")
-        if not os.path.exists(path):
-            self.skipTest("set_symbols cache missing — "
-                          "run fetch_set_symbols.py first")
-        t = si._load_template("xln")
-        self.assertIsNotNone(t)
-        self.assertEqual(t.shape[0], si.TEMPLATE_SIZE)
+class TestLoadTemplatePair(unittest.TestCase):
+
+    def test_unknown_set_returns_none_pair(self):
+        e, g = si._load_template_pair("zzz_not_a_set", "2015")
+        self.assertIsNone(e)
+        self.assertIsNone(g)
+
+    def test_known_set_returns_arrays(self):
+        if not (os.path.exists(_DMU_EDGE) and os.path.exists(_DMU_GRAY)):
+            self.skipTest("roi_templates cache missing — "
+                          "run build_png_roi_templates.py first")
+        e, g = si._load_template_pair("dmu", "2015")
+        self.assertIsNotNone(e)
+        self.assertIsNotNone(g)
+        # Both templates were built from the same ROI, so same shape.
+        self.assertEqual(e.shape, g.shape)
 
 
 class TestIdentifySetIcon(unittest.TestCase):
 
     def setUp(self):
-        xln_path = os.path.join(si._EDGE_DIR, "xln_32.png")
-        dmu_path = os.path.join(si._EDGE_DIR, "dmu_32.png")
-        if not (os.path.exists(xln_path) and os.path.exists(dmu_path)):
-            self.skipTest("set_symbols cache missing — "
-                          "run fetch_set_symbols.py first")
-        self.xln_template = cv2.imread(xln_path, cv2.IMREAD_GRAYSCALE)
+        if not (os.path.exists(_DMU_EDGE) and os.path.exists(_DMU_GRAY)):
+            self.skipTest("roi_templates cache missing — "
+                          "run build_png_roi_templates.py first")
+        self.dmu_gray = cv2.imread(_DMU_GRAY, cv2.IMREAD_GRAYSCALE)
 
     def test_borderless_short_circuits(self):
         card = _blank_card()
         pick, conf = si.identify_set_icon(
-            card, ["xln", "dmu"], frame="2015",
+            card, ["dmu", "mom"], frame="2015",
             frame_effects=["borderless"],
         )
         self.assertIsNone(pick)
@@ -93,47 +98,34 @@ class TestIdentifySetIcon(unittest.TestCase):
         """Pure black ROI -> Canny returns no edges -> short-circuit."""
         card = _blank_card()
         pick, conf = si.identify_set_icon(
-            card, ["xln", "dmu"], frame="2015",
+            card, ["dmu", "mom"], frame="2015",
         )
         self.assertIsNone(pick)
         self.assertEqual(conf, 0.0)
 
     def test_template_planted_in_roi_is_recovered(self):
-        """Paint xln's edge template into the 2015-frame ROI; xln should win."""
+        """Paint dmu's gray template into the 2015-frame ROI; dmu wins."""
         card = _blank_card()
-        # Need the ROI filled with edge-like signal. Paste the *grayscale
-        # png* (not edge) so that running Canny on it reconstructs the
-        # edges we'll compare against the cached edge template.
-        png_path = os.path.join(
-            os.path.dirname(si._EDGE_DIR), "png", "xln_32.png"
-        )
-        if not os.path.exists(png_path):
-            self.skipTest("xln_32.png missing")
-        xln_png = cv2.imread(png_path, cv2.IMREAD_GRAYSCALE)
-
-        # Modern frame ROI: (660, 600, 70, 55)
-        card = _paint_template_into_roi(card, xln_png, (660, 600, 70, 55))
+        roi = get_symbol_roi("2015")
+        card = _paint_template_into_roi(card, self.dmu_gray, roi)
 
         pick, conf = si.identify_set_icon(
-            card, ["xln", "dmu", "neo"], frame="2015",
+            card, ["dmu", "mom", "one"], frame="2015",
         )
-        self.assertEqual(pick, "xln")
+        self.assertEqual(pick, "dmu")
         self.assertGreaterEqual(conf, si.SET_ICON_THRESHOLD)
 
     def test_missing_candidate_templates_dont_crash(self):
         """A candidate with no cached template should be silently skipped."""
         card = _blank_card()
-        png_path = os.path.join(
-            os.path.dirname(si._EDGE_DIR), "png", "xln_32.png"
-        )
-        xln_png = cv2.imread(png_path, cv2.IMREAD_GRAYSCALE)
-        card = _paint_template_into_roi(card, xln_png, (660, 600, 70, 55))
+        roi = get_symbol_roi("2015")
+        card = _paint_template_into_roi(card, self.dmu_gray, roi)
         pick, conf = si.identify_set_icon(
-            card, ["xln", "zzz_not_a_set"], frame="2015",
+            card, ["dmu", "zzz_not_a_set"], frame="2015",
         )
-        # xln is still the only real candidate; with only one scorer the
-        # margin test is skipped and xln wins on threshold alone.
-        self.assertEqual(pick, "xln")
+        # dmu is still the only real candidate; with only one scorer the
+        # margin test is skipped and dmu wins on threshold alone.
+        self.assertEqual(pick, "dmu")
 
 
 class TestTransformedTemplates(unittest.TestCase):

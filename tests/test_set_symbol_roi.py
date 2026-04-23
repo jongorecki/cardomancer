@@ -33,10 +33,14 @@ class TestFrameLookup(unittest.TestCase):
             self.assertGreater(y, 520)
             self.assertGreater(x, 500)
 
-    def test_future_frame_falls_back_to_modern(self):
+    def test_future_frame_uses_2003_roi(self):
+        """Future Sight is the only set using the future frame; its
+        symbol sits Mirrodin-style (right of the long type-line band),
+        not 2015-style (small rectangle right of the thinner band).
+        Empirically calibrated against clean Scryfall PNGs."""
         self.assertEqual(
             ssr.get_symbol_roi("future"),
-            ssr.get_symbol_roi("2015"),
+            ssr.get_symbol_roi("2003"),
         )
 
     def test_roi_fits_within_card_bounds(self):
