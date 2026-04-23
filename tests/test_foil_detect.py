@@ -24,9 +24,11 @@ import cv2
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import foil_detect
 from foil_detect import (
     detect_foil,
     _compute_bright_stats,
+    _load_reference,
     FOIL_CONFIDENCE_THRESHOLD,
     FOIL_BIAS,
     W_DELTA_BRIGHT_FRAC,
@@ -364,6 +366,108 @@ class TestScoreFormulaRegression(unittest.TestCase):
                 msg=f"Confidence drift for ({dbf},{dms},{dhr}): "
                     f"got {score:.4f}, expected {expected:.4f}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Reference loading + printings_map fallback
+# ---------------------------------------------------------------------------
+
+import tempfile
+
+
+class TestLoadReference(unittest.TestCase):
+    """Verify _load_reference handles direct lookup, the printings_map
+    fallback (for cards whose PNG was deduped under a representative
+    card_id), and the missing case."""
+
+    def setUp(self):
+        # Stand up a temporary REFERENCE_DIR with one fake PNG for a
+        # known representative id. Patch foil_detect.REFERENCE_DIR to
+        # point at it for the duration of this test.
+        self.tmpdir = tempfile.mkdtemp()
+        self.rep_id = "rep-uuid-1234"
+        self.printing_id = "printing-uuid-5678"
+        # 745x1040 BGR red image — valid PNG that cv2.imread will load
+        red = np.full((1040, 745, 3), 255, dtype=np.uint8)
+        red[:, :, 0] = 0
+        red[:, :, 1] = 0
+        cv2.imwrite(os.path.join(self.tmpdir, f"{self.rep_id}.png"), red)
+        self._orig_ref_dir = foil_detect.REFERENCE_DIR
+        foil_detect.REFERENCE_DIR = self.tmpdir
+        # Reset the cached inverse map and seed it with our fixture
+        self._orig_inv = foil_detect._PRINTING_TO_REP
+        foil_detect._PRINTING_TO_REP = {
+            self.printing_id: self.rep_id,
+            self.rep_id: self.rep_id,  # self-mapping
+        }
+
+    def tearDown(self):
+        foil_detect.REFERENCE_DIR = self._orig_ref_dir
+        foil_detect._PRINTING_TO_REP = self._orig_inv
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_direct_lookup_succeeds_when_png_exists(self):
+        img = _load_reference(self.rep_id)
+        self.assertIsNotNone(img)
+        self.assertEqual(img.shape, (1040, 745, 3))
+
+    def test_falls_back_to_representative_via_printings_map(self):
+        """A printing whose own {card_id}.png doesn't exist should still
+        resolve via the printings_map inverse to the representative PNG."""
+        img = _load_reference(self.printing_id)
+        self.assertIsNotNone(img,
+            "printings_map fallback should have found the rep PNG")
+        self.assertEqual(img.shape, (1040, 745, 3))
+
+    def test_returns_none_when_truly_missing(self):
+        img = _load_reference("not-in-map-at-all-xyz")
+        self.assertIsNone(img)
+
+    def test_returns_none_for_empty_card_id(self):
+        self.assertIsNone(_load_reference(None))
+        self.assertIsNone(_load_reference(""))
+
+    def test_returns_none_when_rep_png_also_missing(self):
+        """Printing maps to a rep_id, but the rep PNG file isn't on
+        disk either."""
+        foil_detect._PRINTING_TO_REP["orphan-printing"] = "rep-with-no-png"
+        self.assertIsNone(_load_reference("orphan-printing"))
+
+
+class TestBuildPrintingToRep(unittest.TestCase):
+    """Verify the loader gracefully handles missing/broken
+    printings_map.json without crashing detect_foil."""
+
+    def test_missing_printings_map_yields_empty_dict(self):
+        # Reset the cache, point PRINTINGS_MAP_PATH at a nonexistent file
+        orig_path = foil_detect.PRINTINGS_MAP_PATH
+        orig_inv = foil_detect._PRINTING_TO_REP
+        foil_detect.PRINTINGS_MAP_PATH = "/nonexistent/path/printings_map.json"
+        foil_detect._PRINTING_TO_REP = None
+        try:
+            inv = foil_detect._build_printing_to_rep()
+            self.assertEqual(inv, {})
+        finally:
+            foil_detect.PRINTINGS_MAP_PATH = orig_path
+            foil_detect._PRINTING_TO_REP = orig_inv
+
+    def test_malformed_json_yields_empty_dict(self):
+        with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".json", delete=False) as f:
+            f.write("{not valid json")
+            bad_path = f.name
+        orig_path = foil_detect.PRINTINGS_MAP_PATH
+        orig_inv = foil_detect._PRINTING_TO_REP
+        foil_detect.PRINTINGS_MAP_PATH = bad_path
+        foil_detect._PRINTING_TO_REP = None
+        try:
+            inv = foil_detect._build_printing_to_rep()
+            self.assertEqual(inv, {})
+        finally:
+            foil_detect.PRINTINGS_MAP_PATH = orig_path
+            foil_detect._PRINTING_TO_REP = orig_inv
+            os.unlink(bad_path)
 
 
 if __name__ == "__main__":

@@ -43,16 +43,25 @@
 # camera changes significantly.
 # ---------------------------------------------------------------------------
 
+import json
 import os
 from typing import Optional
 
 import cv2
 import numpy as np
 
-from config import SCRIPT_DIR
+from config import PRINTINGS_MAP_PATH, SCRIPT_DIR
 
 # --- Paths ---
 REFERENCE_DIR = os.path.join(SCRIPT_DIR, "downloaded_cards")
+
+# --- Printing → representative map (lazy) ---
+# The download pipeline dedupes by (illustration_id, frame), so many
+# printings share a single PNG file stored under a representative
+# card_id, NOT under their own card_id. This inverse map lets
+# _load_reference() find the PNG even when a direct {card_id}.png
+# lookup fails. Built on first call from printings_map.json.
+_PRINTING_TO_REP: Optional[dict] = None
 
 # --- Bright-pixel gate ---
 BRIGHT_V_THRESH = 220          # HSV V above this = "bright pixel"
@@ -146,15 +155,59 @@ def _resize_to_match(img_a, img_b):
     return cv2.resize(img_a, (w, h), interpolation=cv2.INTER_AREA)
 
 
+def _build_printing_to_rep() -> dict:
+    """Load printings_map.json once and build the inverse map
+    {printing_id -> representative_id}.
+
+    Returns {} if the map file is missing or unreadable (the caller
+    will then just fail the no_reference check as before).
+    """
+    global _PRINTING_TO_REP
+    if _PRINTING_TO_REP is not None:
+        return _PRINTING_TO_REP
+
+    inv = {}
+    if os.path.isfile(PRINTINGS_MAP_PATH):
+        try:
+            with open(PRINTINGS_MAP_PATH, 'r', encoding='utf-8') as f:
+                pm = json.load(f)
+            for rep_id, entry in pm.items():
+                for printing in entry.get('printings', []):
+                    pid = printing.get('id')
+                    if pid:
+                        inv[pid] = rep_id
+        except (OSError, ValueError):
+            pass  # leave inv empty; fallback will just no-op
+
+    _PRINTING_TO_REP = inv
+    return inv
+
+
 def _load_reference(card_id):
-    """Load the reference PNG for a card ID. Returns BGR image or None."""
+    """Load the reference PNG for a card ID. Returns BGR image or None.
+
+    Tries `{card_id}.png` directly first. If that fails, falls back via
+    printings_map.json — the download pipeline dedupes by
+    (illustration_id, frame), so many printings share a single PNG
+    stored under a representative card_id.
+    """
     if not card_id:
         return None
+
+    # Direct lookup
     path = os.path.join(REFERENCE_DIR, f"{card_id}.png")
-    if not os.path.isfile(path):
-        return None
-    img = cv2.imread(path)
-    return img
+    if os.path.isfile(path):
+        return cv2.imread(path)
+
+    # Fallback: this card's printing was deduped to a representative
+    inv = _build_printing_to_rep()
+    rep_id = inv.get(card_id)
+    if rep_id and rep_id != card_id:
+        rep_path = os.path.join(REFERENCE_DIR, f"{rep_id}.png")
+        if os.path.isfile(rep_path):
+            return cv2.imread(rep_path)
+
+    return None
 
 
 def detect_foil(card_img, card_id: Optional[str] = None,
