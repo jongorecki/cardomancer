@@ -6,10 +6,14 @@
 # card's reference PNG (downloaded_cards/<card_id>.png) to distinguish "this
 # specific scan is a foil printing" from "this card has bright saturated art".
 #
-# The approach: foils look NORMAL under diffuse reference-photo light, but
-# under the LED scanner they develop specular rainbow hotspots that
-# (a) brighten the image, (b) desaturate in the hotspot center, and
-# (c) scatter hue across the spectrum in the bright regions.
+# The approach: compare the scan's bright-pixel statistics to the Scryfall
+# reference image. Under the current LED scanner:
+#   - Non-foil cards diffuse-reflect. Under the bright LED the scan comes
+#     out UNIFORMLY BRIGHTER than the matte Scryfall reference, with
+#     bright regions that roughly match the reference's saturation.
+#   - Foil cards reflect most light off-angle (away from the camera). The
+#     overall scan reads DARKER or ~equal to the reference, but the
+#     occasional specular hotspot appears as a saturated rainbow color.
 #
 # No single signal alone works — many non-foil cards (basic lands, full-art
 # promos) have naturally bright saturated art and would trip a single-
@@ -18,23 +22,25 @@
 # Three signals combine into a single confidence score:
 #
 #   S1: delta_bright_frac = bright_frac(scan) - bright_frac(ref)
-#       Foils have MORE bright pixels than their reference due to specular
-#       reflection. Typical foil: +0.02 to +0.15. Non-foil: ±0.005.
+#       Foils are DARKER or equal vs their reference under LED scan
+#       (most light reflects off-angle). Non-foils are brighter (diffuse).
+#       Observed foil mean: -0.03. Non-foil mean: +0.15.
 #
 #   S2: delta_mean_s = mean_s_bright(scan) - mean_s_bright(ref)
-#       Foils DESATURATE in specular hotspots (rainbow shimmer reads close
-#       to white). Typical foil: -15 to -40. Non-foil: ±5.
+#       Foil bright pixels are SATURATED rainbow hotspots (one hue per
+#       spot), while non-foil bright pixels match the reference's
+#       desaturated white/light regions.
+#       Observed foil mean: +44. Non-foil mean: 0.
 #
 #   S3: hue_range_bright = spread of hue values in bright pixels
-#       Foils scatter hue across the rainbow (high spread). Non-foils
-#       cluster around the art's dominant hue.
+#       Weak signal under current lighting; near-zero weight in the model.
 #
 # Public API:
 #   detect_foil(card_img, card_id=None, reference_img=None) -> dict
 #
-# Tuning note: default thresholds err on the side of under-detection.
-# It's better to flag a foil as nonfoil than to flag every basic land as
-# a foil. Use prototype_foil_multisignal.py to re-tune on your labeled set.
+# Tuning note: default threshold tuned for 92% precision / 72% recall on
+# the 2026-04-22 labeled set. Re-tune via _foil_tune.py when lighting or
+# camera changes significantly.
 # ---------------------------------------------------------------------------
 
 import os
@@ -52,26 +58,39 @@ REFERENCE_DIR = os.path.join(SCRIPT_DIR, "downloaded_cards")
 BRIGHT_V_THRESH = 220          # HSV V above this = "bright pixel"
 MIN_BRIGHT_PIXELS = 500        # need this many to trust the signal
 
-# --- Score weights (tuned against session_20260415_130451 top-30) ---
-# Normalized per-signal contributions; final score in roughly [-1, +1] range.
-W_DELTA_BRIGHT_FRAC = 3.0      # multiplier on bright_frac delta
-W_DELTA_MEAN_S      = -0.025   # negative: desaturation in bright pixels
-                                # contributes POSITIVE foil score
-W_HUE_RANGE_BRIGHT  = 0.005    # multiplier on hue spread in bright pixels
+# --- Score weights ---
+#
+# Tuned 2026-04-22 via logistic regression on:
+#   - Session 51 (58 confirmed foils, new lighting)
+#   - Session 44 (401 casual scans, 12 foils relabeled after manual review)
+# Total training set: 50 foils + 319 nonfoils = 369 labeled samples.
+#
+# All weight signs FLIPPED from the original old-lighting calibration —
+# under the new brighter directional LED, foil physics read differently:
+#   - Foils reflect most light off-angle, so scan appears DARKER than the
+#     Scryfall ref (dbf < 0) where nonfoils read BRIGHTER (dbf > 0).
+#   - Foil bright pixels are saturated rainbow hotspots (dms > 0), not the
+#     desaturated whites the original model expected.
+#   - Hue range provides a small additional signal.
+#
+# See plans/handoff/ (foil retune notes) and _foil_tune.py for the fit.
+W_DELTA_BRIGHT_FRAC = -18.92      # was +3.0
+W_DELTA_MEAN_S      = +0.0474     # was -0.025
+W_HUE_RANGE_BRIGHT  = -0.0057     # was +0.005
+FOIL_BIAS           = +0.294      # new: logistic regression intercept
 
 # --- Classification threshold ---
 # confidence >= this -> is_foil = True
 #
-# Calibration against session_20260415_130451 (358 reference-comparable scans,
-# 1 known foil at scan 205 = Zombie Infestation):
-#   - threshold 0.45 flags 104/358 (~29%) — far too many false positives
-#   - threshold 1.00 flags ~30/358 (~8%) — matches realistic foil rate
-#   - threshold 1.50 flags ~15/358 (~4%) — misses scan 205 (conf=1.39)
+# Calibration on 50 foils + 319 nonfoils (2026-04-22 retune):
+#   - +1.25 -> 90% precision, 72% recall (4 FP / 36 TP)
+#   - +1.50 -> 92% precision, 72% recall (3 FP / 36 TP)    <-- default
+#   - +2.20 -> 96% precision, 48% recall (1 FP / 24 TP)
 #
-# 1.0 is the conservative first-cut default: catches the known foil with
-# margin, flags roughly the expected foil rate in a casual collection.
-# Re-tune after hand-labeling foil_multisignal/top30/*.
-FOIL_CONFIDENCE_THRESHOLD = 1.0
+# +1.50 picked as default: best F1 on training set, 42x recall
+# improvement over the prior old-lighting calibration which only flagged
+# 1/58 foils (1.7% recall).
+FOIL_CONFIDENCE_THRESHOLD = 1.50
 
 
 def _compute_bright_stats(img_bgr):
@@ -228,13 +247,17 @@ def detect_foil(card_img, card_id: Optional[str] = None,
     out["signals"]["delta_hue_range"] = delta_hue_range
 
     # --- 4. Score ---
-    # Foil indicators:
-    #   delta_bright_frac > 0      (more highlights in scan)
-    #   delta_mean_s      < 0      (hotspots desaturate toward white)
-    #   delta_hue_range   > 0      (rainbow scatter in bright pixels)
+    # Under the current LED scanner, foil indicators (signs matched to
+    # observed class means — see W_* definitions above):
+    #   delta_bright_frac < 0   (foils look darker than ref; nonfoils brighter)
+    #   delta_mean_s      > 0   (bright pixels in foil scans are saturated
+    #                            rainbow hotspots vs. Scryfall's desaturated
+    #                            whites)
+    #   delta_hue_range   < 0   (weak signal; near-zero weight)
     confidence = (
-        W_DELTA_BRIGHT_FRAC * delta_bright_frac
-        + W_DELTA_MEAN_S   * delta_mean_s
+        FOIL_BIAS
+        + W_DELTA_BRIGHT_FRAC * delta_bright_frac
+        + W_DELTA_MEAN_S     * delta_mean_s
         + W_HUE_RANGE_BRIGHT * delta_hue_range
     )
 
