@@ -2,7 +2,7 @@
 
 ## STATUS
 
-Phases 1–4 complete (2026-04-22). Phases 5–7 pending.
+Phases 1–5 complete (2026-04-22). Phases 6–7 pending.
 
 Being built in parallel with foil detection (`plans/foil_detection_plan.md`)
 on branch `feature/printing-disambiguation`.
@@ -332,38 +332,49 @@ def compute_confusable_pairs(png_dir, size, threshold) -> List[(a, b, dist)]
 
 ---
 
-## Phase 5: Set-Icon Frame-Era ROI Lookup
+## Phase 5: Set-Icon Frame-Era ROI Lookup — DONE 2026-04-22
 
-Set-icon position on the card depends on **frame era**, which Scryfall
-provides in `frame` (and `frame_effects` for treatments).
+**Module:** `set_symbol_roi.py`
+**Tests:** `tests/test_set_symbol_roi.py` (19 tests, passing)
 
-### Frame → ROI table
-
-| Frame | Position | Notes |
-|-------|----------|-------|
-| `1993` | No icon | Alpha–4th editions — no set symbol exists. Skip. |
-| `1997` | Lower-right, under art, above type line | 6th Ed–Scourge. Black only. |
-| `2003` | Right of type line | Mirrodin–M15. Rarity-tinted. |
-| `2015` | Right of type line | M15-onward modern frame. |
-| `future` | Right of type line | Future Sight frame. Handle as 2003-equivalent initially. |
-
-### `frame_effects` modifiers
-
-- `borderless` — often **no** set symbol. Return `None`.
-- `showcase` — position varies per treatment. Start by returning
-  `None`; extend per-showcase as we see misses.
-- `extendedart` — same location as base frame.
-- `inverted`, `colorshifted`, `devoid` — base frame applies.
-
-### API
+### What shipped
 
 ```python
-SET_SYMBOL_ROI: dict[tuple[str, tuple[str, ...]], tuple[float, float, float, float] | None]
+def get_symbol_roi(
+    frame: Optional[str],
+    frame_effects: Optional[Iterable[str]] = None,
+) -> Optional[Tuple[int, int, int, int]]:
+    """Return (x, y, w, h) on 745x1040, or None to skip the icon stage."""
 
-def get_symbol_roi(frame: str, frame_effects: list[str] | None) -> tuple[int, int, int, int] | None:
-    """Return (x, y, w, h) in pixels on the post-rectification 745x1040
-    card image. None means 'no symbol expected — skip icon matching'."""
+def has_symbol(card: dict) -> bool:
+    """Shortcut that takes a Scryfall card dict directly."""
 ```
+
+Internal table:
+
+| Frame | ROI (x, y, w, h) | Notes |
+|-------|------------------|-------|
+| `1993` | `None` | Alpha–4th: no symbol exists |
+| `1997` | `(640, 485, 80, 45)` | Lower-right of art box |
+| `2003` | `(660, 600, 70, 55)` | Right of type line |
+| `2015` | `(660, 600, 70, 55)` | Same as 2003 initially |
+| `future` | `(660, 600, 70, 55)` | Future Sight — treat as 2003 |
+
+### `frame_effects` handling
+
+- `NO_SYMBOL_EFFECTS = {borderless, showcase}` — any of these → `None`
+- Cosmetic effects (`extendedart`, `inverted`, `colorshifted`, `devoid`,
+  `legendary`, `snow`, `nyxtouched`, DFC variants, …) → base frame ROI
+  unchanged. Case-insensitive matching.
+
+### Calibration status
+
+The pixel ROIs above are **initial estimates** anchored on the existing
+hash-DB region constants in `build_hash_db_v3.py` (art ends ~y=520) and
+standard MTG card layout. Phase 7 will feed labeled scans through
+`diag_printing.py` and tune per-frame ROIs to maximize the set-icon
+match signal. Every ROI in the table is validated in tests to fit
+inside a 745×1040 frame.
 
 ---
 
