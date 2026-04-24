@@ -640,6 +640,29 @@
                                         </select>
                                     </div>
                                 </div>
+                                <!-- Active sort preset (mirrors Sort Configuration tab).
+                                     Changing this selector immediately updates the
+                                     Sort Configuration tab's table so Start Session
+                                     sends the right config_lines. -->
+                                <div class="row g-2 mb-2 align-items-end">
+                                    <div class="col-sm-8">
+                                        <label class="form-label small mb-0"
+                                               for="dashboard-sort-preset-select">
+                                            Sort preset
+                                        </label>
+                                        <select class="form-select form-select-sm"
+                                                id="dashboard-sort-preset-select"
+                                                onchange="onDashboardSortPresetSelect()">
+                                            <option value="">-- loading --</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-sm-4 text-end">
+                                        <span class="small text-muted"
+                                              id="dashboard-sort-preset-hint">
+                                            Applied on Start Session
+                                        </span>
+                                    </div>
+                                </div>
                                 <div class="d-flex gap-2 flex-wrap">
                                     <button id="btn-start-session" class="btn btn-success" onclick="startSession()">Start Session</button>
                                     <button id="btn-detect" class="btn btn-primary btn-lg" onclick="apiPost('/api/session/detect')" disabled>Detect & Sort</button>

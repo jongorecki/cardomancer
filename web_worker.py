@@ -97,6 +97,11 @@ class SortWorker:
         # Stack estimation
         self.empty_bin_z = None  # Calibrated Z when source bin is empty
         self.last_source_z = None  # Last probed Z at source
+
+        # Foil multi-frame pair: stashed B-crop awaiting orientation
+        # decision from identify_card (see _capture_foil_pair +
+        # _flush_foil_b_crop).
+        self._pending_foil_b_crop = None
         self.card_thickness = 0.3  # mm per card
         self.sort_times = []  # Recent sort durations for speed estimate
 
@@ -1231,6 +1236,9 @@ class SortWorker:
             if back_hit:
                 id_result['is_card_back'] = True
                 self._save_card_crop(img)
+                # Card back path never rotates — flush B unrotated to
+                # keep the A/B pair in matching orientation.
+                self._flush_foil_b_crop(was_rotated=False)
                 self.log(f"Card back detected (dist={back_dist:.1f}) "
                          f"— routing to fallback")
                 return
@@ -1254,6 +1262,9 @@ class SortWorker:
             if was_rotated:
                 oriented = cv2.rotate(img, cv2.ROTATE_180)
             self._save_card_crop(oriented)
+            # Flush the foil-pair B crop with the SAME rotation so A/B
+            # end up in matching orientation for the foil probe.
+            self._flush_foil_b_crop(was_rotated=was_rotated)
 
             # Filter for paper-only, non-excluded sets
             filtered = []
@@ -1811,9 +1822,30 @@ class SortWorker:
         except Exception as e:
             self.log(f"[foil-pair] warp error: {e}")
             return
-        self._save_card_crop_b(crop_b)
+        # Stash the crop instead of saving immediately — it needs the
+        # same 180° rotation that identify_card decides for the A crop.
+        # _cmd_detect_and_sort flushes this to disk right after A is
+        # saved, so the pair stays in the same orientation. Without this,
+        # cards the identifier rotates end up as A-upright / B-upside-down
+        # and the foil probe sees a mean_abs_delta of ~90 per card.
+        self._pending_foil_b_crop = crop_b
         self.log(f"[foil-pair] Captured second frame at +{dx_mm}mm "
                  f"(sharp={sharpness:.1f})")
+
+    def _flush_foil_b_crop(self, was_rotated):
+        """Save the stashed B crop with the A-matching orientation.
+
+        Must be called after _save_card_crop(oriented) so the A and B
+        filenames line up. Called once per scan; clears the stash on
+        success or failure so it can't carry over to the next card.
+        """
+        crop = getattr(self, '_pending_foil_b_crop', None)
+        self._pending_foil_b_crop = None
+        if crop is None:
+            return
+        if was_rotated:
+            crop = cv2.rotate(crop, cv2.ROTATE_180)
+        self._save_card_crop_b(crop)
 
     def _save_hash_diagnostics(self, card_img, top_candidates, card_layout):
         """

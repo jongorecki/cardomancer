@@ -1896,6 +1896,11 @@ async function loadSortConfigList() {
             };
         }
         sel.innerHTML = '';
+        // Also populate the Dashboard mirror dropdown so the user can
+        // pick the preset right next to the Start Session button without
+        // having to navigate to the Sort Configuration tab.
+        const dashSel = document.getElementById('dashboard-sort-preset-select');
+        if (dashSel) dashSel.innerHTML = '';
         for (const cfg of configs) {
             const opt = document.createElement('option');
             opt.value = cfg.filename;
@@ -1903,13 +1908,19 @@ async function loadSortConfigList() {
             opt.textContent = cfg.filename + builtinTag;
             if (cfg.description) opt.title = cfg.description;
             sel.appendChild(opt);
+            if (dashSel) {
+                const opt2 = opt.cloneNode(true);
+                dashSel.appendChild(opt2);
+            }
         }
         if (configs.length) {
             // If current file is still in the list, keep selection; else first
             if (_scFilename && configs.some(c => c.filename === _scFilename)) {
                 sel.value = _scFilename;
+                if (dashSel) dashSel.value = _scFilename;
             } else {
                 sel.value = configs[0].filename;
+                if (dashSel) dashSel.value = configs[0].filename;
                 await loadSortConfigFile(configs[0].filename);
             }
         }
@@ -1933,9 +1944,11 @@ async function loadSortConfigFile(filename) {
         const ta = document.getElementById('sort-config-text-area');
         if (ta) ta.value = content;
         _updateSortConfigToolbar();
-        // Sync the select element
+        // Sync BOTH preset selectors (Sort Config tab + Dashboard).
         const sel = document.getElementById('sort-preset-select');
         if (sel) sel.value = filename;
+        const dashSel = document.getElementById('dashboard-sort-preset-select');
+        if (dashSel) dashSel.value = filename;
     } catch (e) {
         addLog(`Failed to load sort config "${filename}": ` + e);
     }
@@ -1943,6 +1956,15 @@ async function loadSortConfigFile(filename) {
 
 function onSortPresetSelect() {
     const sel = document.getElementById('sort-preset-select');
+    if (!sel || !sel.value) return;
+    loadSortConfigFile(sel.value);
+}
+
+// Dashboard-side preset selector: same effect as the Sort Configuration
+// tab's dropdown — load the file into the table so serializeSortConfig()
+// picks up the right queries when Start Session fires.
+function onDashboardSortPresetSelect() {
+    const sel = document.getElementById('dashboard-sort-preset-select');
     if (!sel || !sel.value) return;
     loadSortConfigFile(sel.value);
 }
@@ -2369,6 +2391,16 @@ async function startSession() {
 
     const config_lines = serializeSortConfig();
     const payload = { config_lines };
+
+    // Log the preset that's about to be applied so the user can confirm
+    // the Dashboard dropdown actually took effect (this was a recurring
+    // "why is it always sorting by color?" complaint before the dashboard
+    // preset selector was added).
+    if (_scFilename) {
+        addLog(`Starting session with preset: ${_scFilename}`);
+    } else {
+        addLog('Starting session with unsaved sort config');
+    }
 
     const notes = document.getElementById('session-notes')?.value?.trim();
     if (notes) payload.notes = notes;
