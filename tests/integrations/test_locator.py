@@ -231,5 +231,126 @@ class TestLocateEndpoint(unittest.TestCase):
         self.assertEqual(data['groups'], [])
 
 
+class TestLocatorPostEndpoint(unittest.TestCase):
+    """Tests for the POST /api/locator/query endpoint (Phase 2.11 AC path)."""
+
+    @classmethod
+    def setUpClass(cls):
+        import web_server
+        cls.web_server = web_server
+        cls.app = web_server.app
+        cls.client = cls.app.test_client()
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.tmpdir, "locator_post.db")
+        self._orig_path = collection_db.DB_PATH
+        collection_db.DB_PATH = self.db_path
+        self.conn = collection_db.get_connection(db_path=self.db_path)
+
+        self.box = collection_db.add_box(self.conn, "Post Box")
+        self.div = collection_db.add_divider(self.conn, self.box, "D1", 1)
+        _seed(self.conn, "Post Bolt", colors="R",
+              divider_id=self.div, quantity=3)
+        _seed(self.conn, "Post Island", colors="U",
+              box="Shoebox", quantity=1)
+        _seed(self.conn, "Post Orphan", colors="G")
+
+    def tearDown(self):
+        self.conn.close()
+        collection_db.DB_PATH = self._orig_path
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _post(self, body):
+        return self.client.post(
+            '/api/locator/query',
+            json=body,
+            content_type='application/json',
+        )
+
+    def test_post_returns_200_with_groups(self):
+        """Happy path: query matches cards, response has correct shape."""
+        resp = self._post({'q': 'c:r'})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertEqual(data['query'], 'c:r')
+        self.assertEqual(data['total_cards'], 3)
+        self.assertEqual(len(data['groups']), 1)
+        grp = data['groups'][0]
+        self.assertEqual(grp['box_name'], 'Post Box')
+        self.assertEqual(grp['divider_label'], 'D1')
+        self.assertEqual(grp['count'], 3)
+        self.assertIn('unique_cards', grp)
+        self.assertIn('oracle_ids', grp)
+
+    def test_post_multi_location_returns_all_groups(self):
+        """A card owned in multiple locations shows up in every group."""
+        # Seed the same oracle_id in two different locations.
+        div2 = collection_db.add_divider(self.conn, self.box, "D2", 2)
+        _seed(self.conn, "Multi Blue", colors="U",
+              oracle_id="multi-oid", divider_id=self.div, quantity=1)
+        _seed(self.conn, "Multi Blue Alt", colors="U",
+              oracle_id="multi-oid", divider_id=div2, quantity=2)
+
+        resp = self._post({'q': 'c:u'})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        box_names  = [g['box_name']      for g in data['groups']]
+        div_labels = [g['divider_label'] for g in data['groups']]
+        # "Shoebox" (from setUp Island) and two dividers in Post Box.
+        self.assertIn('Shoebox', box_names)
+        self.assertIn('D1', div_labels)
+        self.assertIn('D2', div_labels)
+
+    def test_post_empty_query_returns_400(self):
+        resp = self._post({'q': ''})
+        self.assertEqual(resp.status_code, 400)
+        body = resp.get_json()
+        self.assertIn('error', body)
+        self.assertEqual(body['groups'], [])
+        self.assertEqual(body['total_cards'], 0)
+
+    def test_post_missing_q_returns_400(self):
+        resp = self._post({})
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('error', resp.get_json())
+
+    def test_post_invalid_query_returns_400(self):
+        """Malformed query (bad field name) returns 400 with error."""
+        resp = self._post({'q': 'badfield:xyz'})
+        self.assertEqual(resp.status_code, 400)
+        body = resp.get_json()
+        self.assertIn('error', body)
+        self.assertIn('badfield', body['error'])
+
+    def test_post_no_matches_returns_empty_groups(self):
+        """Query that matches no owned cards returns total=0, groups=[]."""
+        resp = self._post({'q': 'c:b'})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertEqual(data['total_cards'], 0)
+        self.assertEqual(data['groups'], [])
+
+    def test_post_groups_sorted_box_then_divider(self):
+        """Groups are sorted: box_name ASC, divider position ASC,
+        Unassigned last."""
+        div2 = collection_db.add_divider(self.conn, self.box, "D2", 2)
+        box_b = collection_db.add_box(self.conn, "AAA Box")
+        div_b = collection_db.add_divider(self.conn, box_b, "B1", 1)
+        _seed(self.conn, "In D2", colors="R", divider_id=div2)
+        _seed(self.conn, "In AAA", colors="R", divider_id=div_b)
+        # A red card with no box or divider to anchor the Unassigned bucket.
+        _seed(self.conn, "Red Orphan", colors="R")
+
+        resp = self._post({'q': 'c:r'})
+        self.assertEqual(resp.status_code, 200)
+        groups = resp.get_json()['groups']
+        box_names = [g['box_name'] for g in groups]
+        # "AAA Box" < "Post Box" alphabetically; Unassigned last.
+        self.assertEqual(box_names[0], 'AAA Box')
+        self.assertEqual(box_names[-1], collection_db.UNASSIGNED_BOX_NAME)
+
+
 if __name__ == "__main__":
     unittest.main()

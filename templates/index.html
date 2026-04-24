@@ -1191,6 +1191,54 @@
                 </div>
                 </div><!-- end data-collection-section="cull" -->
 
+                <div data-collection-section="locator" style="display:none">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="card">
+                            <div class="card-header">Locate Cards</div>
+                            <div class="card-body">
+                                <label class="form-label small mb-1">Scryfall query</label>
+                                <div class="input-group input-group-sm mb-2">
+                                    <input type="text" class="form-control" id="locator-query"
+                                           placeholder="e.g. c:r t:instant" autocomplete="off"
+                                           onkeydown="if(event.key==='Enter') runLocatorQuery()">
+                                </div>
+                                <button class="btn btn-primary btn-sm w-100 mb-1"
+                                        onclick="runLocatorQuery()">Find</button>
+                                <button class="btn btn-outline-secondary btn-sm w-100"
+                                        onclick="clearLocatorResults()">Clear</button>
+                                <hr>
+                                <p class="small text-muted mb-0">
+                                    Returns owned cards matching the query, grouped by
+                                    physical box and divider.
+                                    Supports the same syntax as sort bin queries.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-9">
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span>
+                                    Locate Results
+                                    <span class="badge bg-secondary ms-1" id="locator-total">0</span>
+                                    <span class="text-muted small ms-2" id="locator-query-echo"></span>
+                                </span>
+                            </div>
+                            <div class="card-body">
+                                <div id="locator-status" class="text-muted small text-center py-3"
+                                     style="display:none">Searching…</div>
+                                <div id="locator-empty" class="text-muted small text-center py-3"
+                                     style="display:none">No cards found matching that query.</div>
+                                <div id="locator-error" class="alert alert-danger py-2 small"
+                                     style="display:none"></div>
+                                <div id="locator-results"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                </div><!-- end data-collection-section="locator" -->
+
                 <div class="row mt-3">
                     <div class="col-12">
                         <div class="card">
