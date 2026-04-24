@@ -4300,13 +4300,27 @@ async function loadEnrichmentSources() {
                     ? '<span class="text-danger">err</span>'
                     : '<span class="text-muted">never</span>');
             const running = s.running ? ' <span class="badge bg-warning">running</span>' : '';
-            return `<div class="d-flex justify-content-between border-bottom py-1">
-                <span><strong>${s.name}</strong> <code class="small">${s.cron || ''}</code>${running}</span>
-                <span>
-                    ${last}
-                    <button class="btn btn-sm btn-outline-primary ms-2"
-                            onclick="triggerEnrichmentRefresh('${s.name}')">Refresh</button>
-                </span>
+            const progressHidden = s.running ? '' : 'style="display:none;"';
+            return `<div class="border-bottom py-1" data-enrich-source="${s.name}">
+                <div class="d-flex justify-content-between align-items-center">
+                    <span><strong>${s.name}</strong> <code class="small">${s.cron || ''}</code><span data-enrich-running>${running}</span></span>
+                    <span>
+                        <span data-enrich-status>${last}</span>
+                        <button class="btn btn-sm btn-outline-primary ms-2"
+                                data-enrich-refresh-btn
+                                ${s.running ? 'disabled' : ''}
+                                onclick="triggerEnrichmentRefresh('${s.name}')">Refresh</button>
+                    </span>
+                </div>
+                <div data-enrich-progress ${progressHidden}>
+                    <div class="progress mt-1" style="height:6px;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated"
+                             role="progressbar"
+                             data-enrich-bar
+                             style="width:0%"></div>
+                    </div>
+                    <div class="small text-muted mt-1" data-enrich-msg>Starting…</div>
+                </div>
             </div>`;
         }).join('');
         container.innerHTML = rows;
@@ -4315,13 +4329,95 @@ async function loadEnrichmentSources() {
     }
 }
 
+function _enrichSourceRow(name) {
+    return document.querySelector(`[data-enrich-source="${CSS.escape(name)}"]`);
+}
+
+function _enrichShowProgress(name, {progress, total, message, started} = {}) {
+    const row = _enrichSourceRow(name);
+    if (!row) return;
+    const wrap = row.querySelector('[data-enrich-progress]');
+    const bar  = row.querySelector('[data-enrich-bar]');
+    const msg  = row.querySelector('[data-enrich-msg]');
+    const btn  = row.querySelector('[data-enrich-refresh-btn]');
+    const runBadge = row.querySelector('[data-enrich-running]');
+    if (wrap) wrap.style.display = '';
+    if (btn) btn.disabled = true;
+    if (runBadge) runBadge.innerHTML = ' <span class="badge bg-warning">running</span>';
+    if (bar) {
+        if (total && progress != null) {
+            const pct = Math.max(0, Math.min(100, Math.round((progress / total) * 100)));
+            bar.style.width = pct + '%';
+            bar.setAttribute('aria-valuenow', String(pct));
+            bar.textContent = '';
+        } else if (started) {
+            bar.style.width = '100%';
+            bar.classList.add('progress-bar-striped', 'progress-bar-animated');
+        }
+    }
+    if (msg) {
+        const label = message || 'Working…';
+        msg.textContent = (total && progress != null)
+            ? `${label} (${progress}/${total})`
+            : label;
+    }
+}
+
+function _enrichFinishProgress(name, data) {
+    const row = _enrichSourceRow(name);
+    if (!row) return;
+    const wrap = row.querySelector('[data-enrich-progress]');
+    const bar  = row.querySelector('[data-enrich-bar]');
+    const msg  = row.querySelector('[data-enrich-msg]');
+    const btn  = row.querySelector('[data-enrich-refresh-btn]');
+    const errs = (data && data.errors) || [];
+    const ok = errs.length === 0;
+    if (bar) {
+        bar.style.width = '100%';
+        bar.classList.remove('progress-bar-striped', 'progress-bar-animated');
+        bar.classList.add(ok ? 'bg-success' : 'bg-danger');
+    }
+    if (msg) {
+        const parts = [];
+        if (data && data.duration_ms != null) parts.push(`${(data.duration_ms / 1000).toFixed(1)}s`);
+        if (data && data.rows_changed != null) parts.push(`${data.rows_changed} rows`);
+        if (!ok) parts.push(`${errs.length} error${errs.length === 1 ? '' : 's'}`);
+        msg.textContent = (ok ? 'Done' : 'Failed') + (parts.length ? ' · ' + parts.join(' · ') : '');
+    }
+    if (btn) btn.disabled = false;
+    // Reload sources so status/coverage reflects the new run, then hide the bar.
+    setTimeout(() => {
+        loadEnrichmentSources();
+    }, 1500);
+}
+
+socket.on('enrichment_refresh_started', (data) => {
+    if (data && data.source) _enrichShowProgress(data.source, {started: true, message: 'Starting…'});
+});
+
+socket.on('enrichment_refresh_progress', (data) => {
+    if (!data || !data.source) return;
+    _enrichShowProgress(data.source, {
+        progress: data.progress,
+        total: data.total,
+        message: data.message || data.step,
+    });
+});
+
+socket.on('enrichment_refresh_complete', (data) => {
+    if (data && data.source) _enrichFinishProgress(data.source, data);
+});
+
 async function triggerEnrichmentRefresh(name) {
+    // Show indeterminate progress immediately — the server returns 202
+    // and the first socket event may take a moment.
+    _enrichShowProgress(name, {started: true, message: 'Queued…'});
     try {
         await apiPost(`/api/enrichment/refresh/${encodeURIComponent(name)}`, {});
     } catch (e) {
         console.warn('refresh failed', name, e);
+        _enrichFinishProgress(name, {errors: [String(e.message || e)]});
     }
-    setTimeout(loadEnrichmentSources, 500);
 }
 
 function wireCollectionSubnav() {
