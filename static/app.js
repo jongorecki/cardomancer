@@ -299,11 +299,25 @@ socket.on('card_detected', (data) => {
         // physical foil printing (from foil_detect).
         const foilBadge = data.is_foil
             ? ' <span class="badge bg-warning text-dark">★ Foil</span>' : '';
+        // Frame era badge: Scryfall "frame" field ("1993", "1997",
+        // "2003", "2015", "future"). Shown for every recognized card
+        // so the printing's frame era is visible at a glance.
+        const frameLabel = data.frame
+            ? (data.frame === 'future' ? 'Future' : `${data.frame} frame`)
+            : '';
+        const frameBadge = frameLabel
+            ? ` <span class="badge bg-secondary">${frameLabel}</span>` : '';
+        // Frame-effects badges: one per modifier (showcase, etched,
+        // extendedart, inverted, etc.). Each becomes its own small pill.
+        const frameEffects = Array.isArray(data.frame_effects) ? data.frame_effects : [];
+        const frameEffectsBadges = frameEffects
+            .map(fx => ` <span class="badge bg-info text-dark">${fx}</span>`)
+            .join('');
         const layoutBadge = data.layout && data.layout !== 'normal'
             ? ` <span class="badge bg-warning text-dark">${data.layout}</span>` : '';
         const cn = data.collector_number ? ` #${data.collector_number}` : '';
         panel.innerHTML = `
-            <h5>${data.name}${borderBadge}${foilBadge}${layoutBadge}</h5>
+            <h5>${data.name}${borderBadge}${frameBadge}${frameEffectsBadges}${foilBadge}${layoutBadge}</h5>
             <p class="mb-1">Set: <strong>${data.set}${cn}</strong> | Colors: <strong>${(data.colors || []).join('')}</strong></p>
             <p class="mb-1">Type: ${(data.types || []).join(' ')} | CMC: ${data.cmc}</p>
             <p class="mb-1">Price: ${data.price} | Rarity: ${data.rarity}</p>

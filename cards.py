@@ -299,6 +299,12 @@ def extract_card_info(card_id):
         # Surfaced so the sort session UI can show it alongside the
         # live card info (collector number, foil status).
         "Border": card.get('border_color', ''),
+        # Scryfall frame era: "1993", "1997", "2003", "2015", "future".
+        # frame_effects is a list of per-printing modifiers like
+        # "showcase", "extendedart", "etched", "inverted" — used in
+        # printing disambiguation and shown in the sort session UI.
+        "Frame": card.get('frame', ''),
+        "FrameEffects": card.get('frame_effects', []) or [],
     }
 
     return info
