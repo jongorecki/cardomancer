@@ -2485,9 +2485,31 @@ function updateBinContentsPanel(cardsPerBin, binDetailsData, binFullness) {
             <div id="bin-detail-${bin}" class="bin-card-list" style="display:${isExpanded ? 'block' : 'none'};">`;
         if (cards.length > 0) {
             for (const card of cards) {
-                html += `<div class="bin-card-entry small text-truncate ps-2" title="${card.name} (${card.set}/${card.collector_number})">
-                    <span class="text-muted">#${card.scan_num}</span> ${card.name}
-                    <span class="text-muted">${card.set ? card.set.toUpperCase() : ''}</span>
+                // Scryfall direct image URL for the hover preview.
+                // Only wire it up when we have both set + collector
+                // number — without those the URL is useless.
+                const canPreview = card.set && card.collector_number;
+                const imgUrl = canPreview
+                    ? _scryfallImageUrl(card.set, card.collector_number, 'normal')
+                    : '';
+                const hoverAttr = canPreview
+                    ? `onmouseenter="_showCardPreview(event, '${imgUrl}', 'left')" onmouseleave="_hideCardPreview()" style="cursor:help"`
+                    : '';
+                const foilTag = card.is_foil
+                    ? ' <span class="badge bg-warning text-dark" style="font-size:0.65em">★</span>'
+                    : '';
+                const priceTag = card.price && card.price !== 'null' && card.price !== 'N/A'
+                    ? `<span class="text-success ms-1">${card.price}</span>`
+                    : '';
+                html += `<div class="bin-card-entry small text-truncate ps-2 d-flex justify-content-between align-items-center"
+                              title="${card.name} (${card.set}/${card.collector_number})" ${hoverAttr}>
+                    <span class="text-truncate">
+                        <span class="text-muted">#${card.scan_num}</span> ${card.name}${foilTag}
+                    </span>
+                    <span class="flex-shrink-0 ms-2">
+                        <span class="text-muted">${card.set ? card.set.toUpperCase() : ''}</span>
+                        ${priceTag}
+                    </span>
                 </div>`;
             }
         } else {
@@ -3001,7 +3023,7 @@ function _scryfallImageUrl(set, collectorNumber, version) {
     return `https://api.scryfall.com/cards/${encodeURIComponent(set)}/${encodeURIComponent(collectorNumber)}?format=image&version=${version || 'normal'}`;
 }
 
-function _showCardPreview(event, imgUrl) {
+function _showCardPreview(event, imgUrl, side) {
     let el = document.getElementById('card-hover-preview');
     if (!el) {
         el = document.createElement('div');
@@ -3016,14 +3038,22 @@ function _showCardPreview(event, imgUrl) {
     el.style.opacity = '0';
     img.onload = () => { el.style.opacity = '1'; };
 
-    // Position to the right edge of the viewport, vertically near cursor
-    // This avoids covering name, price, or any table content
+    // Position: default is the right edge of the viewport (used by the
+    // collection inventory table). Callers with content on the right
+    // side of the page (e.g. the sort-session bin panels) pass
+    // side='left' so the preview hugs the left edge instead of
+    // covering the bin list.
     const y = event.clientY - 100;
     const maxY = window.innerHeight - 370;
-    el.style.left = (window.innerWidth - 270) + 'px';
+    if (side === 'left') {
+        el.style.left = '8px';
+    } else {
+        el.style.left = (window.innerWidth - 270) + 'px';
+    }
     el.style.top = Math.max(8, Math.min(y, maxY)) + 'px';
 
-    // Highlight the row
+    // Highlight the row (inventory table uses a <tr>; other callers
+    // just get the preview without the highlight).
     const row = event.target.closest('tr');
     if (row) row.classList.add('inventory-row-hover');
 }

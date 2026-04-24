@@ -179,6 +179,13 @@ class ScanTracker:
                 "set": set_code,
                 "collector_number": collector_number,
                 "scan_num": self.scan_count,
+                # Per-entry fields for the bin-panel UI: shows price
+                # next to each card name and drives the hover preview
+                # (needs set + collector_number for the Scryfall image
+                # URL, id as a stable printing identifier).
+                "price": price,
+                "is_foil": bool(is_foil),
+                "id": card_info.get('Id', '') if card_info else '',
             })
             self._save_bins()
 
