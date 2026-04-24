@@ -1486,6 +1486,8 @@ class SortWorker:
             self.emit('card_detected', {
                 'recognized': True,
                 'name': card_name,
+                'id': card_info.get('Id'),
+                'collector_number': card_info.get('CollectorNumber', ''),
                 'set': card_info.get('Set', '?'),
                 'colors': card_info.get('Colors', []),
                 'types': card_info.get('Types', []),

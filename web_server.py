@@ -1444,16 +1444,23 @@ def api_cards_autocomplete():
     return jsonify({'suggestions': matches[:20]})
 
 
-def _build_card_overlay_info(name, set_code=None):
+def _build_card_overlay_info(name, set_code=None, card_id=None):
     """Build the payload consumed by the Sort Session live card-info overlay
     (Phase 4 item 4.19).
 
-    Looks up a card by name (case-insensitive) in the Scryfall bulk-data
-    cache (`cards.CARDS_DATA`). If `set_code` is provided, returns the
-    matching printing; otherwise returns the first paper English printing.
+    Lookup priority:
+      1. `card_id` — Scryfall UUID, unambiguous. Always prefer this when
+         the caller has it (the identifier in web_worker does) so the
+         overlay shows the exact printing that was matched, not some
+         other printing of a same-named card (e.g. one of several
+         collector-numbered basic Swamps in the same set).
+      2. `name` (+ optional `set_code`) — name-based lookup for legacy
+         callers that don't pass an ID. Picks the first paper English
+         printing whose set matches, or the first printing of any set if
+         no match.
 
     Returns a dict with the fields the overlay renders:
-      - name, set, oracle_id
+      - name, set, collector_number, oracle_id, scryfall_id
       - image_url  (Scryfall `image_uris.normal`, or None if unavailable)
       - border     (Scryfall `border_color`: "black" / "white" / "silver" /
                     "borderless" / "gold", or None)
@@ -1462,28 +1469,36 @@ def _build_card_overlay_info(name, set_code=None):
     Returns None if no matching card is found. Pure function — no Flask
     dependency — so it can be unit-tested directly.
     """
-    if not name:
-        return None
-    from cards import CARDS_DATA
-    key = (name or '').strip().lower()
-    if not key:
-        return None
-    set_key = (set_code or '').strip().lower() or None
+    from cards import CARDS_DATA, CARD_DATA_BY_ID
 
-    best = None  # preferred printing once we find a set match
-    fallback = None  # first paper English printing of any set
-    for c in CARDS_DATA:
-        if c.get('lang') != 'en' or 'paper' not in c.get('games', []):
-            continue
-        if (c.get('name') or '').lower() != key:
-            continue
-        if set_key and (c.get('set') or '').lower() == set_key:
-            best = c
-            break
-        if fallback is None:
-            fallback = c
+    card = None
+    # Preferred path: look up by unique Scryfall ID.
+    if card_id:
+        card = CARD_DATA_BY_ID.get(card_id)
 
-    card = best or fallback
+    if card is None:
+        if not name:
+            return None
+        key = (name or '').strip().lower()
+        if not key:
+            return None
+        set_key = (set_code or '').strip().lower() or None
+
+        best = None  # preferred printing once we find a set match
+        fallback = None  # first paper English printing of any set
+        for c in CARDS_DATA:
+            if c.get('lang') != 'en' or 'paper' not in c.get('games', []):
+                continue
+            if (c.get('name') or '').lower() != key:
+                continue
+            if set_key and (c.get('set') or '').lower() == set_key:
+                best = c
+                break
+            if fallback is None:
+                fallback = c
+
+        card = best or fallback
+
     if card is None:
         return None
 
@@ -1518,7 +1533,9 @@ def _build_card_overlay_info(name, set_code=None):
     return {
         'name': card.get('name'),
         'set': card.get('set'),
+        'collector_number': card.get('collector_number'),
         'oracle_id': card.get('oracle_id'),
+        'scryfall_id': card.get('id'),
         'image_url': image_url,
         'border': card.get('border_color'),
         'price_usd': price_usd,
@@ -1530,20 +1547,26 @@ def api_card_overlay_info():
     """Return the minimal card-info payload for the Sort Session live
     overlay (Phase 4 item 4.19).
 
-    Query params:
-      - name (required): card name (case-insensitive)
-      - set  (optional): Scryfall set code to prefer a specific printing
+    Query params (at least one of `id` or `name` is required):
+      - id   (preferred): Scryfall UUID — picks the exact printing
+      - name (legacy):    card name (case-insensitive)
+      - set  (optional):  Scryfall set code; used only with `name` to
+                          prefer a specific printing
 
-    Response body: see `_build_card_overlay_info`. Returns 400 if name is
-    missing, 404 if the card is not in the local Scryfall bulk cache.
+    Response body: see `_build_card_overlay_info`. Returns 400 if neither
+    `id` nor `name` is supplied, 404 if no matching card exists in the
+    local Scryfall bulk cache.
     """
+    card_id = (request.args.get('id') or '').strip() or None
     name = (request.args.get('name') or '').strip()
     set_code = (request.args.get('set') or '').strip() or None
-    if not name:
-        return jsonify({'error': 'name required'}), 400
-    info = _build_card_overlay_info(name, set_code)
+    if not card_id and not name:
+        return jsonify({'error': 'id or name required'}), 400
+    info = _build_card_overlay_info(name, set_code, card_id=card_id)
     if info is None:
-        return jsonify({'error': 'not found', 'name': name}), 404
+        return jsonify({'error': 'not found',
+                        'id': card_id,
+                        'name': name}), 404
     return jsonify(info)
 
 

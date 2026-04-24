@@ -15,13 +15,17 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def _fixture_cards():
-    """Three hand-crafted Scryfall-like card dicts covering the cases
-    the overlay helper has to handle: multiple printings, missing price,
-    and a transform card with per-face image_uris."""
+    """Hand-crafted Scryfall-like card dicts covering the cases the overlay
+    helper has to handle: multiple printings, missing price, a transform
+    card with per-face image_uris, and two same-set same-name printings
+    that differ only by collector number (the basic-Swamp case that
+    motivated the ID-based lookup path)."""
     return [
         {
+            'id': 'id-sol-cmr',
             'name': 'Sol Ring',
             'set': 'cmr',
+            'collector_number': '472',
             'lang': 'en',
             'games': ['paper', 'mtgo'],
             'oracle_id': 'abc-sol-ring',
@@ -34,8 +38,10 @@ def _fixture_cards():
             'prices': {'usd': '1.25', 'usd_foil': '4.50'},
         },
         {
+            'id': 'id-sol-lea',
             'name': 'Sol Ring',
             'set': 'lea',
+            'collector_number': '270',
             'lang': 'en',
             'games': ['paper'],
             'oracle_id': 'abc-sol-ring',
@@ -45,8 +51,10 @@ def _fixture_cards():
         },
         {
             # Borderless foil-only printing — price in usd_foil only.
+            'id': 'id-stoneforge-sld',
             'name': 'Stoneforge Mystic',
             'set': 'sld',
+            'collector_number': '10',
             'lang': 'en',
             'games': ['paper'],
             'oracle_id': 'abc-stoneforge',
@@ -56,8 +64,10 @@ def _fixture_cards():
         },
         {
             # Transform card: image_uris live inside card_faces.
+            'id': 'id-delver-isd',
             'name': 'Delver of Secrets',
             'set': 'isd',
+            'collector_number': '51a',
             'lang': 'en',
             'games': ['paper'],
             'oracle_id': 'abc-delver',
@@ -70,8 +80,10 @@ def _fixture_cards():
         },
         {
             # Non-English printing — must be ignored.
+            'id': 'id-sol-jp',
             'name': 'Sol Ring',
             'set': 'jp',
+            'collector_number': '1',
             'lang': 'ja',
             'games': ['paper'],
             'oracle_id': 'abc-sol-ring',
@@ -79,20 +91,57 @@ def _fixture_cards():
             'image_uris': {'normal': 'https://img/jp.jpg'},
             'prices': {'usd': '99.00'},
         },
+        {
+            # Same set + name, different collector numbers — the case that
+            # exposed the printing-disambiguation bug for basic lands.
+            'id': 'id-swamp-war-a',
+            'name': 'Swamp',
+            'set': 'war',
+            'collector_number': '268',
+            'lang': 'en',
+            'games': ['paper'],
+            'oracle_id': 'abc-swamp',
+            'border_color': 'black',
+            'image_uris': {'normal': 'https://img/swamp_war_a.jpg'},
+            'prices': {'usd': '0.15'},
+        },
+        {
+            'id': 'id-swamp-war-b',
+            'name': 'Swamp',
+            'set': 'war',
+            'collector_number': '269',
+            'lang': 'en',
+            'games': ['paper'],
+            'oracle_id': 'abc-swamp',
+            'border_color': 'black',
+            'image_uris': {'normal': 'https://img/swamp_war_b.jpg'},
+            'prices': {'usd': '0.15'},
+        },
     ]
+
+
+def _fixture_by_id(cards_list):
+    return {c['id']: c for c in cards_list}
 
 
 class TestBuildCardOverlayInfo(unittest.TestCase):
     def setUp(self):
-        # Import the helper fresh each test, with CARDS_DATA patched to
-        # our fixture so we don't depend on the full Scryfall bulk cache.
-        self._patcher = mock.patch('cards.CARDS_DATA', _fixture_cards())
-        self._patcher.start()
+        # Import the helper fresh each test, with CARDS_DATA and
+        # CARD_DATA_BY_ID patched to our fixture so we don't depend on
+        # the full Scryfall bulk cache.
+        fixture = _fixture_cards()
+        self._patchers = [
+            mock.patch('cards.CARDS_DATA', fixture),
+            mock.patch('cards.CARD_DATA_BY_ID', _fixture_by_id(fixture)),
+        ]
+        for p in self._patchers:
+            p.start()
         from web_server import _build_card_overlay_info
         self.build = _build_card_overlay_info
 
     def tearDown(self):
-        self._patcher.stop()
+        for p in self._patchers:
+            p.stop()
 
     def test_missing_name_returns_none(self):
         self.assertIsNone(self.build(''))
@@ -149,9 +198,36 @@ class TestBuildCardOverlayInfo(unittest.TestCase):
 
     def test_payload_has_required_keys(self):
         info = self.build('Sol Ring')
-        for key in ('name', 'set', 'oracle_id',
-                    'image_url', 'border', 'price_usd'):
+        for key in ('name', 'set', 'collector_number', 'oracle_id',
+                    'scryfall_id', 'image_url', 'border', 'price_usd'):
             self.assertIn(key, info)
+
+    def test_lookup_by_id_picks_exact_printing(self):
+        # Name + set would be ambiguous — two Swamps in war with
+        # different collector numbers. The ID disambiguates.
+        info = self.build(None, None, card_id='id-swamp-war-b')
+        self.assertIsNotNone(info)
+        self.assertEqual(info['scryfall_id'], 'id-swamp-war-b')
+        self.assertEqual(info['set'], 'war')
+        self.assertEqual(info['collector_number'], '269')
+        self.assertEqual(info['image_url'],
+                         'https://img/swamp_war_b.jpg')
+
+    def test_id_takes_precedence_over_name(self):
+        # Even if name+set also resolve, the ID wins.
+        info = self.build('Sol Ring', 'cmr', card_id='id-sol-lea')
+        self.assertIsNotNone(info)
+        self.assertEqual(info['set'], 'lea')
+        self.assertEqual(info['scryfall_id'], 'id-sol-lea')
+
+    def test_missing_id_and_name_returns_none(self):
+        self.assertIsNone(self.build(None, None, card_id=None))
+        self.assertIsNone(self.build('', None, card_id=''))
+
+    def test_unknown_id_falls_back_to_name(self):
+        info = self.build('Sol Ring', 'lea', card_id='id-does-not-exist')
+        self.assertIsNotNone(info)
+        self.assertEqual(info['set'], 'lea')
 
 
 if __name__ == '__main__':

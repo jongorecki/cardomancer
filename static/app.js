@@ -286,14 +286,15 @@ socket.on('card_detected', (data) => {
             ? ' <span class="badge bg-info">Borderless</span>' : '';
         const layoutBadge = data.layout && data.layout !== 'normal'
             ? ` <span class="badge bg-warning text-dark">${data.layout}</span>` : '';
+        const cn = data.collector_number ? ` #${data.collector_number}` : '';
         panel.innerHTML = `
             <h5>${data.name}${borderBadge}${layoutBadge}</h5>
-            <p class="mb-1">Set: <strong>${data.set}</strong> | Colors: <strong>${(data.colors || []).join('')}</strong></p>
+            <p class="mb-1">Set: <strong>${data.set}${cn}</strong> | Colors: <strong>${(data.colors || []).join('')}</strong></p>
             <p class="mb-1">Type: ${(data.types || []).join(' ')} | CMC: ${data.cmc}</p>
             <p class="mb-1">Price: ${data.price} | Rarity: ${data.rarity}</p>
             <p class="mb-0">Bin: <strong>${data.bin}</strong> | Method: <em>${data.method}</em></p>
         `;
-        addLog(`Detected: ${data.name} -> Bin ${data.bin} (${data.method})`);
+        addLog(`Detected: ${data.name}${cn} -> Bin ${data.bin} (${data.method})`);
     } else {
         panel.innerHTML = `<p class="text-danger">Unrecognized card -> Bin ${data.bin || 10}</p>`;
         addLog(`Unrecognized card -> Bin ${data.bin || 10}`);
@@ -403,6 +404,7 @@ function renderCardOverlay(info, fallbackPrice) {
     }
     const name = info.name || '(unknown)';
     const setCode = (info.set || '').toUpperCase();
+    const cn = info.collector_number ? ` #${info.collector_number}` : '';
     const border = info.border || 'unknown';
     const badgeCls = _borderBadgeClass(border);
     // Price: prefer server-side float; fall back to the string the worker
@@ -426,7 +428,7 @@ function renderCardOverlay(info, fallbackPrice) {
         ${imgHtml}
         <div class="d-flex justify-content-between align-items-baseline mb-1">
             <strong style="word-break:break-word;">${name}</strong>
-            <span class="small text-muted ms-2">${setCode}</span>
+            <span class="small text-muted ms-2">${setCode}${cn}</span>
         </div>
         <div class="d-flex justify-content-between align-items-center">
             <span class="badge ${badgeCls}" title="Border color">${border}</span>
@@ -444,7 +446,13 @@ socket.on('card_detected', (data) => {
     }
     const reqId = ++_cardOverlayReqId;
     panel.innerHTML = '<p class="text-muted small mb-0">Loading card info&hellip;</p>';
-    const params = new URLSearchParams({ name: data.name || '' });
+    // Prefer the Scryfall ID so the preview renders the exact printing
+    // that was matched, not some other printing of a card sharing the
+    // same name and set (e.g. basic-land variants with different
+    // collector numbers). Fall back to name+set for safety.
+    const params = new URLSearchParams();
+    if (data.id) params.set('id', data.id);
+    if (data.name) params.set('name', data.name);
     if (data.set) params.set('set', data.set);
     fetch('/api/card/overlay-info?' + params.toString())
         .then((r) => (r.ok ? r.json() : null))

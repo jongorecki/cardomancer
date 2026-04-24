@@ -285,6 +285,8 @@ def extract_card_info(card_id):
 
     info = {
         "Name": name,
+        "Id": card_id,
+        "CollectorNumber": card.get('collector_number', ''),
         "Set": set_code,
         "Sets": all_sets,
         "Colors": colors,
