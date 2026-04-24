@@ -9,7 +9,7 @@ import tempfile
 import shutil
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
@@ -193,6 +193,177 @@ class TestTaggerRefreshIntegration(unittest.TestCase):
         finally:
             enrichment_db.DB_PATH = orig
         self.assertTrue(result.success)
+
+
+class TestTaggerIdempotency(unittest.TestCase):
+    """Running refresh() twice must produce identical DB state."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.tmp, "test.db")
+        conn = enrichment_db.get_connection(db_path=self.db_path)
+        conn.close()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _count(self, table: str) -> int:
+        conn = sqlite3.connect(self.db_path)
+        try:
+            return conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        finally:
+            conn.close()
+
+    def test_double_refresh_same_tag_count(self):
+        """Two full refreshes against same mocked data → same row count."""
+        source = TaggerSource()
+        orig = enrichment_db.DB_PATH
+        enrichment_db.DB_PATH = self.db_path
+        try:
+            for _ in range(2):
+                with patch.object(source, "_scryfall_reachable",
+                                  return_value=True):
+                    with patch.object(source, "probe", return_value=True):
+                        with patch.object(source, "_fetch_tag",
+                                          return_value=(["oid-x", "oid-y"], 2)):
+                            with patch.object(source, "_fetch_atag",
+                                              return_value=([], None)):
+                                source.refresh(full=True)
+        finally:
+            enrichment_db.DB_PATH = orig
+
+        # The UPSERT logic should keep exactly one row per (oracle_id, tag_name)
+        count = self._count("tags")
+        # Each tag in KNOWN_FUNCTION_TAGS got 2 oracle_ids → could be many,
+        # but count is stable between runs.
+        self.assertGreater(count, 0)
+
+        # Run once more and confirm count doesn't change
+        orig2 = enrichment_db.DB_PATH
+        enrichment_db.DB_PATH = self.db_path
+        try:
+            with patch.object(source, "_scryfall_reachable", return_value=True):
+                with patch.object(source, "probe", return_value=True):
+                    with patch.object(source, "_fetch_tag",
+                                      return_value=(["oid-x", "oid-y"], 2)):
+                        with patch.object(source, "_fetch_atag",
+                                          return_value=([], None)):
+                            source.refresh(full=True)
+        finally:
+            enrichment_db.DB_PATH = orig2
+
+        self.assertEqual(count, self._count("tags"),
+                         "Row count must not change after idempotent re-refresh")
+
+
+class TestFetchTagRateLimit(unittest.TestCase):
+    """_fetch_tag must handle 429 with backoff and return gracefully."""
+
+    def test_fetch_tag_429_retries_then_aborts(self):
+        """Simulate 3 429s in a row — _fetch_tag backs off and returns empty."""
+        import httpx as _httpx
+
+        call_count = [0]
+
+        class FakeClient:
+            def get(self, url, **kw):
+                call_count[0] += 1
+                r = MagicMock()
+                r.status_code = 429
+                r.is_success = False
+                r.json.return_value = {}
+                return r
+
+        warnings: list[str] = []
+        with patch("time.sleep"):  # skip actual sleep
+            result_ids, total = TaggerSource._fetch_tag(
+                FakeClient(), "otag:removal", warnings)
+
+        self.assertEqual(result_ids, [])
+        self.assertIsNone(total)
+        self.assertTrue(
+            any("retries exceeded" in w or "Rate-limit" in w or
+                "rate-limit" in w.lower() for w in warnings),
+            f"Expected rate-limit warning, got: {warnings}"
+        )
+
+    def test_fetch_tag_recovers_after_single_429(self):
+        """A single 429 followed by a 200 should succeed."""
+        import httpx as _httpx
+
+        attempts = [0]
+
+        def fake_get(url, **kw):
+            attempts[0] += 1
+            r = MagicMock()
+            if attempts[0] == 1:
+                r.status_code = 429
+                r.is_success = False
+                r.json.return_value = {}
+            else:
+                r.status_code = 200
+                r.is_success = True
+                r.json.return_value = {
+                    "total_cards": 2,
+                    "data": [
+                        {"oracle_id": "oid-a"},
+                        {"oracle_id": "oid-b"},
+                    ],
+                    "has_more": False,
+                }
+            return r
+
+        class FakeClient:
+            def get(self, url, **kw):
+                return fake_get(url, **kw)
+
+        warnings: list[str] = []
+        with patch("time.sleep"):
+            result_ids, total = TaggerSource._fetch_tag(
+                FakeClient(), "otag:removal", warnings)
+
+        self.assertEqual(sorted(result_ids), ["oid-a", "oid-b"])
+        self.assertEqual(total, 2)
+
+
+class TestFetchTagPagination(unittest.TestCase):
+    """_fetch_tag must follow has_more / next_page pagination."""
+
+    def test_paginated_results_collected(self):
+        page2_url = "https://api.scryfall.com/cards/search?q=otag%3Aramp&page=2"
+
+        pages = [
+            {
+                "total_cards": 4,
+                "data": [{"oracle_id": "oid-1"}, {"oracle_id": "oid-2"}],
+                "has_more": True,
+                "next_page": page2_url,
+            },
+            {
+                "total_cards": 4,
+                "data": [{"oracle_id": "oid-3"}, {"oracle_id": "oid-4"}],
+                "has_more": False,
+            },
+        ]
+        call_n = [0]
+
+        class FakeClient:
+            def get(self, url, **kw):
+                idx = call_n[0]
+                call_n[0] += 1
+                r = MagicMock()
+                r.status_code = 200
+                r.is_success = True
+                r.json.return_value = pages[min(idx, len(pages) - 1)]
+                return r
+
+        warnings: list[str] = []
+        with patch("time.sleep"):
+            result_ids, total = TaggerSource._fetch_tag(
+                FakeClient(), "otag:ramp", warnings)
+
+        self.assertEqual(sorted(result_ids), ["oid-1", "oid-2", "oid-3", "oid-4"])
+        self.assertEqual(total, 4)
 
 
 if __name__ == "__main__":
