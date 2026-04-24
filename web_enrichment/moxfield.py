@@ -529,6 +529,8 @@ def cache_deck(deck_id: str, data: dict) -> None:
     """Write or update a deck in the moxfield_decks table.
 
     Uses a transaction so the row is never partially written.
+    After writing the deck, rebuilds the deck_usage overlay so that
+    is_cull_candidate() and is_used_in_deck() reflect the new data.
     """
     owner = (data.get("createdByUser") or {}).get("userName") or ""
     deck_name = data.get("name") or ""
@@ -550,6 +552,8 @@ def cache_deck(deck_id: str, data: dict) -> None:
                        raw_json        = excluded.raw_json""",
                 (deck_id, deck_name, owner, now_ts, fmt, json.dumps(data)),
             )
+        # Rebuild deck_usage overlay after every deck write.
+        enrichment_db.rebuild_deck_usage(conn)
     finally:
         conn.close()
 
@@ -559,6 +563,8 @@ def cache_wishlist(username: str, cards: list[dict]) -> None:
 
     Uses a DELETE + INSERT in a single transaction so the cache is never
     left in a partial state.
+    After writing the wishlist, rebuilds the deck_usage overlay so that
+    is_cull_candidate() and is_used_in_deck() reflect the new data.
 
     Args:
         username: the Moxfield username (case-sensitive as returned by the API).
@@ -595,6 +601,8 @@ def cache_wishlist(username: str, cards: list[dict]) -> None:
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                     rows,
                 )
+        # Rebuild deck_usage overlay after every wishlist write.
+        enrichment_db.rebuild_deck_usage(conn)
     finally:
         conn.close()
 

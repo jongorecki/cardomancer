@@ -257,6 +257,46 @@ class EnrichmentRepo:
             return []
         return result.get("cards", [])
 
+    def is_used_in_deck(self, oracle_id: str) -> bool:
+        """Return True if oracle_id appears in any cached Moxfield deck or
+        wishlist (deck_count > 0 OR wishlist_count > 0 in deck_usage).
+
+        Reads from the deck_usage overlay table populated by
+        refresh_deck_usage().  Returns False if the table is empty or if
+        the oracle_id has no row (i.e. the card is not in any imported
+        deck/wishlist).
+        """
+        conn = self._conn()
+        try:
+            row = conn.execute(
+                "SELECT deck_count, wishlist_count FROM deck_usage "
+                "WHERE oracle_id = ?",
+                (oracle_id,),
+            ).fetchone()
+            if row is None:
+                return False
+            return (row["deck_count"] > 0) or (row["wishlist_count"] > 0)
+        except Exception:
+            # deck_usage table may not exist in very old DB files; degrade
+            # gracefully rather than crashing.
+            return False
+        finally:
+            conn.close()
+
+    def refresh_deck_usage(self) -> int:
+        """Rebuild the deck_usage overlay from all cached Moxfield decks and
+        wishlists.  Returns the number of oracle_id rows written.
+
+        Delegates to enrichment_db.rebuild_deck_usage() which does the
+        aggregation in a single atomic transaction.
+        """
+        import enrichment_db as _edb
+        conn = self._conn()
+        try:
+            return _edb.rebuild_deck_usage(conn)
+        finally:
+            conn.close()
+
     def is_cull_candidate(self, oracle_id: str, oracle_text: str = "") -> bool:
         """Return True if this oracle_id is a dead-weight cull candidate.
 
@@ -264,11 +304,8 @@ class EnrichmentRepo:
           1. Vanilla or french-vanilla oracle text.
           2. No staple row in the staples table at any tier.
           3. No CK buylist entry with price > 0.
-          4. Not in any of the user's Moxfield decks.
-             TODO: AND with deck-usage lookup once Phase 3 item 3.18
-             (Moxfield deck-usage overlay) is implemented.  For now treated
-             as trivially satisfied (not in any deck) since the deck_usage
-             table does not yet exist.
+          4. Not in any of the user's Moxfield decks or wishlists
+             (deck_usage.deck_count == 0 AND deck_usage.wishlist_count == 0).
 
         Parameters
         ----------
@@ -300,13 +337,22 @@ class EnrichmentRepo:
                     and buylist_row["price_usd"] > 0:
                 return False
 
-            # TODO: check deck_usage table once Phase 3 item 3.18 lands.
-            # deck_row = conn.execute(
-            #     "SELECT 1 FROM deck_usage WHERE oracle_id = ? LIMIT 1",
-            #     (oracle_id,),
-            # ).fetchone()
-            # if deck_row is not None:
-            #     return False
+            # Predicate 4: NOT in any of the user's Moxfield decks/wishlists.
+            # Reads from the deck_usage overlay (populated by
+            # refresh_deck_usage / rebuild_deck_usage).  Degrades gracefully
+            # if the table is absent (treated as "not in any deck").
+            try:
+                deck_row = conn.execute(
+                    "SELECT deck_count, wishlist_count FROM deck_usage "
+                    "WHERE oracle_id = ? LIMIT 1",
+                    (oracle_id,),
+                ).fetchone()
+                if deck_row is not None and (
+                        deck_row["deck_count"] > 0
+                        or deck_row["wishlist_count"] > 0):
+                    return False
+            except Exception:
+                pass  # table absent → treat as not in any deck
 
             return True
         finally:

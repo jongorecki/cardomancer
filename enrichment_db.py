@@ -201,6 +201,19 @@ def _create_tables(conn: sqlite3.Connection) -> None:
             ON moxfield_wishlists(username);
         CREATE INDEX IF NOT EXISTS idx_moxfield_wishlists_oracle
             ON moxfield_wishlists(oracle_id);
+
+        -- Deck-usage overlay. Populated by rebuild_deck_usage().
+        -- Aggregates moxfield_decks + moxfield_wishlists into per-oracle_id
+        -- counts so is_cull_candidate() / is_used_in_deck() can check
+        -- membership in O(1).  Rebuilt atomically (DELETE + INSERT in a
+        -- single transaction) after every deck or wishlist import and on
+        -- demand via EnrichmentRepo.refresh_deck_usage().
+        CREATE TABLE IF NOT EXISTS deck_usage (
+            oracle_id      TEXT PRIMARY KEY,
+            deck_count     INTEGER NOT NULL DEFAULT 0,
+            wishlist_count INTEGER NOT NULL DEFAULT 0,
+            updated_at     TEXT NOT NULL
+        );
     """)
     conn.commit()
 
@@ -314,3 +327,87 @@ def get_sync_metadata(conn: sqlite3.Connection) -> list[dict]:
         "SELECT * FROM sync_metadata ORDER BY source"
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+def rebuild_deck_usage(conn: sqlite3.Connection) -> int:
+    """Rebuild the deck_usage overlay table from moxfield_decks and
+    moxfield_wishlists.
+
+    Uses a single atomic transaction: DELETE all existing rows, then
+    INSERT the aggregated counts.  Never leaves a partial state.
+
+    Deck counts are computed by parsing the raw_json of every cached deck
+    and counting distinct oracle_ids (mainboard + commanders; no sideboard
+    to match the import default).  Wishlist counts are per distinct
+    (oracle_id) row in moxfield_wishlists regardless of username.
+
+    Args:
+        conn: open enrichment.db connection (must have deck_usage,
+              moxfield_decks, and moxfield_wishlists tables).
+
+    Returns:
+        Number of oracle_id rows written into deck_usage.
+    """
+    import json as _json
+
+    ts = datetime.utcnow().isoformat(timespec="seconds")
+
+    # --- Aggregate deck counts from moxfield_decks raw_json ----------------
+    deck_oracle_counts: dict[str, int] = {}
+    rows = conn.execute(
+        "SELECT deck_id, raw_json FROM moxfield_decks"
+    ).fetchall()
+    for row in rows:
+        raw = row["raw_json"] if hasattr(row, "keys") else row[1]
+        if not raw:
+            continue
+        try:
+            data = _json.loads(raw)
+        except (ValueError, TypeError):
+            continue
+        seen: set[str] = set()
+        for board_key in ("mainboard", "commanders"):
+            board = data.get(board_key) or {}
+            for _k, slot in board.items():
+                card = slot.get("card") or {} if isinstance(slot, dict) else {}
+                oid = card.get("oracle_id") or ""
+                if oid:
+                    seen.add(oid)
+        for oid in seen:
+            deck_oracle_counts[oid] = deck_oracle_counts.get(oid, 0) + 1
+
+    # --- Aggregate wishlist counts from moxfield_wishlists ------------------
+    wishlist_rows = conn.execute(
+        "SELECT oracle_id, COUNT(DISTINCT username) AS cnt "
+        "FROM moxfield_wishlists GROUP BY oracle_id"
+    ).fetchall()
+    wishlist_oracle_counts: dict[str, int] = {
+        (r["oracle_id"] if hasattr(r, "keys") else r[0]):
+        (r["cnt"] if hasattr(r, "keys") else r[1])
+        for r in wishlist_rows
+    }
+
+    # --- Union the two sets of oracle_ids -----------------------------------
+    all_oracle_ids = set(deck_oracle_counts) | set(wishlist_oracle_counts)
+    insert_rows = [
+        (
+            oid,
+            deck_oracle_counts.get(oid, 0),
+            wishlist_oracle_counts.get(oid, 0),
+            ts,
+        )
+        for oid in all_oracle_ids
+    ]
+
+    # --- Atomic replace -----------------------------------------------------
+    with conn:
+        conn.execute("DELETE FROM deck_usage")
+        if insert_rows:
+            conn.executemany(
+                """INSERT INTO deck_usage
+                       (oracle_id, deck_count, wishlist_count, updated_at)
+                   VALUES (?, ?, ?, ?)""",
+                insert_rows,
+            )
+
+    return len(insert_rows)
