@@ -1,8 +1,9 @@
 # web_enrichment/edhrec.py
 # ---------------------------------------------------------------------------
-# EDHRECSource: pulls staple / salt data from json.edhrec.com.
+# EDHRECSource: pulls staple / salt / theme / commander-popularity data from
+# json.edhrec.com.
 #
-# Approach (2026-04-23):
+# Approach (Phase 1.7 + 1.10):
 #   - Universal staple:  inclusion_pct > UNIVERSAL_THRESHOLD on the global
 #                        top/year page or a card detail page.
 #   - Archetype staple:  card appears in the top-N cards of >= ARCHETYPE_MIN_PAGES
@@ -15,6 +16,10 @@
 #                        No curated archetype catalogue is maintained — we rely
 #                        entirely on EDHREC's own canonical page listing.
 #   - Salt:              directly from card detail page `salt` field
+#   - Themes:            each theme page slug is stored as a theme membership row
+#                        for every card appearing in that page's top-cards list
+#   - Commander pop.:    deck_count from the top-commanders page is written to
+#                        the commander_ranks table for each commander cardview
 #
 # Rate limit: 1 req/sec. Be gentle.
 # ---------------------------------------------------------------------------
@@ -136,14 +141,23 @@ class EDHRECSource(EnrichmentSource):
             theme_slugs = self._fetch_theme_index(warnings)
             self._emit(emit, 3, 6,
                        f"Fetching {len(theme_slugs)} theme top-cards pages …")
-            theme_page_cards = self._fetch_theme_pages(
+            theme_page_cards, theme_page_slug_map = self._fetch_theme_pages(
                 theme_slugs, emit, warnings)
 
-            # Step 3: top commanders page
+            # Step 3: top commanders page (also captures deck_count for
+            # commander_ranks table, Phase 1.10)
             self._emit(emit, 4, 6, "Fetching top-commanders page …")
             top_commander_cards = self._fetch_top_commanders_page(warnings)
 
-            # Gather all page-card lists for archetype union
+            # Gather all page-card lists for archetype union.
+            # Theme pages start at index len(color_page_cards) in the combined
+            # list, so we shift theme_page_slug_map by that offset.
+            color_offset = len(color_page_cards)
+            shifted_slug_map: dict[int, str] = {
+                color_offset + idx: slug
+                for idx, slug in theme_page_slug_map.items()
+            }
+
             all_archetype_pages: list[list[dict]] = (
                 color_page_cards + theme_page_cards + [top_commander_cards]
             )
@@ -167,12 +181,16 @@ class EDHRECSource(EnrichmentSource):
             self._client = None
 
         self._emit(emit, 5, 6, "Computing staple tiers …")
-        staple_rows, salt_rows, theme_rows = self._compute_enrichment(
-            top_cards=top_cards,
-            archetype_pages=all_archetype_pages,
-            card_details=card_details,
-            name_map=name_map,
-            warnings=warnings,
+        staple_rows, salt_rows, theme_rows, commander_rank_rows = (
+            self._compute_enrichment(
+                top_cards=top_cards,
+                archetype_pages=all_archetype_pages,
+                page_slug_map=shifted_slug_map,
+                top_commander_cards=top_commander_cards,
+                card_details=card_details,
+                name_map=name_map,
+                warnings=warnings,
+            )
         )
 
         self._emit(emit, 6, 6, "Writing enrichment to DB …")
@@ -181,7 +199,8 @@ class EDHRECSource(EnrichmentSource):
         conn = enrichment_db.get_connection()
         try:
             rows_changed = self._write(conn, staple_rows, salt_rows,
-                                       theme_rows, warnings)
+                                       theme_rows, commander_rank_rows,
+                                       warnings)
             total_staples = conn.execute(
                 "SELECT COUNT(*) FROM staples WHERE source='edhrec'"
             ).fetchone()[0]
@@ -204,7 +223,9 @@ class EDHRECSource(EnrichmentSource):
             conn.close()
 
         self._emit(emit, 6, 6,
-                   f"Done. {rows_changed} rows, {len(salt_rows)} salts.")
+                   f"Done. {rows_changed} rows, {len(salt_rows)} salts, "
+                   f"{len(theme_rows)} theme memberships, "
+                   f"{len(commander_rank_rows)} commander ranks.")
         return RefreshResult(
             source=self.name, success=True,
             duration_ms=_ms(start),
@@ -241,6 +262,12 @@ class EDHRECSource(EnrichmentSource):
                 "archetype_page_count": len(unique_pages),
                 "salt_count": conn.execute(
                     "SELECT COUNT(*) FROM salt_scores").fetchone()[0],
+                "theme_membership_count": conn.execute(
+                    "SELECT COUNT(*) FROM themes WHERE source='edhrec'"
+                ).fetchone()[0],
+                "commander_rank_count": conn.execute(
+                    "SELECT COUNT(*) FROM commander_ranks WHERE source='edhrec'"
+                ).fetchone()[0],
                 **(dict(sync) if sync else {}),
             }
         finally:
@@ -318,9 +345,16 @@ class EDHRECSource(EnrichmentSource):
         slugs: list[str],
         emit: Optional[EmitFn],
         warnings: list[str],
-    ) -> list[list[dict]]:
-        """Fetch theme top-cards pages; return list-of-cardview-lists."""
+    ) -> tuple[list[list[dict]], dict[int, str]]:
+        """Fetch theme top-cards pages.
+
+        Returns:
+            (page_cardview_lists, page_index_to_slug_map) where the map
+            allows _compute_enrichment to associate each page index with a
+            theme slug so cards can be stored in the themes table.
+        """
         out: list[list[dict]] = []
+        page_slug_map: dict[int, str] = {}
         total = len(slugs)
         for i, slug in enumerate(slugs):
             if i % 25 == 0:
@@ -334,8 +368,10 @@ class EDHRECSource(EnrichmentSource):
             cards: list[dict] = []
             for lst in cardlists:
                 cards.extend(lst.get("cardviews", []))
-            out.append(cards[:MAX_CARDS_PER_THEME_PAGE])
-        return out
+            page_cards = cards[:MAX_CARDS_PER_THEME_PAGE]
+            page_slug_map[len(out)] = slug
+            out.append(page_cards)
+        return out, page_slug_map
 
     def _fetch_top_commanders_page(self, warnings: list[str]) -> list[dict]:
         """Fetch the top-commanders year page; return top cardviews."""
@@ -378,29 +414,42 @@ class EDHRECSource(EnrichmentSource):
         self,
         top_cards: list[dict],
         archetype_pages: list[list[dict]],
+        page_slug_map: dict[int, str],
+        top_commander_cards: list[dict],
         card_details: dict[str, dict],
         name_map: dict[str, str],
         warnings: list[str],
-    ) -> tuple[list[dict], list[dict], list[dict]]:
-        """Compute staple rows, salt rows, theme rows.
+    ) -> tuple[list[dict], list[dict], list[dict], list[dict]]:
+        """Compute staple rows, salt rows, theme rows, and commander rank rows.
 
         Args:
-            top_cards:       cardviews from the global top/year page
-            archetype_pages: list of cardview lists — one entry per color/theme/
-                             commander page.  A card qualifies for archetype tier
-                             if it appears in >= ARCHETYPE_MIN_PAGES of these.
-            card_details:    slug -> card JSON from individual card pages (for salt)
-            name_map:        card name -> oracle_id
-            warnings:        accumulate non-fatal issues here
+            top_cards:            cardviews from the global top/year page
+            archetype_pages:      list of cardview lists — one entry per
+                                  color/theme/commander page.  A card qualifies
+                                  for archetype tier if it appears in >=
+                                  ARCHETYPE_MIN_PAGES of these.
+            page_slug_map:        {page_index_in_archetype_pages: theme_slug}
+                                  Only theme pages are in this map (not color
+                                  pages); used to populate the themes table.
+            top_commander_cards:  cardviews from the top-commanders page;
+                                  num_decks stored in commander_ranks.
+            card_details:         slug -> card JSON from individual card pages
+                                  (for salt + universal inclusion rate)
+            name_map:             card name -> oracle_id
+            warnings:             accumulate non-fatal issues here
+
+        Returns:
+            (staple_rows, salt_rows, theme_rows, commander_rank_rows)
         """
         ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
         # Count page appearances per oracle_id across archetype pages
-        # {oracle_id: count_of_pages_it_appeared_in}
         page_count: dict[str, int] = {}
-        # Track which page labels (color slug / theme slug) a card appeared in
-        # We don't have labels available at this level, so we just count pages.
-        for page_cards in archetype_pages:
+        # theme_memberships: {oracle_id: set of theme_slug strings}
+        theme_memberships: dict[str, set] = {}
+
+        for page_idx, page_cards in enumerate(archetype_pages):
+            theme_slug = page_slug_map.get(page_idx)
             # Deduplicate within a single page before counting
             seen_in_page: set[str] = set()
             for cv in page_cards:
@@ -412,10 +461,12 @@ class EDHRECSource(EnrichmentSource):
                     continue
                 seen_in_page.add(oid)
                 page_count[oid] = page_count.get(oid, 0) + 1
+                # Record theme membership if this page has a slug
+                if theme_slug:
+                    theme_memberships.setdefault(oid, set()).add(theme_slug)
 
         staple_rows: list[dict] = []
         salt_rows: list[dict] = []
-        theme_rows: list[dict] = []
         seen_universal: set[str] = set()
 
         # Universal staples from card detail pages
@@ -487,7 +538,41 @@ class EDHRECSource(EnrichmentSource):
                     "last_updated": ts,
                 })
 
-        return staple_rows, salt_rows, theme_rows
+        # Theme membership rows (Phase 1.10)
+        theme_rows: list[dict] = []
+        for oid, slugs in theme_memberships.items():
+            for theme_slug in slugs:
+                theme_rows.append({
+                    "oracle_id": oid,
+                    "theme_name": theme_slug,
+                    "source": "edhrec",
+                    "inclusion_pct": None,
+                    "last_updated": ts,
+                })
+
+        # Commander popularity rows (Phase 1.10)
+        # top_commander_cards contains commanders with their deck counts.
+        commander_rank_rows: list[dict] = []
+        seen_commanders: set[str] = set()
+        for cv in top_commander_cards:
+            name = cv.get("name")
+            if not name:
+                continue
+            oid = _lookup(name, name_map)
+            if not oid or oid in seen_commanders:
+                continue
+            num_decks = cv.get("num_decks") or cv.get("deck_count") or 0
+            if num_decks > 0:
+                seen_commanders.add(oid)
+                commander_rank_rows.append({
+                    "oracle_id": oid,
+                    "deck_count": num_decks,
+                    "avg_synergy_json": None,
+                    "source": "edhrec",
+                    "last_updated": ts,
+                })
+
+        return staple_rows, salt_rows, theme_rows, commander_rank_rows
 
     # -- DB write ------------------------------------------------------------
 
@@ -497,8 +582,15 @@ class EDHRECSource(EnrichmentSource):
         staple_rows: list[dict],
         salt_rows: list[dict],
         theme_rows: list[dict],
+        commander_rank_rows: list[dict],
         warnings: list[str],
     ) -> int:
+        """Write all enrichment rows atomically.
+
+        Writes staples, salt_scores, themes, and commander_ranks in a single
+        transaction.  Any error rolls back the entire write so partial data
+        is never committed.
+        """
         changed = 0
         with conn:
             conn.executemany(
@@ -524,6 +616,35 @@ class EDHRECSource(EnrichmentSource):
                 salt_rows,
             )
             changed += len(salt_rows)
+
+            # Theme membership rows (Phase 1.10)
+            if theme_rows:
+                conn.executemany(
+                    """INSERT INTO themes
+                           (oracle_id, theme_name, source, inclusion_pct)
+                       VALUES (:oracle_id, :theme_name, :source, :inclusion_pct)
+                       ON CONFLICT(oracle_id, theme_name, source) DO UPDATE SET
+                           inclusion_pct = excluded.inclusion_pct""",
+                    theme_rows,
+                )
+                changed += len(theme_rows)
+
+            # Commander popularity rows (Phase 1.10)
+            if commander_rank_rows:
+                conn.executemany(
+                    """INSERT INTO commander_ranks
+                           (oracle_id, deck_count, avg_synergy_json,
+                            source, last_updated)
+                       VALUES (:oracle_id, :deck_count, :avg_synergy_json,
+                               :source, :last_updated)
+                       ON CONFLICT(oracle_id) DO UPDATE SET
+                           deck_count = excluded.deck_count,
+                           avg_synergy_json = excluded.avg_synergy_json,
+                           last_updated = excluded.last_updated""",
+                    commander_rank_rows,
+                )
+                changed += len(commander_rank_rows)
+
         return changed
 
     # -- Helpers -------------------------------------------------------------
