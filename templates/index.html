@@ -595,7 +595,7 @@
                                         <button class="btn btn-outline-secondary" onclick="setWishlistBin()">Set</button>
                                     </div>
                                     <!-- Priority bin (Phase 4.21): Moxfield wishlist -> priority bin. -->
-                                    <div class="input-group input-group-sm" style="max-width:260px;"
+                                    <div class="input-group input-group-sm" style="max-width:320px;"
                                          title="Cards in the selected Moxfield wishlist are routed to the priority bin (overrides all other sort rules).">
                                         <span class="input-group-text">Priority Bin</span>
                                         <input type="number" id="priority-bin-input" class="form-control" placeholder="None" min="1" max="10">
@@ -603,6 +603,11 @@
                                             <option value="">— wishlist —</option>
                                         </select>
                                         <button class="btn btn-outline-warning" onclick="setPriorityBin()">Set</button>
+                                        <button class="btn btn-outline-secondary" type="button"
+                                                data-bs-toggle="modal" data-bs-target="#moxfield-text-modal"
+                                                title="Paste a Moxfield decklist to add / replace a wishlist source, or copy your inventory out as Moxfield text.">
+                                            Import/Export…
+                                        </button>
                                     </div>
                                     <div class="input-group input-group-sm" style="max-width:220px;">
                                         <span class="input-group-text">Re-home every</span>
@@ -1431,6 +1436,76 @@
                 </div>
               </div>
             </div><!-- /#calibration-wizard-modal -->
+
+            <!-- ============================================================ -->
+            <!-- MOXFIELD TEXT IMPORT / EXPORT MODAL                          -->
+            <!-- Replaces the auth'd API push/pull (Cloudflare-blocked).      -->
+            <!-- ============================================================ -->
+            <div class="modal fade" id="moxfield-text-modal" tabindex="-1" aria-hidden="true">
+              <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title">Moxfield Import / Export (text)</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                  </div>
+                  <div class="modal-body">
+                    <ul class="nav nav-tabs" role="tablist">
+                      <li class="nav-item">
+                        <button class="nav-link active" data-bs-toggle="tab"
+                                data-bs-target="#mox-paste-in">Paste in (wishlist)</button>
+                      </li>
+                      <li class="nav-item">
+                        <button class="nav-link" data-bs-toggle="tab"
+                                data-bs-target="#mox-paste-out" onclick="loadMoxfieldExportText()">Copy out (inventory)</button>
+                      </li>
+                    </ul>
+                    <div class="tab-content pt-3">
+                      <div class="tab-pane fade show active" id="mox-paste-in">
+                        <p class="small text-muted mb-2">
+                          Paste a Moxfield decklist or wishlist (plain text).
+                          Names are resolved against your local Scryfall cache —
+                          unresolved names are listed back so you can fix them.
+                          Basic lands are filtered at cache time.
+                        </p>
+                        <div class="mb-2">
+                          <label for="mox-paste-source-key" class="form-label small mb-1">Source key</label>
+                          <input type="text" class="form-control form-control-sm" id="mox-paste-source-key"
+                                 placeholder="moxfield:my-edh">
+                        </div>
+                        <div class="mb-2">
+                          <label for="mox-paste-display-name" class="form-label small mb-1">Display name (optional)</label>
+                          <input type="text" class="form-control form-control-sm" id="mox-paste-display-name"
+                                 placeholder="My EDH shortlist">
+                        </div>
+                        <textarea class="form-control font-monospace" id="mox-paste-textarea" rows="12"
+                                  placeholder="4 Lightning Bolt (LEA) 161&#10;1 Black Lotus&#10;// comments are ignored&#10;Commander&#10;1 Atraxa, Praetors' Voice"></textarea>
+                        <div id="mox-paste-result" class="mt-2 small"></div>
+                      </div>
+                      <div class="tab-pane fade" id="mox-paste-out">
+                        <p class="small text-muted mb-2">
+                          Current inventory as Moxfield text. Click the textarea
+                          and Ctrl+A / Ctrl+C, or use Copy below, then paste into
+                          Moxfield's Import deck or Binder bulk-add.
+                        </p>
+                        <textarea class="form-control font-monospace" id="mox-export-textarea"
+                                  rows="14" readonly></textarea>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="modal-footer justify-content-between">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <div>
+                      <button type="button" class="btn btn-outline-secondary"
+                              id="mox-export-copy-btn" style="display:none;"
+                              onclick="copyMoxfieldExportText()">Copy to clipboard</button>
+                      <button type="button" class="btn btn-primary"
+                              id="mox-paste-submit-btn"
+                              onclick="submitMoxfieldPaste()">Import</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div><!-- /#moxfield-text-modal -->
 
         </div><!-- /tab-content -->
     </div><!-- /container -->

@@ -988,6 +988,90 @@ def api_integrations_moxfield_wishlist_upsert():
     return jsonify({'id': wid, 'source_key': source_key})
 
 
+@app.route('/api/integrations/moxfield/wishlist/paste', methods=['POST'])
+def api_integrations_moxfield_wishlist_paste():
+    """Ingest a Moxfield plain-text decklist and cache it as a wishlist source.
+
+    Replaces the auth'd API pull: user pastes text from Moxfield's
+    "Export deck" (or wishlist) and we resolve names → oracle_ids against
+    the local Scryfall bulk cache.
+
+    Body:
+        {"source_key": "moxfield:<label>",   # required, e.g. "moxfield:my-edh"
+         "display_name": "...",              # optional
+         "text": "4 Lightning Bolt\\n..."}   # required
+
+    Returns:
+        {"id": int, "source_key": str, "card_count": int,
+         "unresolved": [name, ...]}
+    """
+    import collection_db
+    from web_enrichment import moxfield_text
+
+    data = request.json or {}
+    source_key = (data.get('source_key') or '').strip()
+    text = data.get('text') or ''
+    if not source_key:
+        return jsonify({'error': 'source_key required'}), 400
+    if not text.strip():
+        return jsonify({'error': 'text is empty'}), 400
+
+    entries = moxfield_text.parse_text(text)
+    resolved, unresolved = moxfield_text.resolve_entries(entries)
+
+    conn = collection_db.get_connection()
+    try:
+        wid = collection_db.upsert_moxfield_wishlist(
+            conn,
+            source_key=source_key,
+            cards=resolved,
+            display_name=data.get('display_name'),
+        )
+    finally:
+        conn.close()
+    return jsonify({
+        'id': wid,
+        'source_key': source_key,
+        'card_count': len(resolved),
+        'unresolved': unresolved,
+    })
+
+
+@app.route('/api/integrations/moxfield/export-text')
+def api_integrations_moxfield_export_text():
+    """Render current inventory as Moxfield plain-text for copy/paste into Moxfield.
+
+    Query params:
+        box:       optional — filter inventory to a single box
+        min_qty:   optional int, default 1
+
+    Returns text/plain body.
+    """
+    import collection_db
+    from web_enrichment import moxfield_text
+
+    box = request.args.get('box') or None
+    try:
+        min_qty = max(1, int(request.args.get('min_qty') or 1))
+    except ValueError:
+        min_qty = 1
+
+    conn = collection_db.get_connection()
+    try:
+        rows = collection_db.get_inventory(conn, order_by='name')
+    finally:
+        conn.close()
+
+    if box:
+        rows = [r for r in rows if (r.get('box') or '') == box]
+    rows = [r for r in rows
+            if (r.get('quantity') or 0) >= min_qty
+            or (r.get('foil_quantity') or 0) >= min_qty]
+
+    text = moxfield_text.render_text(rows)
+    return Response(text, mimetype='text/plain')
+
+
 @app.route('/api/session/rehome-interval', methods=['POST'])
 def api_session_rehome_interval():
     data = request.json or {}
@@ -4034,104 +4118,6 @@ def api_moxfield_wishlist_import():
         return jsonify({'error': f'Import failed: {type(e).__name__}: {e}'}), 500
 
     return jsonify(result)
-
-
-# =========================================================================
-# Moxfield push (Phase 3 item 3.16 — diff-based sync)
-# =========================================================================
-
-@app.route('/api/integrations/moxfield/push/<deck_id>', methods=['POST'])
-def api_moxfield_push(deck_id):
-    """Diff local inventory against a Moxfield deck and optionally push.
-
-    Body (JSON):
-      {
-        "commit": false   // default false = dry-run; true = push to Moxfield
-      }
-
-    In dry-run mode (default), returns the diff preview without touching
-    Moxfield.  Pass {"commit": true} to actually push the changes.
-
-    The diff is computed against the current Moxfield deck state (live fetch).
-    Basic lands are excluded.
-
-    Returns 200 with:
-      {
-        "deck_id":            str,
-        "dry_run":            bool,
-        "adds":               [{oracle_id, name, qty, foil_qty, ...}],
-        "removes":            [{oracle_id, name, qty, card_id}],
-        "updates":            [{oracle_id, name, local_qty, remote_qty, ...}],
-        "total_changes":      int,
-        "committed":          bool,
-        "moxfield_response":  dict | null,
-        "warnings":           [str]
-      }
-
-    Returns 400 if deck_id is missing or malformed.
-    Returns 401 if Moxfield rejects the bearer token and refresh fails.
-    Returns 502 if Moxfield returns 4xx/5xx during the push.
-    Returns 503 if the network request to Moxfield fails.
-    Returns 500 on unexpected internal error.
-    """
-    import httpx as _httpx
-    from web_enrichment.moxfield_push import run_push
-
-    import collection_db as _coll
-
-    body = request.get_json(silent=True) or {}
-    commit = bool(body.get('commit', False))
-
-    if not deck_id:
-        return jsonify({'error': 'deck_id is required in the URL path'}), 400
-
-    conn = _coll.get_connection()
-    try:
-        result = run_push(deck_id, conn, dry_run=not commit)
-    except RuntimeError as e:
-        errs = str(e)
-        # Distinguish auth failures from other errors
-        if 'refresh' in errs.lower() or '401' in errs or 'token' in errs.lower():
-            return jsonify({'error': errs}), 401
-        return jsonify({'error': errs}), 502
-    except _httpx.HTTPStatusError as e:
-        code = e.response.status_code if e.response is not None else 0
-        return jsonify({'error': f'Moxfield returned HTTP {code}'}), 502
-    except _httpx.RequestError as e:
-        return jsonify({'error': f'Could not reach Moxfield: {type(e).__name__}'}), 503
-    except Exception as e:
-        logging.error('[moxfield_push] push error: %s', e, exc_info=True)
-        return jsonify({'error': f'Push failed: {type(e).__name__}: {e}'}), 500
-    finally:
-        conn.close()
-
-    return jsonify(result)
-
-
-@app.route('/api/integrations/moxfield/push/<deck_id>/manifest', methods=['GET'])
-def api_moxfield_push_manifest(deck_id):
-    """Return the last-uploaded sync_manifests state for a deck target.
-
-    Useful for the UI to show a pending-changes count without fetching
-    the remote deck.  Returns a dict of {oracle_id: {qty, foil_qty, ...}}.
-    """
-    import collection_db as _coll
-    from web_enrichment.moxfield_push import get_manifest
-
-    conn = _coll.get_connection()
-    try:
-        manifest = get_manifest(conn, f"moxfield:{deck_id}")
-        return jsonify({
-            'deck_id': deck_id,
-            'target': f'moxfield:{deck_id}',
-            'entries': manifest,
-            'entry_count': len(manifest),
-        })
-    except Exception as e:
-        logging.error('[moxfield_push] manifest read error: %s', e, exc_info=True)
-        return jsonify({'error': str(e)}), 500
-    finally:
-        conn.close()
 
 
 _shutting_down = False
