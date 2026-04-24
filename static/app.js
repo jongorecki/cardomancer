@@ -1723,9 +1723,11 @@ socket.on('overflow_map_updated', (data) => {
 // =========================================================================
 
 // BUILTIN_CONFIGS: filenames that ship with the project and are treated as
-// read-only. Users may load them, edit in-memory, and Save As a new file,
-// but cannot overwrite these files via the Save button.
-const BUILTIN_CONFIGS = new Set([
+// read-only. The canonical list lives on the server (BUILTIN_SORT_PRESETS in
+// web_server.py) and is returned by /api/sort/configs. We keep this Set
+// populated from the server response — the literal below is only a seed so
+// the UI behaves sanely on first render before the server list arrives.
+let BUILTIN_CONFIGS = new Set([
     'color.txt', 'mana_value.txt', 'price.txt', 'price_tiers.txt',
     'set.txt', 'type.txt', 'color_type.txt', 'edh_staples.txt',
 ]);
@@ -1733,6 +1735,7 @@ const BUILTIN_CONFIGS = new Set([
 let _scFilename = null;      // currently loaded filename (null = unsaved)
 let _scDirty = false;        // any unsaved in-memory changes
 let _scBuiltin = false;      // currently loaded file is a builtin (read-only)
+let _scPresetMeta = {};      // filename → {description, bin_count, builtin}
 
 // ---------- Config text parser ----------
 
@@ -1879,12 +1882,26 @@ async function loadSortConfigList() {
     try {
         const data = await apiGet('/api/sort/configs');
         const configs = data.configs || [];
+        // Refresh BUILTIN_CONFIGS and per-file metadata from the server so
+        // the client doesn't drift from sort_configs/ on disk.
+        if (Array.isArray(data.builtins)) {
+            BUILTIN_CONFIGS = new Set(data.builtins);
+        }
+        _scPresetMeta = {};
+        for (const cfg of configs) {
+            _scPresetMeta[cfg.filename] = {
+                description: cfg.description || '',
+                bin_count: cfg.bin_count,
+                builtin: !!cfg.builtin,
+            };
+        }
         sel.innerHTML = '';
         for (const cfg of configs) {
             const opt = document.createElement('option');
             opt.value = cfg.filename;
-            const isBuiltin = BUILTIN_CONFIGS.has(cfg.filename);
-            opt.textContent = cfg.filename + (isBuiltin ? ' (built-in)' : '');
+            const builtinTag = cfg.builtin ? ' (built-in)' : '';
+            opt.textContent = cfg.filename + builtinTag;
+            if (cfg.description) opt.title = cfg.description;
             sel.appendChild(opt);
         }
         if (configs.length) {
@@ -1904,11 +1921,17 @@ async function loadSortConfigList() {
 async function loadSortConfigFile(filename) {
     try {
         const data = await apiGet(`/api/sort/configs/${encodeURIComponent(filename)}`);
-        const parsed = _parseSortConfigText(data.content || '');
+        const content = data.content || '';
+        const parsed = _parseSortConfigText(content);
         _scFilename = filename;
-        _scBuiltin = BUILTIN_CONFIGS.has(filename);
+        _scBuiltin = !!data.builtin || BUILTIN_CONFIGS.has(filename);
         _scDirty = false;
         _rebuildSortConfigTable(parsed);
+        // Keep the raw textarea in sync with the loaded file — if the user
+        // opens "Edit as text" later they see the real on-disk content
+        // rather than whatever the table serializer would reconstruct.
+        const ta = document.getElementById('sort-config-text-area');
+        if (ta) ta.value = content;
         _updateSortConfigToolbar();
         // Sync the select element
         const sel = document.getElementById('sort-preset-select');
@@ -1943,14 +1966,25 @@ function _clearDirty() {
 function _updateSortConfigToolbar() {
     const saveBtn = document.getElementById('btn-sort-config-save');
     const delBtn = document.getElementById('btn-sort-config-delete');
+    const dupBtn = document.getElementById('btn-sort-config-duplicate');
+    const editTextBtn = document.getElementById('btn-sort-config-edit-text');
     if (saveBtn) {
-        saveBtn.disabled = _scBuiltin;
+        saveBtn.disabled = _scBuiltin || !_scFilename;
         saveBtn.title = _scBuiltin
-            ? 'Built-in presets are read-only; use Save As'
-            : 'Save changes back to this preset file';
+            ? 'Built-in presets are read-only; use Duplicate or Save As'
+            : (_scFilename
+                ? 'Save changes back to this preset file'
+                : 'Pick a preset or Save As first');
     }
     if (delBtn) {
         delBtn.style.display = (!_scBuiltin && _scFilename) ? '' : 'none';
+    }
+    if (dupBtn) {
+        // Can duplicate anything that's loaded on disk — builtin or user.
+        dupBtn.disabled = !_scFilename;
+    }
+    if (editTextBtn) {
+        editTextBtn.disabled = false;
     }
 }
 
@@ -2123,29 +2157,60 @@ function newSortConfig() {
         binQueries: {},
     };
     _rebuildSortConfigTable(empty);
+    // Also reset the raw textarea so a stale previous preset doesn't
+    // leak into the new one when the user opens "Edit as text".
+    const ta = document.getElementById('sort-config-text-area');
+    if (ta) ta.value = '# New preset\nbins: 10\nfallback: 10\n';
     _clearDirty();
+    _updateSortConfigToolbar();
     const sel = document.getElementById('sort-preset-select');
     if (sel) sel.value = '';
 }
 
 // ---------- Save ----------
 
+function _currentPresetContent() {
+    // If the raw text editor is open, its textarea is authoritative —
+    // otherwise serialize the bin table.
+    const editor = document.getElementById('sort-config-text-editor');
+    const ta = document.getElementById('sort-config-text-area');
+    if (editor && ta && editor.classList.contains('show') && ta.value.trim()) {
+        return ta.value;
+    }
+    return serializeSortConfig();
+}
+
+async function _savePresetToFile(filename, content) {
+    const r = await fetch(
+        `/api/sort/configs/${encodeURIComponent(filename)}`,
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content }),
+        }
+    );
+    if (r.ok) return { ok: true };
+    let msg = `HTTP ${r.status}`;
+    try {
+        const body = await r.json();
+        if (body.message) msg = body.message;
+        else if (body.error) msg = body.error;
+    } catch (e) {}
+    return { ok: false, msg };
+}
+
 async function saveSortConfig() {
     if (!_scFilename || _scBuiltin) {
         addLog('Cannot overwrite a built-in preset. Use Save As.');
         return;
     }
-    const content = serializeSortConfig();
-    const r = await fetch(`/api/sort/configs/${encodeURIComponent(_scFilename)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
-    });
-    if (r.ok) {
+    const content = _currentPresetContent();
+    const res = await _savePresetToFile(_scFilename, content);
+    if (res.ok) {
         _clearDirty();
         addLog(`Saved: ${_scFilename}`);
     } else {
-        addLog(`Save failed: ${r.status}`);
+        addLog(`Save failed: ${res.msg}`);
     }
 }
 
@@ -2156,20 +2221,16 @@ async function saveSortConfigAs() {
     const raw = prompt('Save as (filename without .txt):', suggested);
     if (!raw) return;
     const filename = raw.trim().replace(/\.txt$/, '') + '.txt';
-    const content = serializeSortConfig();
-    const r = await fetch(`/api/sort/configs/${encodeURIComponent(filename)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
-    });
-    if (r.ok) {
+    const content = _currentPresetContent();
+    const res = await _savePresetToFile(filename, content);
+    if (res.ok) {
         _scFilename = filename;
         _scBuiltin = false;
         _clearDirty();
         addLog(`Saved as: ${filename}`);
         await loadSortConfigList();
     } else {
-        addLog(`Save failed: ${r.status}`);
+        addLog(`Save failed: ${res.msg}`);
     }
 }
 
@@ -2185,6 +2246,73 @@ async function deleteSortConfig() {
     } else {
         addLog(`Delete failed: ${r.status}`);
     }
+}
+
+// ---------- Duplicate ----------
+
+async function duplicateSortConfig() {
+    if (!_scFilename) {
+        addLog('Nothing to duplicate — pick a preset first');
+        return;
+    }
+    const base = _scFilename.replace(/\.txt$/, '');
+    const raw = prompt(
+        `Duplicate "${_scFilename}" as (filename without .txt):`,
+        base + '_copy'
+    );
+    if (!raw) return;
+    const target = raw.trim().replace(/\.txt$/, '') + '.txt';
+    const r = await fetch(
+        `/api/sort/configs/${encodeURIComponent(_scFilename)}/duplicate`,
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ target }),
+        }
+    );
+    if (r.ok) {
+        const body = await r.json();
+        addLog(`Duplicated to: ${body.filename}`);
+        await loadSortConfigList();
+        await loadSortConfigFile(body.filename);
+    } else {
+        let msg = `Duplicate failed: ${r.status}`;
+        try {
+            const body = await r.json();
+            if (body.message) msg += ` — ${body.message}`;
+            else if (body.error) msg += ` — ${body.error}`;
+        } catch (e) {}
+        addLog(msg);
+    }
+}
+
+// ---------- Edit as text / textarea sync ----------
+
+function onEditAsTextClicked() {
+    // When the text editor is about to open, re-seed the textarea from
+    // the current table state so the raw view matches what the user sees.
+    // (If the user was editing the table, those changes get serialized in
+    // here.) When the user later clicks away we re-parse back into rows.
+    const ta = document.getElementById('sort-config-text-area');
+    if (!ta) return;
+    const editor = document.getElementById('sort-config-text-editor');
+    // `collapse.show` is true *before* the toggle runs, so invert.
+    const willOpen = editor && !editor.classList.contains('show');
+    if (willOpen) {
+        ta.value = serializeSortConfig();
+    }
+}
+
+function _syncTextAreaToTable() {
+    const ta = document.getElementById('sort-config-text-area');
+    if (!ta) return;
+    const text = ta.value;
+    if (!text.trim()) return;  // nothing to parse
+    const parsed = _parseSortConfigText(text);
+    _rebuildSortConfigTable(parsed);
+    // Validate every non-fallback query row we just rebuilt so the user
+    // gets immediate feedback when leaving the textarea.
+    if (typeof _validateAllSortRows === 'function') _validateAllSortRows();
 }
 
 // ---------- Session lock/unlock ----------

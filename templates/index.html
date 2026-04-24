@@ -353,6 +353,20 @@
                                                 onclick="saveSortConfigAs()">
                                             Save As&hellip;
                                         </button>
+                                        <button class="btn btn-sm btn-outline-secondary"
+                                                id="btn-sort-config-duplicate"
+                                                onclick="duplicateSortConfig()"
+                                                title="Copy this preset to a new file">
+                                            Duplicate
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-info"
+                                                id="btn-sort-config-edit-text"
+                                                data-bs-toggle="collapse"
+                                                data-bs-target="#sort-config-text-editor"
+                                                onclick="onEditAsTextClicked()"
+                                                title="Edit the raw preset text">
+                                            Edit as text
+                                        </button>
                                         <button class="btn btn-sm btn-outline-danger"
                                                 id="btn-sort-config-delete"
                                                 onclick="deleteSortConfig()"
@@ -415,6 +429,35 @@
                                         </button>
                                     </div>
 
+                                    <!-- Raw text editor (collapsible).
+                                         Opens via "Edit as text" above. On
+                                         blur we re-parse the textarea into
+                                         the bin table so the two views stay
+                                         in sync; Save uses whichever view
+                                         was edited last. -->
+                                    <div class="collapse mt-3" id="sort-config-text-editor">
+                                        <label class="form-label small mb-1">
+                                            Raw preset content
+                                            <span class="text-muted">
+                                                &mdash; saved verbatim when you hit Save.
+                                            </span>
+                                        </label>
+                                        <textarea id="sort-config-text-area"
+                                                  class="form-control form-control-sm font-monospace"
+                                                  rows="10"
+                                                  style="font-size:0.8rem;"
+                                                  oninput="markSortConfigDirty()"
+                                                  onblur="_syncTextAreaToTable()"></textarea>
+                                        <div class="form-text small text-muted">
+                                            Lines: <code>bins: N</code>,
+                                            <code>fallback: N</code>,
+                                            <code>limit: N</code>,
+                                            <code>overrides: 3,5</code>,
+                                            <code>binN: &lt;query&gt;</code>.
+                                            A leading <code># comment</code> becomes the description.
+                                        </div>
+                                    </div>
+
                                     <!-- Sort Configuration help (collapsible) -->
                                     <div class="mt-3">
                                         <a class="small text-muted text-decoration-none"
@@ -427,8 +470,9 @@
                                             <div class="mt-2 p-2 rounded small sort-query-ref-box">
                                                 <p class="mb-1 fw-semibold">Presets</p>
                                                 <ul class="mb-2 ps-3" style="font-size:0.8rem">
-                                                    <li><strong>Select</strong> a preset from the dropdown to load its bin rules. Built-in presets (by color, by rarity, by price) cannot be overwritten &mdash; use <em>Save As&hellip;</em> to create a user copy.</li>
-                                                    <li><strong>New</strong> starts a blank config. <strong>Save</strong> writes changes back to the current user preset file. <strong>Save As&hellip;</strong> creates a new preset. <strong>Delete</strong> removes a user preset.</li>
+                                                    <li><strong>Select</strong> a preset from the dropdown to load its bin rules. Every preset &mdash; built-in and user-created alike &mdash; lives under <code>sort_configs/*.txt</code>. Built-ins are read-only; use <em>Duplicate</em> or <em>Save As&hellip;</em> to edit them.</li>
+                                                    <li><strong>New</strong> starts a blank preset. <strong>Save</strong> writes back to the current user preset file. <strong>Save As&hellip;</strong> writes to a new filename you pick. <strong>Duplicate</strong> copies the current preset to a new filename and loads it. <strong>Delete</strong> removes a user preset.</li>
+                                                    <li><strong>Edit as text</strong> opens a raw-text editor below the bin table. Useful for pasting a preset from someone else, or for editing comments/descriptions the structured table doesn't surface. Clicking outside the textarea re-parses it back into the table; Save persists whichever view was active.</li>
                                                     <li>The <span class="badge bg-warning text-dark" style="font-size:0.65rem">modified</span> badge next to the header means you have unsaved edits.</li>
                                                 </ul>
 
