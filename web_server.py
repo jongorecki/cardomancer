@@ -3289,6 +3289,84 @@ def api_enrichment_card(oracle_id):
     })
 
 
+# =========================================================================
+# Moxfield integrations (Phase 3 item 3.15)
+# =========================================================================
+
+_moxfield_source = None
+
+
+def _get_moxfield_source():
+    """Lazy-init MoxfieldSource; avoids import cost at server start."""
+    global _moxfield_source
+    if _moxfield_source is None:
+        from web_enrichment.moxfield import MoxfieldSource
+        _moxfield_source = MoxfieldSource()
+    return _moxfield_source
+
+
+@app.route('/api/integrations/moxfield/deck/import', methods=['POST'])
+def api_moxfield_deck_import():
+    """Fetch a public Moxfield deck by URL and cache it.
+
+    Body (JSON): { "deck_url": "<full Moxfield URL or bare deck ID>" }
+
+    Returns 200 with:
+      { deck_id, deck_name, format, owner, card_count,
+        cards: [{oracle_id, name, quantity, set, collector_number,
+                 scryfall_id, board}] }
+
+    Returns 400 if deck_url is missing or unparseable.
+    Returns 404 if Moxfield returns a non-200 (e.g. private / deleted deck).
+    Returns 503 if the network request fails (Moxfield unreachable).
+    """
+    import httpx as _httpx
+    from web_enrichment.moxfield import MoxfieldSource
+
+    body = request.get_json(silent=True) or {}
+    deck_url = body.get('deck_url') or ''
+    if not deck_url:
+        return jsonify({'error': 'deck_url is required'}), 400
+
+    include_side = bool(body.get('include_sideboard', False))
+    use_cache = bool(body.get('use_cache', True))
+
+    try:
+        result = _get_moxfield_source().import_deck(
+            deck_url,
+            include_side=include_side,
+            use_cache=use_cache,
+        )
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except _httpx.HTTPStatusError as e:
+        code = e.response.status_code if e.response is not None else 0
+        if code == 404:
+            return jsonify({'error': 'Deck not found or is private on Moxfield'}), 404
+        return jsonify({'error': f'Moxfield returned HTTP {code}'}), 502
+    except _httpx.RequestError as e:
+        return jsonify({'error': f'Could not reach Moxfield: {type(e).__name__}'}), 503
+    except Exception as e:
+        logging.error('[moxfield] import error: %s', e, exc_info=True)
+        return jsonify({'error': f'Import failed: {type(e).__name__}: {e}'}), 500
+
+    return jsonify(result)
+
+
+@app.route('/api/integrations/moxfield/deck/<deck_id>/cache', methods=['GET'])
+def api_moxfield_deck_cache(deck_id):
+    """Return the cached import payload for a deck, or 404 if not cached.
+
+    Does NOT hit the Moxfield API — returns only what is already stored in
+    enrichment.db.  Use /import to fetch-and-cache a new deck.
+    """
+    from web_enrichment.moxfield import get_cached_deck
+    result = get_cached_deck(deck_id)
+    if result is None:
+        return jsonify({'error': 'Deck not in cache; use /import to fetch it'}), 404
+    return jsonify(result)
+
+
 _shutting_down = False
 
 

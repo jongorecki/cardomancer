@@ -167,6 +167,19 @@ def _create_tables(conn: sqlite3.Connection) -> None:
             name TEXT NOT NULL,
             last_seen_bulk TEXT
         );
+
+        -- Moxfield deck cache. Populated by MoxfieldSource.refresh().
+        -- raw_json stores the full API response for offline re-parsing.
+        CREATE TABLE IF NOT EXISTS moxfield_decks (
+            deck_id      TEXT PRIMARY KEY,
+            deck_name    TEXT,
+            owner        TEXT,
+            last_fetched_at INTEGER,
+            format       TEXT,
+            raw_json     TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_moxfield_decks_owner
+            ON moxfield_decks(owner);
     """)
     conn.commit()
 
