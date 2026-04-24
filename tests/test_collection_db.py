@@ -297,23 +297,14 @@ class TestGetCullCandidates(unittest.TestCase):
         self.enr_path = os.path.join(self.tmpdir, "enrichment.db")
         self.conn = collection_db.get_connection(db_path=self.col_path)
 
-        # Build a minimal enrichment.db with tags + staples tables
-        import sqlite3
-        enr = sqlite3.connect(self.enr_path)
-        enr.execute(
-            "CREATE TABLE tags (oracle_id TEXT NOT NULL, tag_name TEXT NOT NULL, "
-            "PRIMARY KEY (oracle_id, tag_name))"
-        )
-        enr.execute(
-            "CREATE TABLE staples (oracle_id TEXT NOT NULL, tier TEXT, source TEXT, "
-            "score REAL, archetypes_json TEXT, last_updated TEXT, "
-            "PRIMARY KEY (oracle_id, tier, source))"
-        )
-        enr.commit()
-        enr.close()
+        # Build enrichment.db with full schema (needed by the new cull query
+        # which references salt_scores, buylists, commander_ranks, deck_usage).
+        import enrichment_db
+        self._enr_conn = enrichment_db.get_connection(db_path=self.enr_path)
 
     def tearDown(self):
         self.conn.close()
+        self._enr_conn.close()
         import shutil
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
@@ -328,21 +319,21 @@ class TestGetCullCandidates(unittest.TestCase):
         self.conn.commit()
 
     def _add_tag(self, oracle_id, tag_name):
-        import sqlite3
-        enr = sqlite3.connect(self.enr_path)
-        enr.execute("INSERT OR IGNORE INTO tags VALUES (?, ?)", (oracle_id, tag_name))
-        enr.commit()
-        enr.close()
+        self._enr_conn.execute(
+            "INSERT OR IGNORE INTO tags (oracle_id, tag_name, source) "
+            "VALUES (?, ?, 'scryfall_search')",
+            (oracle_id, tag_name),
+        )
+        self._enr_conn.commit()
 
     def _add_staple(self, oracle_id):
-        import sqlite3
-        enr = sqlite3.connect(self.enr_path)
-        enr.execute(
-            "INSERT OR IGNORE INTO staples VALUES (?, 'universal', 'edhrec', 0.5, NULL, '2026-01-01')",
+        self._enr_conn.execute(
+            "INSERT OR IGNORE INTO staples "
+            "(oracle_id, tier, source, score, archetypes_json, last_updated) "
+            "VALUES (?, 'universal', 'edhrec', 0.5, NULL, '2026-01-01')",
             (oracle_id,),
         )
-        enr.commit()
-        enr.close()
+        self._enr_conn.commit()
 
     def test_vanilla_below_threshold_returned(self):
         self._add_inventory("Grizzly Bears", "oid-bears", price=0.15)

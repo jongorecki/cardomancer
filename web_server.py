@@ -2330,15 +2330,39 @@ def api_collection_import_csv():
 
 @app.route('/api/collection/cull-candidates')
 def api_collection_cull_candidates():
+    """Return dead-weight cull candidates from the owned collection.
+
+    Query parameters:
+        max_price    float   Maximum market price to include (default 1.0)
+        max_buylist  float   Maximum CK buylist price to include (default 0.05)
+        min_qty      int     Minimum quantity owned (default 1)
+        preset       str     "default" | "strict" (strict = price must be 0)
+        staples      str     "exclude" (default) | "include"
+    """
     import collection_db
     max_price = request.args.get('max_price', 1.0, type=float)
+    max_buylist = request.args.get('max_buylist', 0.05, type=float)
+    min_qty = request.args.get('min_qty', 1, type=int)
+    preset = request.args.get('preset', 'default')
+    if preset not in ('default', 'strict'):
+        preset = 'default'
+    exclude_staples = request.args.get('staples', 'exclude') != 'include'
+
     conn = collection_db.get_connection()
     try:
-        candidates = collection_db.get_cull_candidates(conn, max_price=max_price)
+        candidates = collection_db.get_cull_candidates(
+            conn,
+            max_price=max_price,
+            max_buylist_price=max_buylist,
+            min_quantity=min_qty,
+            preset=preset,
+            exclude_staples=exclude_staples,
+        )
         return jsonify({
             'candidates': candidates,
             'total': len(candidates),
             'max_price': max_price,
+            'preset': preset,
         })
     finally:
         conn.close()
@@ -2346,18 +2370,51 @@ def api_collection_cull_candidates():
 
 @app.route('/api/collection/cull-candidates/export')
 def api_collection_cull_candidates_export():
-    import collection_db, csv, io
+    """Export cull candidates as CSV.
+
+    Query parameters: same as GET /api/collection/cull-candidates.
+    CSV columns: oracle_id, name, set_code, type_line, price_usd, quantity,
+                 buylist_price, salt_score, is_universal_staple,
+                 is_archetype_staple, is_cedh_staple, commander_popularity,
+                 suggested_action, location, cull_reasons
+    """
+    import collection_db
+    import csv
+    import io
     max_price = request.args.get('max_price', 1.0, type=float)
+    max_buylist = request.args.get('max_buylist', 0.05, type=float)
+    min_qty = request.args.get('min_qty', 1, type=int)
+    preset = request.args.get('preset', 'default')
+    if preset not in ('default', 'strict'):
+        preset = 'default'
+    exclude_staples = request.args.get('staples', 'exclude') != 'include'
+
     conn = collection_db.get_connection()
     try:
-        candidates = collection_db.get_cull_candidates(conn, max_price=max_price)
+        candidates = collection_db.get_cull_candidates(
+            conn,
+            max_price=max_price,
+            max_buylist_price=max_buylist,
+            min_quantity=min_qty,
+            preset=preset,
+            exclude_staples=exclude_staples,
+        )
         output = io.StringIO()
-        fields = ['name', 'set_code', 'type_line', 'price_usd', 'quantity', 'cull_reasons']
+        fields = [
+            'oracle_id', 'name', 'set_code', 'type_line',
+            'price_usd', 'quantity',
+            'buylist_price', 'salt_score',
+            'is_universal_staple', 'is_archetype_staple', 'is_cedh_staple',
+            'commander_popularity',
+            'suggested_action', 'keep_confidence',
+            'location', 'cull_reasons',
+        ]
         writer = csv.DictWriter(output, fieldnames=fields, extrasaction='ignore')
         writer.writeheader()
         for c in candidates:
-            c['cull_reasons'] = ', '.join(c.get('cull_reasons') or [])
-            writer.writerow(c)
+            row = dict(c)
+            row['cull_reasons'] = ', '.join(row.get('cull_reasons') or [])
+            writer.writerow(row)
         from flask import Response
         return Response(
             output.getvalue(),
