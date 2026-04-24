@@ -4737,7 +4737,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Add Card autocomplete
     _initAddCardAutocomplete();
 
-    document.querySelector('a[href="#tab-database"]').addEventListener('shown.bs.tab', () => {
+    document.querySelector('a[href="#tab-database"]')?.addEventListener('shown.bs.tab', () => {
         loadDbInfo();
     });
 
