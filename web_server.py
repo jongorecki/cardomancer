@@ -3309,19 +3309,29 @@ def _get_moxfield_source():
 def api_moxfield_deck_import():
     """Fetch a public Moxfield deck by URL and cache it.
 
-    Body (JSON): { "deck_url": "<full Moxfield URL or bare deck ID>" }
+    Body (JSON):
+      {
+        "deck_url":          "<full Moxfield URL or bare deck ID>",
+        "printing_mode":     "any" | "exact"   (default "any"),
+        "include_sideboard": false,
+        "use_cache":         true
+      }
+
+    Basic lands are excluded from the returned card list regardless of
+    printing_mode.
 
     Returns 200 with:
-      { deck_id, deck_name, format, owner, card_count,
-        cards: [{oracle_id, name, quantity, set, collector_number,
-                 scryfall_id, board}] }
+      { deck_id, deck_name, format, owner, printing_mode, card_count,
+        warnings, cards: [{oracle_id, name, quantity, set,
+                            collector_number, scryfall_id, board,
+                            printing_mode}] }
 
-    Returns 400 if deck_url is missing or unparseable.
-    Returns 404 if Moxfield returns a non-200 (e.g. private / deleted deck).
+    Returns 400 if deck_url is missing/unparseable or printing_mode invalid.
+    Returns 404 if Moxfield returns 404 (deck not found / private).
     Returns 503 if the network request fails (Moxfield unreachable).
     """
     import httpx as _httpx
-    from web_enrichment.moxfield import MoxfieldSource
+    from web_enrichment.moxfield import MoxfieldSource, VALID_PRINTING_MODES
 
     body = request.get_json(silent=True) or {}
     deck_url = body.get('deck_url') or ''
@@ -3330,12 +3340,19 @@ def api_moxfield_deck_import():
 
     include_side = bool(body.get('include_sideboard', False))
     use_cache = bool(body.get('use_cache', True))
+    printing_mode = str(body.get('printing_mode') or 'any').lower()
+    if printing_mode not in VALID_PRINTING_MODES:
+        return jsonify({
+            'error': f'Invalid printing_mode {printing_mode!r}; '
+                     f'must be one of: {list(VALID_PRINTING_MODES)}'
+        }), 400
 
     try:
         result = _get_moxfield_source().import_deck(
             deck_url,
             include_side=include_side,
             use_cache=use_cache,
+            printing_mode=printing_mode,
         )
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
@@ -3357,13 +3374,92 @@ def api_moxfield_deck_import():
 def api_moxfield_deck_cache(deck_id):
     """Return the cached import payload for a deck, or 404 if not cached.
 
+    Query params: ?printing_mode=any|exact  (default "any")
+
     Does NOT hit the Moxfield API — returns only what is already stored in
     enrichment.db.  Use /import to fetch-and-cache a new deck.
     """
-    from web_enrichment.moxfield import get_cached_deck
-    result = get_cached_deck(deck_id)
+    from web_enrichment.moxfield import get_cached_deck, VALID_PRINTING_MODES
+    printing_mode = (request.args.get('printing_mode') or 'any').lower()
+    if printing_mode not in VALID_PRINTING_MODES:
+        return jsonify({
+            'error': f'Invalid printing_mode; must be one of {list(VALID_PRINTING_MODES)}'
+        }), 400
+    result = get_cached_deck(deck_id, printing_mode=printing_mode)
     if result is None:
         return jsonify({'error': 'Deck not in cache; use /import to fetch it'}), 404
+    return jsonify(result)
+
+
+@app.route('/api/integrations/moxfield/wishlist/import', methods=['POST'])
+def api_moxfield_wishlist_import():
+    """Fetch a user's public Moxfield wishlist and cache it.
+
+    Body (JSON):
+      {
+        "username":      "<Moxfield username>",
+        "printing_mode": "any" | "exact"   (default "any"),
+        "use_cache":     true
+      }
+
+    Basic lands are excluded from the returned card list regardless of
+    printing_mode.
+
+    Authentication: public wishlists only (no OAuth in v1).  Users whose
+    wishlist is set to private will receive a 401 from Moxfield, surfaced
+    here as 401.
+
+    Wishlist API endpoint used:
+      GET https://api2.moxfield.com/v2/users/<username>/wishlist
+
+    Returns 200 with:
+      { username, printing_mode, card_count, warnings,
+        cards: [{oracle_id, name, quantity, set, collector_number,
+                 scryfall_id, printing_mode}] }
+
+    Returns 400 if username is missing or printing_mode invalid.
+    Returns 401 if the wishlist is private (Moxfield returns 401).
+    Returns 404 if the user or wishlist does not exist on Moxfield.
+    Returns 503 if the network request fails.
+    """
+    import httpx as _httpx
+    from web_enrichment.moxfield import MoxfieldSource, VALID_PRINTING_MODES
+
+    body = request.get_json(silent=True) or {}
+    username = (body.get('username') or '').strip()
+    if not username:
+        return jsonify({'error': 'username is required'}), 400
+
+    printing_mode = str(body.get('printing_mode') or 'any').lower()
+    if printing_mode not in VALID_PRINTING_MODES:
+        return jsonify({
+            'error': f'Invalid printing_mode {printing_mode!r}; '
+                     f'must be one of: {list(VALID_PRINTING_MODES)}'
+        }), 400
+
+    use_cache = bool(body.get('use_cache', True))
+
+    try:
+        result = _get_moxfield_source().import_wishlist(
+            username,
+            use_cache=use_cache,
+            printing_mode=printing_mode,
+        )
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except _httpx.HTTPStatusError as e:
+        code = e.response.status_code if e.response is not None else 0
+        if code == 401:
+            return jsonify({'error': 'Wishlist is private; authentication required'}), 401
+        if code == 404:
+            return jsonify({'error': 'User or wishlist not found on Moxfield'}), 404
+        return jsonify({'error': f'Moxfield returned HTTP {code}'}), 502
+    except _httpx.RequestError as e:
+        return jsonify({'error': f'Could not reach Moxfield: {type(e).__name__}'}), 503
+    except Exception as e:
+        logging.error('[moxfield] wishlist import error: %s', e, exc_info=True)
+        return jsonify({'error': f'Import failed: {type(e).__name__}: {e}'}), 500
+
     return jsonify(result)
 
 

@@ -1,0 +1,64 @@
+{
+  "mainboard": {
+    "SolRingKey": {
+      "quantity": 1,
+      "card": {
+        "oracle_id": "a2e0e217-6a60-4c74-a350-2f099b8e6f00",
+        "name": "Sol Ring",
+        "set": "clb",
+        "cn": "472",
+        "scryfall_id": "7e78b70b-0c67-4f14-8ad7-d2722c8cf7d8"
+      }
+    },
+    "LightningBoltKey": {
+      "quantity": 2,
+      "card": {
+        "oracle_id": "8b4d282e-06fb-4774-a657-5d4a9a41b52e",
+        "name": "Lightning Bolt",
+        "set": "m11",
+        "cn": "145",
+        "scryfall_id": "094f1654-e21d-4291-b8b7-b542e02b7e2c"
+      }
+    },
+    "ForestKey": {
+      "quantity": 4,
+      "card": {
+        "oracle_id": "ce7b1f32-a1ec-4fe3-bb46-7a7c79c7ad61",
+        "name": "Forest",
+        "set": "znr",
+        "cn": "279",
+        "scryfall_id": "b278f06e-5a70-4e5e-aad7-5dbd4c9f8f58"
+      }
+    },
+    "WastesKey": {
+      "quantity": 1,
+      "card": {
+        "oracle_id": "b2c6aa39-2d21-4f2e-b5ca-c0ccb538f9d4",
+        "name": "Wastes",
+        "set": "bfz",
+        "cn": "242",
+        "scryfall_id": "d24aff5e-bc71-49db-96f6-ba89e10fb069"
+      }
+    },
+    "AtraxaKey": {
+      "quantity": 1,
+      "card": {
+        "oracle_id": "21935e54-c2a8-4756-8547-1ece5b07d0fa",
+        "name": "Atraxa, Praetors' Voice",
+        "set": "ncc",
+        "cn": "1",
+        "scryfall_id": "6f4d64a7-3f3b-4a7e-9b2c-1d8e4f5a6b7c"
+      }
+    },
+    "NoCNCard": {
+      "quantity": 1,
+      "card": {
+        "oracle_id": "abcd1234-0000-0000-0000-000000000001",
+        "name": "Mysterious Card",
+        "set": "",
+        "cn": "",
+        "scryfall_id": "abcd1234-0000-0000-0000-000000000001"
+      }
+    }
+  }
+}

@@ -180,6 +180,27 @@ def _create_tables(conn: sqlite3.Connection) -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_moxfield_decks_owner
             ON moxfield_decks(owner);
+
+        -- Moxfield wishlist cache. One row per card in the wishlist.
+        -- Each row stores both oracle_id (for any-printing matching) and
+        -- set/collector_number (for exact-printing matching).
+        -- Repopulated atomically on each wishlist import (DELETE + INSERT in
+        -- a single transaction so partial-commit is impossible).
+        CREATE TABLE IF NOT EXISTS moxfield_wishlists (
+            username         TEXT NOT NULL,
+            oracle_id        TEXT NOT NULL,
+            name             TEXT,
+            quantity         INTEGER NOT NULL DEFAULT 1,
+            set_code         TEXT,
+            collector_number TEXT,
+            scryfall_id      TEXT,
+            last_fetched_at  INTEGER,
+            PRIMARY KEY (username, oracle_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_moxfield_wishlists_username
+            ON moxfield_wishlists(username);
+        CREATE INDEX IF NOT EXISTS idx_moxfield_wishlists_oracle
+            ON moxfield_wishlists(oracle_id);
     """)
     conn.commit()
 

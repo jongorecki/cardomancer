@@ -902,6 +902,204 @@ class TestCollectEnrichmentFields(unittest.TestCase):
         ast = parse_query("t:creature staple:universal salt>1")
         self.assertEqual(collect_enrichment_fields(ast), {"staple", "salt"})
 
+    def test_deck_detected(self):
+        ast = parse_query("deck:lzbasAFQhEqY5x5SmJRZ9w")
+        self.assertIn("deck", collect_enrichment_fields(ast))
+
+    def test_wishlist_detected(self):
+        ast = parse_query("wishlist:testuser")
+        self.assertIn("wishlist", collect_enrichment_fields(ast))
+
+    def test_deck_exact_detected(self):
+        ast = parse_query("deck:lzbasAFQhEqY5x5SmJRZ9w!exact")
+        self.assertIn("deck", collect_enrichment_fields(ast))
+
+    def test_wishlist_exact_detected(self):
+        ast = parse_query("wishlist:testuser!exact")
+        self.assertIn("wishlist", collect_enrichment_fields(ast))
+
+
+# ===========================================================================
+# deck: / wishlist: token evaluator tests
+# ===========================================================================
+
+class TestDeckAndWishlistTokens(unittest.TestCase):
+    """Tests for deck:<id> and wishlist:<username>[!exact] query tokens.
+
+    The tests mock web_enrichment.moxfield.is_in_deck and is_in_wishlist
+    to avoid requiring a real enrichment.db.  The query-parser calls those
+    functions; the tests verify the correct arguments are passed.
+    """
+
+    DECK_ID = "lzbasAFQhEqY5x5SmJRZ9w"
+    USERNAME = "testuser"
+
+    BOLT_CARD = {
+        "name":             "Lightning Bolt",
+        "oracle_id":        "bolt-oid",
+        "set":              "m11",
+        "collector_number": "145",
+        "colors":           ["R"],
+        "color_identity":   ["R"],
+        "cmc":              1.0,
+        "type_line":        "Instant",
+        "oracle_text":      "Lightning Bolt deals 3 damage to any target.",
+    }
+
+    # --- parse round-trips ---
+
+    def test_deck_token_parses(self):
+        ast = parse_query(f"deck:{self.DECK_ID}")
+        self.assertIsInstance(ast, FieldQuery)
+        self.assertEqual(ast.field, "deck")
+        self.assertEqual(ast.value, self.DECK_ID)
+
+    def test_deck_exact_token_parses(self):
+        ast = parse_query(f"deck:{self.DECK_ID}!exact")
+        self.assertIsInstance(ast, FieldQuery)
+        self.assertEqual(ast.field, "deck")
+        self.assertEqual(ast.value, f"{self.DECK_ID}!exact")
+
+    def test_wishlist_token_parses(self):
+        ast = parse_query(f"wishlist:{self.USERNAME}")
+        self.assertIsInstance(ast, FieldQuery)
+        self.assertEqual(ast.field, "wishlist")
+
+    def test_wishlist_exact_token_parses(self):
+        ast = parse_query(f"wishlist:{self.USERNAME}!exact")
+        self.assertIsInstance(ast, FieldQuery)
+        self.assertEqual(ast.field, "wishlist")
+
+    # --- deck: any printing ---
+
+    def test_deck_any_match(self):
+        from unittest.mock import patch
+        with patch("web_enrichment.moxfield.is_in_deck", return_value=True) as m:
+            result = matches_query(f"deck:{self.DECK_ID}", self.BOLT_CARD)
+        self.assertTrue(result)
+        args, kwargs = m.call_args
+        self.assertEqual(args[0], self.DECK_ID)
+        self.assertEqual(args[1], "bolt-oid")
+        self.assertEqual(kwargs.get("printing_mode"), "any")
+
+    def test_deck_any_no_match(self):
+        from unittest.mock import patch
+        with patch("web_enrichment.moxfield.is_in_deck", return_value=False):
+            result = matches_query(f"deck:{self.DECK_ID}", self.BOLT_CARD)
+        self.assertFalse(result)
+
+    def test_deck_no_oracle_id_returns_false(self):
+        card_no_oid = {k: v for k, v in self.BOLT_CARD.items()
+                       if k != "oracle_id"}
+        result = matches_query(f"deck:{self.DECK_ID}", card_no_oid)
+        self.assertFalse(result)
+
+    # --- deck: exact printing ---
+
+    def test_deck_exact_match(self):
+        from unittest.mock import patch
+        with patch("web_enrichment.moxfield.is_in_deck", return_value=True) as m:
+            result = matches_query(
+                f"deck:{self.DECK_ID}!exact", self.BOLT_CARD
+            )
+        self.assertTrue(result)
+        _, kwargs = m.call_args
+        self.assertEqual(kwargs.get("printing_mode"), "exact")
+        self.assertEqual(kwargs.get("set_code"), "m11")
+        self.assertEqual(kwargs.get("collector_number"), "145")
+
+    def test_deck_exact_no_match(self):
+        from unittest.mock import patch
+        with patch("web_enrichment.moxfield.is_in_deck", return_value=False):
+            result = matches_query(
+                f"deck:{self.DECK_ID}!exact", self.BOLT_CARD
+            )
+        self.assertFalse(result)
+
+    # --- wishlist: any printing ---
+
+    def test_wishlist_any_match(self):
+        from unittest.mock import patch
+        with patch("web_enrichment.moxfield.is_in_wishlist",
+                   return_value=True) as m:
+            result = matches_query(
+                f"wishlist:{self.USERNAME}", self.BOLT_CARD
+            )
+        self.assertTrue(result)
+        args, kwargs = m.call_args
+        self.assertEqual(args[0], self.USERNAME)
+        self.assertEqual(args[1], "bolt-oid")
+        self.assertEqual(kwargs.get("printing_mode"), "any")
+
+    def test_wishlist_any_no_match(self):
+        from unittest.mock import patch
+        with patch("web_enrichment.moxfield.is_in_wishlist",
+                   return_value=False):
+            result = matches_query(
+                f"wishlist:{self.USERNAME}", self.BOLT_CARD
+            )
+        self.assertFalse(result)
+
+    # --- wishlist: exact printing ---
+
+    def test_wishlist_exact_match(self):
+        from unittest.mock import patch
+        with patch("web_enrichment.moxfield.is_in_wishlist",
+                   return_value=True) as m:
+            result = matches_query(
+                f"wishlist:{self.USERNAME}!exact", self.BOLT_CARD
+            )
+        self.assertTrue(result)
+        _, kwargs = m.call_args
+        self.assertEqual(kwargs.get("printing_mode"), "exact")
+        self.assertEqual(kwargs.get("collector_number"), "145")
+
+    def test_wishlist_exact_no_match(self):
+        from unittest.mock import patch
+        with patch("web_enrichment.moxfield.is_in_wishlist",
+                   return_value=False):
+            result = matches_query(
+                f"wishlist:{self.USERNAME}!exact", self.BOLT_CARD
+            )
+        self.assertFalse(result)
+
+    # --- NOT negation ---
+
+    def test_not_deck_match(self):
+        from unittest.mock import patch
+        with patch("web_enrichment.moxfield.is_in_deck", return_value=False):
+            result = matches_query(
+                f"-deck:{self.DECK_ID}", self.BOLT_CARD
+            )
+        self.assertTrue(result)
+
+    def test_not_deck_no_match(self):
+        from unittest.mock import patch
+        with patch("web_enrichment.moxfield.is_in_deck", return_value=True):
+            result = matches_query(
+                f"-deck:{self.DECK_ID}", self.BOLT_CARD
+            )
+        self.assertFalse(result)
+
+    # --- Exception safety ---
+
+    def test_deck_exception_returns_false(self):
+        """If is_in_deck raises, the token should return False (degrade gracefully)."""
+        from unittest.mock import patch
+        with patch("web_enrichment.moxfield.is_in_deck",
+                   side_effect=RuntimeError("DB error")):
+            result = matches_query(f"deck:{self.DECK_ID}", self.BOLT_CARD)
+        self.assertFalse(result)
+
+    def test_wishlist_exception_returns_false(self):
+        from unittest.mock import patch
+        with patch("web_enrichment.moxfield.is_in_wishlist",
+                   side_effect=RuntimeError("DB error")):
+            result = matches_query(
+                f"wishlist:{self.USERNAME}", self.BOLT_CARD
+            )
+        self.assertFalse(result)
+
 
 if __name__ == "__main__":
     unittest.main()

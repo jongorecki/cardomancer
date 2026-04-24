@@ -215,6 +215,48 @@ class EnrichmentRepo:
         finally:
             conn.close()
 
+    def get_moxfield_deck_cards(
+        self,
+        deck_id: str,
+        printing_mode: str = "any",
+    ) -> list[dict]:
+        """Return cached card list for a Moxfield deck.
+
+        Args:
+            deck_id: the Moxfield deck ID.
+            printing_mode: "any" or "exact"; applied when re-parsing cached data.
+
+        Returns:
+            List of card dicts (same shape as import endpoint `cards` key).
+            Empty list if the deck is not cached.
+        """
+        from web_enrichment.moxfield import get_cached_deck
+        result = get_cached_deck(deck_id, printing_mode=printing_mode)
+        if result is None:
+            return []
+        return result.get("cards", [])
+
+    def get_moxfield_wishlist_cards(
+        self,
+        username: str,
+        printing_mode: str = "any",
+    ) -> list[dict]:
+        """Return cached card list for a Moxfield user's wishlist.
+
+        Args:
+            username: Moxfield username (case-sensitive).
+            printing_mode: "any" or "exact".
+
+        Returns:
+            List of card dicts (same shape as wishlist import endpoint
+            `cards` key).  Empty list if wishlist not cached.
+        """
+        from web_enrichment.moxfield import get_cached_wishlist
+        result = get_cached_wishlist(username, printing_mode=printing_mode)
+        if result is None:
+            return []
+        return result.get("cards", [])
+
     def is_cull_candidate(self, oracle_id: str, oracle_text: str = "") -> bool:
         """Return True if this oracle_id is a dead-weight cull candidate.
 

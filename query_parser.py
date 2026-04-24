@@ -9,6 +9,18 @@
 #   combo:true  combo:any
 #   buylist:ck  buylist:ck>=1.00
 #   cull:true / cull:false  — dead-weight flag (vanilla/no-staple/no-buylist/not-in-decks)
+#   deck:<deck_id>           — card is in the Moxfield deck (any printing)
+#   deck:<deck_id>!exact     — card is in the Moxfield deck (exact printing by set+cn)
+#   wishlist:<username>      — card is in the user's Moxfield wishlist (any printing)
+#   wishlist:<username>!exact — card is in the user's Moxfield wishlist (exact printing)
+#
+# deck: / wishlist: token notes:
+#   - Basic lands are always excluded from deck/wishlist matches (excluded at
+#     cache-fill time by MoxfieldSource.import_deck/import_wishlist).
+#   - The !exact suffix changes the match key from oracle_id to (set, cn).
+#     If the cached entry has no set/cn, it falls back to oracle_id.
+#   - These tokens read from the moxfield_decks / moxfield_wishlists tables in
+#     enrichment.db via web_enrichment.moxfield.is_in_deck / is_in_wishlist.
 #
 # otag: hierarchy rollup:
 #   Call expand_otag_cache(cache, conn) after building the otag_cache to union
@@ -139,6 +151,11 @@ FIELD_ALIASES = {
     "combo": "combo",
     "buylist": "buylist",
     "cull": "cull",
+    # Moxfield deck / wishlist membership tokens
+    # Syntax:  deck:<deck_id>  or  deck:<deck_id>!exact
+    #          wishlist:<username>  or  wishlist:<username>!exact
+    "deck": "deck",
+    "wishlist": "wishlist",
 }
 
 
@@ -394,11 +411,13 @@ def collect_otag_terms(ast):
 def collect_enrichment_fields(ast) -> set:
     """Walk the AST and return which enrichment fields are used.
 
-    Returns a subset of {'staple', 'salt', 'combo', 'buylist', 'cull'}.
+    Returns a subset of:
+      {'staple', 'salt', 'combo', 'buylist', 'cull', 'deck', 'wishlist'}.
     Used by SortConfig to decide whether to fetch enrichment data during
     bin evaluation.
     """
-    ENRICHMENT = frozenset(('staple', 'salt', 'combo', 'buylist', 'cull'))
+    ENRICHMENT = frozenset(('staple', 'salt', 'combo', 'buylist', 'cull',
+                             'deck', 'wishlist'))
     fields = set()
     if isinstance(ast, FieldQuery):
         if ast.field in ENRICHMENT:
@@ -483,6 +502,24 @@ def _eval_color_field(card_data, field_key, operator, value):
     else:
         # Contains: card must have all specified colors
         return color_letters.issubset(set(colors))
+
+
+def _parse_moxfield_token(val: str) -> tuple:
+    """Parse a deck:<id> or wishlist:<username> token value.
+
+    The value may optionally end with "!exact" to indicate exact printing mode.
+
+    Returns:
+        (base_id, printing_mode) where printing_mode is "any" or "exact".
+
+    Examples:
+        "lzbasAFQhEqY5x5SmJRZ9w"        -> ("lzbasAFQhEqY5x5SmJRZ9w", "any")
+        "lzbasAFQhEqY5x5SmJRZ9w!exact"  -> ("lzbasAFQhEqY5x5SmJRZ9w", "exact")
+        "testuser!exact"                 -> ("testuser", "exact")
+    """
+    if val.endswith("!exact"):
+        return val[:-6], "exact"
+    return val, "any"
 
 
 def _eval_field_query(fq, card_data, otag_cache=None, enrichment_data=None):
@@ -753,6 +790,61 @@ def _eval_field_query(fq, card_data, otag_cache=None, enrichment_data=None):
         # All predicates satisfied — this IS a cull candidate
         is_cull = is_vanilla and not is_staple and not on_buylist and not in_deck
         return is_cull if want_cull else not is_cull
+
+    # --- Moxfield deck membership ---
+    # Syntax:
+    #   deck:<deck_id>         — card is in the deck (any printing)
+    #   deck:<deck_id>!exact   — card is in the deck (exact printing by set+cn)
+    #
+    # The deck must have been previously imported and cached via
+    # /api/integrations/moxfield/deck/import.  If not cached, returns False.
+    # Basic lands are excluded from the deck cache by import_deck().
+    if field == 'deck':
+        oracle_id = card_data.get('oracle_id') or ''
+        if not oracle_id:
+            return False
+        # Parse the !exact suffix from the value.
+        deck_id, printing_mode = _parse_moxfield_token(val)
+        set_code = (card_data.get('set') or '').lower()
+        cn = card_data.get('collector_number') or ''
+        try:
+            from web_enrichment.moxfield import is_in_deck, PRINTING_MODE_ANY, PRINTING_MODE_EXACT
+            return is_in_deck(
+                deck_id,
+                oracle_id,
+                printing_mode=printing_mode,
+                set_code=set_code,
+                collector_number=cn,
+            )
+        except Exception:
+            return False
+
+    # --- Moxfield wishlist membership ---
+    # Syntax:
+    #   wishlist:<username>         — card is in the user's wishlist (any printing)
+    #   wishlist:<username>!exact   — card is in the wishlist (exact printing)
+    #
+    # The wishlist must have been previously imported and cached via
+    # /api/integrations/moxfield/wishlist/import.  If not cached, returns False.
+    # Basic lands are excluded from the wishlist cache by import_wishlist().
+    if field == 'wishlist':
+        oracle_id = card_data.get('oracle_id') or ''
+        if not oracle_id:
+            return False
+        username, printing_mode = _parse_moxfield_token(val)
+        set_code = (card_data.get('set') or '').lower()
+        cn = card_data.get('collector_number') or ''
+        try:
+            from web_enrichment.moxfield import is_in_wishlist, PRINTING_MODE_ANY, PRINTING_MODE_EXACT
+            return is_in_wishlist(
+                username,
+                oracle_id,
+                printing_mode=printing_mode,
+                set_code=set_code,
+                collector_number=cn,
+            )
+        except Exception:
+            return False
 
     return False
 
