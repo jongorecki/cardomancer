@@ -1,0 +1,13 @@
+{
+  "container": {
+    "json_dict": {
+      "themes": [
+        {"slug": "lifegain", "name": "Lifegain"},
+        {"slug": "artifacts", "name": "Artifacts"},
+        {"slug": "tokens", "name": "Tokens"},
+        {"slug": "graveyard", "name": "Graveyard"},
+        {"slug": "enchantments", "name": "Enchantments"}
+      ]
+    }
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "container": {
+    "json_dict": {
+      "cardlists": [
+        {
+          "header": "Top Cards",
+          "cardviews": [
+            {
+              "id": "oid-sol-ring",
+              "name": "Sol Ring",
+              "sanitized": "sol-ring",
+              "num_decks": 50000,
+              "potential_decks": 60000,
+              "inclusion": 0.83,
+              "synergy": 0.1
+            },
+            {
+              "id": "oid-swords",
+              "name": "Swords to Plowshares",
+              "sanitized": "swords-to-plowshares",
+              "num_decks": 30000,
+              "potential_decks": 60000,
+              "inclusion": 0.50,
+              "synergy": 0.12
+            },
+            {
+              "id": "oid-counterspell",
+              "name": "Counterspell",
+              "sanitized": "counterspell",
+              "num_decks": 25000,
+              "potential_decks": 60000,
+              "inclusion": 0.41,
+              "synergy": 0.08
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

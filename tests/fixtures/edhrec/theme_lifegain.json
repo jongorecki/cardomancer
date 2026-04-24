@@ -1,0 +1,31 @@
+{
+  "container": {
+    "json_dict": {
+      "cardlists": [
+        {
+          "header": "Top Cards",
+          "cardviews": [
+            {
+              "id": "oid-sol-ring",
+              "name": "Sol Ring",
+              "sanitized": "sol-ring",
+              "num_decks": 12000,
+              "potential_decks": 15000,
+              "inclusion": 0.80,
+              "synergy": 0.05
+            },
+            {
+              "id": "oid-bop",
+              "name": "Birds of Paradise",
+              "sanitized": "birds-of-paradise",
+              "num_decks": 5000,
+              "potential_decks": 15000,
+              "inclusion": 0.33,
+              "synergy": 0.15
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
