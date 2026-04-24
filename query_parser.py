@@ -574,16 +574,44 @@ def _eval_field_query(fq, card_data, otag_cache=None, enrichment_data=None):
 
     # --- Price ---
     if field == 'price':
-        # Use art-min-price (cheapest nonfoil across same-art printings) when
-        # available, so a $10 promo printing sorts like its 50-cent siblings.
-        # Resolved via _lookup_art_min_price (safe getattr) to survive module
-        # reloads and stale-module ImportError.
+        # Priority order:
+        #   1. If the scan was detected as a physical foil printing
+        #      (card_data['is_foil']), use THIS printing's foil market
+        #      price so the card routes by its true resale value.
+        #   2. If printing disambiguation committed a specific printing
+        #      (card_data['printing_disambiguated']), use THIS printing's
+        #      own nonfoil price rather than the art-group minimum — we
+        #      have reason to trust the printing identity is correct.
+        #   3. Otherwise use art-min-price (cheapest nonfoil across all
+        #      same-art printings) so a $10 promo Farseek still sorts
+        #      like its 50-cent siblings when we can't tell which
+        #      printing it is.
+        #   4. Final fallback: the card's own nonfoil price.
+        # _lookup_art_min_price is resolved via safe getattr to survive
+        # module reloads and stale-module ImportError.
+        prices = card_data.get('prices') or {}
+
+        if card_data.get('is_foil'):
+            # Foil scan → this printing's foil price (falls back to
+            # nonfoil if the foil price isn't listed).
+            raw = prices.get('usd_foil') or prices.get('usd')
+            if raw is None:
+                return False
+            return _compare(raw, op, val)
+
+        if card_data.get('printing_disambiguated'):
+            # Disambiguation cascade committed a specific printing;
+            # trust that identity and use this printing's own price.
+            raw = prices.get('usd') or prices.get('usd_foil')
+            if raw is None:
+                return False
+            return _compare(raw, op, val)
+
         card_id = card_data.get('id')
         art_price = _lookup_art_min_price(card_id)
         if art_price is not None:
             return _compare(art_price, op, val)
         # Fallback: use the card's own nonfoil price
-        prices = card_data.get('prices') or {}
         usd = prices.get('usd')
         if usd is None:
             return False

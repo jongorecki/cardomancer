@@ -1456,7 +1456,17 @@ class SortWorker:
             # which is the same behavior the old legacy helpers had for
             # malformed cards.
             if self.sort_config_obj is not None:
-                logical_bin = self.sort_config_obj.get_bin(card_data)
+                # Inject scan-specific flags into a shallow copy so the
+                # query evaluator can price a foil scan by its foil
+                # market value and trust a disambiguated printing's
+                # own price instead of the art-group minimum.
+                # (CARD_DATA_BY_ID dicts are shared — never mutate them.)
+                routing_card_data = dict(card_data) if card_data else {}
+                routing_card_data['is_foil'] = id_result.get('is_foil', False)
+                routing_card_data['printing_disambiguated'] = (
+                    id_result.get('printing_disambiguated', False)
+                )
+                logical_bin = self.sort_config_obj.get_bin(routing_card_data)
             else:
                 # Defensive: this shouldn't happen since start_session now
                 # always produces a SortConfig, but guard against a race.

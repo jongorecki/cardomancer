@@ -423,6 +423,45 @@ class TestEvalSetRarityPrice(unittest.TestCase):
         card_no_price = {**LIGHTNING_BOLT, "prices": {}}
         self.assertFalse(matches_query("usd>=0", card_no_price))
 
+    def test_price_uses_foil_price_when_is_foil(self):
+        """When card_data['is_foil'] is True, the price evaluator must
+        route by the foil market value (usd_foil), not the nonfoil usd.
+        This is the ROUTING-to-correct-bin guarantee for detected foils."""
+        foil_card = {
+            **LIGHTNING_BOLT,
+            "is_foil": True,
+            "prices": {"usd": "1.50", "usd_foil": "20.00"},
+        }
+        # Foil price > $10 even though nonfoil is $1.50
+        self.assertTrue(matches_query("usd>=10", foil_card))
+        self.assertFalse(matches_query("usd<5", foil_card))
+
+    def test_price_foil_falls_back_to_usd_when_no_foil_price(self):
+        """Edge case: foil flag set but no usd_foil listed -> fall back
+        to nonfoil usd rather than refusing to route."""
+        foil_card = {
+            **LIGHTNING_BOLT,
+            "is_foil": True,
+            "prices": {"usd": "1.50", "usd_foil": None},
+        }
+        self.assertTrue(matches_query("usd>=1", foil_card))
+        self.assertFalse(matches_query("usd>=5", foil_card))
+
+    def test_price_uses_printing_price_when_disambiguated(self):
+        """When printing_disambiguated is True, trust the specific
+        printing's price instead of art-group min. (The art-min index
+        isn't loaded in this test harness, so this is mostly about
+        confirming the specific-printing branch returns the right
+        answer even without art-min data.)"""
+        disamb_card = {
+            **LIGHTNING_BOLT,
+            "is_foil": False,
+            "printing_disambiguated": True,
+            "prices": {"usd": "5.00"},
+        }
+        self.assertTrue(matches_query("usd>=5", disamb_card))
+        self.assertFalse(matches_query("usd<1", disamb_card))
+
 
 # ===========================================================================
 # Evaluator Tests — Power, Toughness
