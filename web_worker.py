@@ -1223,6 +1223,7 @@ class SortWorker:
             'was_rotated': False,
             'is_foil': False,
             'foil_confidence': None,
+            'printing_disambiguated': False,
         }
 
         def _process_and_identify(img):
@@ -1291,10 +1292,47 @@ class SortWorker:
                 id_result['hash_distance'] = top_dist
 
                 if top_dist <= PHASH_DISTANCE_THRESHOLD:
+                    # Printing disambiguation: same-art printings (across
+                    # sets, or same-set basic lands with different
+                    # collector numbers) share phash neighborhoods, so
+                    # identify_card's top pick is not always the correct
+                    # printing. The cascade uses frame/stamp/set-icon
+                    # detectors to narrow to a single printing when
+                    # possible; otherwise falls back to the cheapest.
+                    disamb_committed = False
+                    try:
+                        from printing_disambiguation import (
+                            disambiguate_printing,
+                            SOURCE_FRAME_DISAMBIGUATED,
+                            SOURCE_STAMP_DISAMBIGUATED,
+                            SOURCE_ICON_DISAMBIGUATED,
+                            SOURCE_FULLY_DISAMBIGUATED,
+                        )
+                        disamb = disambiguate_printing(oriented, top_id)
+                        final_id = disamb.get('final_card_id') or top_id
+                        disamb_committed = disamb.get('source') in (
+                            SOURCE_FRAME_DISAMBIGUATED,
+                            SOURCE_STAMP_DISAMBIGUATED,
+                            SOURCE_ICON_DISAMBIGUATED,
+                            SOURCE_FULLY_DISAMBIGUATED,
+                        )
+                        if final_id and final_id != top_id:
+                            fcd = CARD_DATA_BY_ID.get(final_id, {}) or {}
+                            self.log(
+                                f"[disambig] {disamb.get('source')}: "
+                                f"{top_id[:8]} -> {final_id[:8]} "
+                                f"({fcd.get('set','?')}#"
+                                f"{fcd.get('collector_number','?')})"
+                            )
+                            top_id = final_id
+                    except Exception as e:
+                        self.log(f"[disambig] error (non-fatal): {e}")
+
                     ci = extract_card_info(top_id)
                     id_result['card_info'] = ci
                     id_result['card_data'] = CARD_DATA_BY_ID.get(top_id)
                     id_result['method'] = "hash"
+                    id_result['printing_disambiguated'] = disamb_committed
 
                     # Foil detection: compare scan against the matched
                     # reference image. Cheap (~10ms), runs inside the

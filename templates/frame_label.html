@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Frame-era labeling tool</title>
+<style>
+  :root {
+    --bg: #1e1e20; --panel: #2a2a2e; --fg: #e6e6e8; --muted: #9a9aa0;
+    --accent: #4da3ff; --warn: #f0b23a; --ok: #4ec37b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+    display: grid; grid-template-columns: 380px 1fr 320px;
+    grid-template-rows: 100vh; overflow: hidden;
+  }
+  .panel { padding: 16px; overflow-y: auto; background: var(--panel); }
+  .center {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; padding: 16px; position: relative;
+  }
+  img#card {
+    max-height: calc(100vh - 180px); max-width: 100%;
+    border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+  }
+  h2 { margin: 0 0 8px 0; font-size: 15px; font-weight: 600; color: var(--muted); }
+  .kv { display: grid; grid-template-columns: 110px 1fr; row-gap: 4px; font-size: 13px; }
+  .kv .k { color: var(--muted); }
+  .kv .v { color: var(--fg); }
+  .ambiguous { color: var(--warn); font-weight: 600; }
+  .buttons {
+    display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap;
+    justify-content: center;
+  }
+  button {
+    font-size: 16px; padding: 12px 22px; border-radius: 8px;
+    border: 1px solid #444; background: #353539; color: var(--fg);
+    cursor: pointer; font-weight: 600;
+  }
+  button:hover { background: #404045; border-color: #666; }
+  button.lbl-retro      { background: #6a3a1a; border-color: #8b4f24; }
+  button.lbl-2003       { background: #1f4b6b; border-color: #2f6694; }
+  button.lbl-2015       { background: #2f5d42; border-color: #3f7a58; }
+  button.lbl-borderless { background: #5c2c60; border-color: #7a3d7f; }
+  button.lbl-unsure     { background: #5a5a22; border-color: #7a7a38; }
+  button.lbl-skip       { background: #444; border-color: #555; color: var(--muted); }
+  .progress-bar {
+    height: 10px; background: #444; border-radius: 5px; overflow: hidden;
+    margin-top: 4px;
+  }
+  .progress-bar > div { height: 100%; background: var(--accent); }
+  table { width: 100%; font-size: 12px; border-collapse: collapse; }
+  table th, table td { padding: 3px 6px; text-align: left; }
+  table th { color: var(--muted); font-weight: 500; border-bottom: 1px solid #444; }
+  table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .section { margin-bottom: 20px; }
+  .hint { color: var(--muted); font-size: 11px; margin-top: 10px; }
+  .done {
+    text-align: center; font-size: 24px; color: var(--ok); padding: 40px;
+  }
+  kbd {
+    background: #555; border: 1px solid #777; border-radius: 3px;
+    padding: 1px 6px; font-size: 11px; font-family: monospace;
+  }
+</style>
+</head>
+<body>
+
+<div class="panel" id="left">
+  <div class="section">
+    <h2>Current scan</h2>
+    <div class="kv" id="meta"></div>
+  </div>
+  <div class="section">
+    <h2>Scryfall says</h2>
+    <div class="kv" id="scryfall"></div>
+  </div>
+  <div class="section">
+    <h2>Shortcuts</h2>
+    <div class="hint">
+      <kbd>1</kbd> retro &nbsp; <kbd>2</kbd> 2003 &nbsp;
+      <kbd>3</kbd> 2015 &nbsp; <kbd>4</kbd> borderless<br>
+      <kbd>u</kbd> unsure &nbsp; <kbd>s</kbd> skip &nbsp;
+      <kbd>&larr;</kbd>/<kbd>&rarr;</kbd> prev/next
+    </div>
+  </div>
+</div>
+
+<div class="center" id="center">
+  <img id="card" src="" alt="">
+  <div class="buttons">
+    <button class="lbl-retro"      data-label="retro">retro (1)</button>
+    <button class="lbl-2003"       data-label="2003">2003 (2)</button>
+    <button class="lbl-2015"       data-label="2015">2015 (3)</button>
+    <button class="lbl-borderless" data-label="borderless">borderless (4)</button>
+    <button class="lbl-unsure"     data-label="unsure">unsure (u)</button>
+    <button class="lbl-skip"       data-label="skip">skip (s)</button>
+  </div>
+</div>
+
+<div class="panel" id="right">
+  <div class="section">
+    <h2>Overall progress</h2>
+    <div id="overall"></div>
+    <div class="progress-bar"><div id="overall-bar"></div></div>
+  </div>
+  <div class="section">
+    <h2>Ambiguous-scan progress</h2>
+    <div id="amb-overall"></div>
+    <div class="progress-bar"><div id="amb-bar"></div></div>
+  </div>
+  <div class="section">
+    <h2>Label counts</h2>
+    <table id="label-counts"></table>
+  </div>
+  <div class="section">
+    <h2>Ambiguous by (era, color)</h2>
+    <table id="amb-table"></table>
+  </div>
+</div>
+
+<script>
+let current = null;
+
+async function refreshStats() {
+  const s = await fetch("/api/stats").then(r => r.json());
+  document.getElementById("overall").textContent =
+    `${s.total_labeled} / ${s.total_scans} labeled`;
+  document.getElementById("overall-bar").style.width =
+    (100 * s.total_labeled / Math.max(1, s.total_scans)) + "%";
+
+  document.getElementById("amb-overall").textContent =
+    `${s.ambiguous_labeled} / ${s.total_ambiguous} ambiguous labeled`;
+  document.getElementById("amb-bar").style.width =
+    (100 * s.ambiguous_labeled / Math.max(1, s.total_ambiguous)) + "%";
+
+  const lc = document.getElementById("label-counts");
+  lc.innerHTML = "<tr><th>label</th><th class='num'>count</th></tr>" +
+    Object.entries(s.by_label).sort()
+      .map(([k,v]) => `<tr><td>${k}</td><td class='num'>${v}</td></tr>`)
+      .join("");
+
+  const at = document.getElementById("amb-table");
+  at.innerHTML = "<tr><th>era</th><th>col</th><th class='num'>done</th><th class='num'>total</th></tr>" +
+    s.ambiguous_breakdown.map(r =>
+      `<tr><td>${r.era}</td><td>${r.color}</td><td class='num'>${r.labeled}</td><td class='num'>${r.total}</td></tr>`
+    ).join("");
+}
+
+async function loadNext() {
+  const resp = await fetch("/api/next").then(r => r.json());
+  if (resp.done) {
+    document.getElementById("center").innerHTML =
+      `<div class='done'>All ${resp.total} scans labeled. 🎉</div>`;
+    await refreshStats();
+    return;
+  }
+  current = resp.row;
+  document.getElementById("card").src =
+    "/api/image?path=" + encodeURIComponent(current.path) + "&t=" + Date.now();
+
+  const meta = document.getElementById("meta");
+  const ambig = current.ambiguous
+    ? `<span class="ambiguous">yes — ${current.candidate_eras.join(", ")}</span>`
+    : "no";
+  meta.innerHTML =
+    `<div class='k'>session</div><div class='v'>${current.session}</div>` +
+    `<div class='k'>scan #</div><div class='v'>${current.scan_num}</div>` +
+    `<div class='k'>card</div><div class='v'>${current.card_name}</div>` +
+    `<div class='k'>set</div><div class='v'>${current.set} #${current.collector_number}</div>` +
+    `<div class='k'>ambiguous</div><div class='v'>${ambig}</div>` +
+    `<div class='k'>remaining</div><div class='v'>${resp.remaining} / ${resp.total}</div>`;
+
+  const scry = document.getElementById("scryfall");
+  scry.innerHTML =
+    `<div class='k'>era</div><div class='v'>${current.scryfall_era}</div>` +
+    `<div class='k'>color</div><div class='v'>${current.scryfall_color}</div>`;
+}
+
+async function submit(label) {
+  if (!current) return;
+  await fetch("/api/label", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({path: current.path, label: label}),
+  });
+  await loadNext();
+  await refreshStats();
+}
+
+document.querySelectorAll("button[data-label]").forEach(b => {
+  b.addEventListener("click", () => submit(b.dataset.label));
+});
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+  const map = {"1":"retro","2":"2003","3":"2015","4":"borderless","u":"unsure","s":"skip"};
+  if (map[e.key]) { e.preventDefault(); submit(map[e.key]); }
+});
+
+loadNext().then(refreshStats);
+</script>
+
+</body>
+</html>
