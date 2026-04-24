@@ -515,6 +515,11 @@ socket.on('session_started', (data) => {
     addLog(`Session started: mode=${data.mode}, bins=${data.bin_count}`);
     // Start camera feed on session tab
     startCameraFeed('session-camera-feed');
+    loadDashboardBinRouting();
+});
+
+socket.on('session_ended', () => {
+    loadDashboardBinRouting();
 });
 
 // --- Staging background capture prompt (legacy, simple confirm) ---
@@ -4660,6 +4665,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Sort Configuration panel
     loadSortConfigList();
+
+    // Phase 4.23: dashboard bin routing (queries + counts per bin)
+    loadDashboardBinRouting();
 });
 
 // -------- Phase 0A additions (enrichment sources + collection sub-nav) --------
@@ -4705,6 +4713,66 @@ async function loadEnrichmentSources() {
             </div>`;
         }).join('');
         container.innerHTML = rows;
+    } catch (e) {
+        container.innerHTML = `<span class="text-danger small">Failed to load: ${e.message || e}</span>`;
+    }
+}
+
+async function loadDashboardBinRouting() {
+    const container = document.getElementById('dashboard-bin-routing');
+    if (!container) return;
+    try {
+        const [cfg, fullness] = await Promise.all([
+            apiGet('/api/sort/current'),
+            apiGet('/api/bins/fullness'),
+        ]);
+        if (!cfg || !cfg.active) {
+            container.innerHTML = '<em class="text-muted small">No active sort config. Start a session from the Sort Session tab.</em>';
+            return;
+        }
+        const counts = fullness.bin_card_counts || {};
+        const fullSet = new Set((fullness.bins_full || []).map(String));
+        const limit = fullness.bin_card_limit || 150;
+        const queries = cfg.bin_queries || {};
+        const overrides = new Set((cfg.overrides || []).map(String));
+
+        const rows = [];
+        for (let i = 1; i <= cfg.bin_count; i++) {
+            const key = String(i);
+            const q = queries[key] || '';
+            const count = counts[key] || 0;
+            const isFull = fullSet.has(key);
+            const isFallback = i === cfg.fallback_bin;
+            const isOverride = overrides.has(key);
+            const badges = [];
+            if (isFallback) badges.push('<span class="badge bg-secondary">fallback</span>');
+            if (isOverride) badges.push('<span class="badge bg-info">override</span>');
+            if (isFull) badges.push('<span class="badge bg-danger">full</span>');
+            const queryCell = q
+                ? `<code class="small">${escapeHtml(q)}</code>`
+                : (isFallback
+                    ? '<em class="text-muted small">(unmatched cards)</em>'
+                    : '<em class="text-muted small">(no query)</em>');
+            rows.push(`
+                <tr${isFull ? ' class="table-danger"' : ''}>
+                    <td class="text-muted">${i}</td>
+                    <td>${queryCell} ${badges.join(' ')}</td>
+                    <td class="text-end"><strong>${count}</strong> <span class="text-muted small">/ ${limit}</span></td>
+                </tr>
+            `);
+        }
+        container.innerHTML = `
+            <table class="table table-sm mb-0">
+                <thead>
+                    <tr class="small text-muted">
+                        <th style="width:3rem;">Bin</th>
+                        <th>Query</th>
+                        <th class="text-end" style="width:7rem;">Cards</th>
+                    </tr>
+                </thead>
+                <tbody>${rows.join('')}</tbody>
+            </table>
+        `;
     } catch (e) {
         container.innerHTML = `<span class="text-danger small">Failed to load: ${e.message || e}</span>`;
     }
@@ -4876,14 +4944,6 @@ async function loadCullCandidates() {
 function exportCullCSV() {
     const maxPrice = parseFloat(document.getElementById('cull-max-price')?.value) || 1.0;
     window.location.href = `/api/collection/cull-candidates/export?max_price=${maxPrice}`;
-}
-
-function escapeHtml(s) {
-    return String(s)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
 }
 
 function getStoragePlan() {

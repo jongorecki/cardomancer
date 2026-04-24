@@ -135,6 +135,29 @@
                     </div>
                 </div>
                 <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span>Bin Routing</span>
+                                <button class="btn btn-sm btn-outline-secondary"
+                                        onclick="loadDashboardBinRouting()">
+                                    Refresh
+                                </button>
+                            </div>
+                            <div class="card-body">
+                                <p class="text-muted small mb-2">
+                                    Current sort config — which query targets each
+                                    bin, and how many cards have been dropped this
+                                    session. Edit via the Sort Session tab.
+                                </p>
+                                <div id="dashboard-bin-routing">
+                                    <em class="text-muted small">Loading…</em>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row mt-3">
                     <div class="col-md-6">
                         <div class="card">
                             <div class="card-header">Quick Stats</div>

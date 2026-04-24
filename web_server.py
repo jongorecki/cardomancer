@@ -688,6 +688,26 @@ def api_sort_validate_query():
         return jsonify({'valid': False, 'error': str(e)})
 
 
+@app.route('/api/sort/current')
+def api_sort_current():
+    """Return the active SortConfig's per-bin routing, if any.
+
+    Used by the Dashboard "Bin Routing" card (Phase 4.23) to show
+    which query is targeting which bin alongside live card counts.
+    """
+    cfg = getattr(worker, 'sort_config_obj', None)
+    if cfg is None:
+        return jsonify({'active': False})
+    bin_queries = {str(k): v for k, v in (cfg.bin_queries or {}).items()}
+    return jsonify({
+        'active': True,
+        'bin_count': cfg.bin_count,
+        'fallback_bin': cfg.fallback_bin,
+        'bin_queries': bin_queries,
+        'overrides': sorted(getattr(cfg, 'overrides', []) or []),
+    })
+
+
 # =========================================================================
 # Sort Session API
 # =========================================================================
