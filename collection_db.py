@@ -206,6 +206,22 @@ def _create_tables(conn):
     except sqlite3.OperationalError:
         conn.execute("ALTER TABLE inventory ADD COLUMN divider_id INTEGER")
         conn.commit()
+
+    # Migration: sync_manifests table (Phase 3.16 — Moxfield push)
+    # Tracks last-uploaded state per oracle_id per target so diff-based sync
+    # only pushes the delta.  Using a migration (not CREATE TABLE in the main
+    # executescript) so existing databases get the table seamlessly.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS sync_manifests (
+            target        TEXT NOT NULL,
+            oracle_id     TEXT NOT NULL,
+            qty           INTEGER,
+            foil_qty      INTEGER,
+            condition     TEXT,
+            last_uploaded_at TEXT,
+            PRIMARY KEY (target, oracle_id)
+        )
+    """)
     conn.commit()
 
 
