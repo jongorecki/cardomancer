@@ -1035,7 +1035,11 @@ class SortWorker:
 
         import gcode_control
         import threading
-        from card_detect import detect_card
+        from card_detect import (
+            detect_card_with_corners,
+            warp_with_offset,
+            get_staging_px_per_mm,
+        )
         from cards import extract_card_info, CARD_DATA_BY_ID
         from card_identify_hybrid import identify_card, is_card_back
         from foil_detect import detect_foil
@@ -1154,7 +1158,7 @@ class SortWorker:
         self._save_scan_image(frame)
 
         # --- Detect card contour (fast, ~50ms) ---
-        card_img = detect_card(frame)
+        card_img, corners = detect_card_with_corners(frame)
         if card_img is None:
             self._no_detect_retries += 1
             self.log(f"No card detected on staging "
@@ -1183,6 +1187,19 @@ class SortWorker:
 
         # Card detected — reset no-detect retry counter
         self._no_detect_retries = 0
+
+        # --- Foil multi-frame capture ---
+        # Shift the carriage +5 mm in X, grab a second frame, and re-warp
+        # it using the detection corners shifted by the pixel-equivalent
+        # offset. The card is stationary on staging, so pairing these two
+        # rectified crops gives two slightly different viewing angles of
+        # the same card — the signal foil detection needs (specular
+        # highlight shift, hue/saturation delta). Z stays at Z_MAX so
+        # this is a pure X move (no Z/X overlap).
+        try:
+            self._capture_foil_pair(corners, dx_mm=5.0)
+        except Exception as e:
+            self.log(f"[foil-pair] capture error (non-fatal): {e}")
 
         # --- Step 4+5: Identify card while picking up from staging ---
         #
@@ -1720,6 +1737,83 @@ class SortWorker:
             cv2.imwrite(filepath, card_img, [cv2.IMWRITE_JPEG_QUALITY, 92])
         except Exception:
             pass
+
+    def _save_card_crop_b(self, card_img):
+        """Save the second (offset) crop from the foil pair capture."""
+        if card_img is None or self.tracker is None:
+            return
+        try:
+            crop_dir = os.path.join(self.tracker.session_dir, "card_crops_b")
+            os.makedirs(crop_dir, exist_ok=True)
+            filename = f"card_{self.scan_count + 1:04d}.jpg"
+            filepath = os.path.join(crop_dir, filename)
+            cv2.imwrite(filepath, card_img, [cv2.IMWRITE_JPEG_QUALITY, 92])
+        except Exception:
+            pass
+
+    def _save_scan_image_b(self, frame):
+        """Save the second raw frame from the foil pair capture."""
+        if frame is None or self.tracker is None:
+            return
+        try:
+            if self._scan_images_dir is None:
+                self._scan_images_dir = os.path.join(
+                    self.tracker.session_dir, "scan_images")
+                os.makedirs(self._scan_images_dir, exist_ok=True)
+            filename = f"scan_{self.scan_count + 1:04d}_b.jpg"
+            filepath = os.path.join(self._scan_images_dir, filename)
+            cv2.imwrite(filepath, frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        except Exception:
+            pass
+
+    def _capture_foil_pair(self, corners, dx_mm=5.0):
+        """Shift X by dx_mm, grab a second frame, warp with shifted corners.
+
+        Saves scan_XXXX_b.jpg (raw) and card_crops_b/card_XXXX.jpg
+        (rectified). Does NOT move the carriage back — pick_from_staging()
+        will move absolutely to X_STAGING_POSITION next, so the extra
+        +dx_mm offset is absorbed by that move with no wasted travel.
+
+        Aborts silently if no staging ROI / no px_per_mm calibration
+        exists (sorting continues with just the primary crop).
+        """
+        from card_detect import warp_with_offset, get_staging_px_per_mm
+        from web_camera import camera as cam
+        import gcode_control
+
+        if cam is None or corners is None:
+            return
+        px_per_mm = get_staging_px_per_mm()
+        if px_per_mm is None:
+            self.log("[foil-pair] No staging ROI calibration — skipping")
+            return
+
+        # Sign: camera carriage +X → content in image shifts -X.
+        # warp_with_offset adds dx_px to corners, so pass -Δmm*px_per_mm.
+        dx_px = -float(dx_mm) * float(px_per_mm)
+
+        target_x = gcode_control.X_CAMERA_POSITION + float(dx_mm)
+        gcode_control.move_x(target_x)
+        gcode_control.wait_for_completion()
+        time.sleep(0.25)   # settle vibration
+        cam.flush_buffer()
+        time.sleep(0.2)
+
+        frame_b, sharpness = cam.get_sharp_frame(
+            min_sharpness=50.0, max_wait=1.5, settle_frames=2)
+        if frame_b is None:
+            self.log("[foil-pair] Failed to grab second frame — skipping")
+            return
+
+        self._save_scan_image_b(frame_b)
+        try:
+            crop_b = warp_with_offset(frame_b, corners, dx_px)
+        except Exception as e:
+            self.log(f"[foil-pair] warp error: {e}")
+            return
+        self._save_card_crop_b(crop_b)
+        self.log(f"[foil-pair] Captured second frame at +{dx_mm}mm "
+                 f"(sharp={sharpness:.1f})")
 
     def _save_hash_diagnostics(self, card_img, top_candidates, card_layout):
         """

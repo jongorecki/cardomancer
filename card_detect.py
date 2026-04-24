@@ -84,6 +84,75 @@ def detect_card(frame, debug=False):
     return card_img
 
 
+def detect_card_with_corners(frame, debug=False):
+    """
+    Like detect_card, but also returns the 4-point contour used for the warp.
+
+    Callers that want to re-warp a *second* frame taken at a slightly
+    offset carriage position (for foil multi-frame capture) can shift the
+    returned corners and pass them to warp_with_offset() — skipping the
+    ~50 ms of contour finding on the second frame and guaranteeing
+    pixel-aligned output.
+
+    :return: (card_img, corners) or (None, None)
+    """
+    contour = _find_card_contour(frame, debug=debug)
+    if contour is None:
+        return None, None
+    card_img = _perspective_warp(frame, contour)
+    return card_img, contour
+
+
+def warp_with_offset(frame, corners, dx_px):
+    """
+    Re-warp ``frame`` using ``corners`` shifted horizontally by ``dx_px``.
+
+    Intended for foil multi-frame capture: after detect_card_with_corners()
+    succeeds at carriage X=X0, the carriage moves to X0+Δx_mm and a second
+    frame is captured. Because the card is stationary on staging, shifting
+    all 4 corners by ``(-Δx_px, 0)`` — where Δx_px = Δx_mm * px_per_mm at
+    the staging plane — re-centers the same card in frame 2 without
+    re-running detection.
+
+    Sign convention: camera carriage moves +X in world → content in the
+    image moves in -X direction, so corners shift by ``-dx_px``. If the
+    resulting crops look scrambled, flip the sign of dx_px at the call
+    site (real camera mounting can go either way).
+
+    :param frame: Second-frame BGR image (same dims as detection frame)
+    :param corners: 4-point contour from detect_card_with_corners(),
+                    shape (4,1,2) float32
+    :param dx_px: Horizontal pixel offset. Positive = shift corners right.
+    :return: 745x1040 BGR numpy array
+    """
+    shifted = corners.copy().astype(np.float32)
+    shifted[..., 0] += float(dx_px)
+    return _perspective_warp(frame, shifted)
+
+
+def get_staging_px_per_mm():
+    """
+    Return px/mm at the staging plane (horizontal) based on the saved
+    staging ROI bounding-box width and the known staging platform width.
+
+    Returns None if no staging ROI is loaded.
+    """
+    _load_staging_roi()
+    if _staging_roi is None:
+        return None
+    xs = _staging_roi[:, 0]
+    roi_width_px = float(xs.max() - xs.min())
+    if roi_width_px <= 0:
+        return None
+    try:
+        from gcode_control import STAGING_WIDTH
+    except Exception:
+        return None
+    if STAGING_WIDTH <= 0:
+        return None
+    return roi_width_px / float(STAGING_WIDTH)
+
+
 def _is_inside_roi(cx, cy, margin=100):
     """Check if a point is inside the staging ROI (with margin)."""
     if _staging_roi is None:
