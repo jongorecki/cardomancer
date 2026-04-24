@@ -468,79 +468,48 @@ def get_session_history(conn):
     return [dict(r) for r in rows]
 
 
-def get_cull_candidates(conn, max_price=1.0, enr_db_path=None):
+def get_cull_candidates(conn, max_price=1.0, enr_db_path=None,
+                        preset="default", min_quantity=1,
+                        max_buylist_price=0.05, exclude_staples=True):
     """Return owned inventory rows that are cull candidates.
 
-    A card qualifies if ALL of:
-    - Has otag:vanilla or otag:french-vanilla in enrichment tags
-    - Has no row in enrichment staples (any tier/source)
-    - price_usd is NULL or < max_price
+    Delegates to ``web_enrichment.cull.get_cull_candidates`` which joins
+    inventory × enrichment signals (salt, staple tiers, buylist, vanilla tags)
+    and scores each card with a keep_confidence value.
 
-    Returns [] gracefully if enrichment.db is missing or tags are unpopulated.
+    Parameters
+    ----------
+    conn:
+        Open connection to collection.db.
+    max_price:
+        Maximum market price (price_usd).  Cards above this are kept.
+    enr_db_path:
+        Path to enrichment.db.  Defaults to enrichment_db.DB_PATH.
+    preset:
+        "default" — standard cull criteria.
+        "strict"  — also requires price_usd == NULL or 0.
+    min_quantity:
+        Minimum quantity owned to appear in results.
+    max_buylist_price:
+        Cards with CK buylist price above this are excluded.
+    exclude_staples:
+        Exclude cards with any staple tier row.
+
+    Returns [] gracefully if enrichment.db is missing.
     """
-    import os
-    import enrichment_db as _edb
-    enr_path = enr_db_path or _edb.DB_PATH
-
-    if not os.path.exists(enr_path):
-        return []
-
-    attached = False
     try:
-        conn.execute("ATTACH DATABASE ? AS enr", (enr_path,))
-        attached = True
-
-        rows = conn.execute(
-            """
-            SELECT
-                i.id,
-                i.name,
-                i.set_code,
-                i.collector_number,
-                i.oracle_id,
-                i.type_line,
-                i.rarity,
-                i.colors,
-                i.price_usd,
-                i.quantity,
-                GROUP_CONCAT(DISTINCT t.tag_name) AS matched_tags
-            FROM inventory i
-            JOIN enr.tags t
-                ON t.oracle_id = i.oracle_id
-               AND t.tag_name IN ('vanilla', 'french-vanilla')
-            WHERE i.oracle_id NOT IN (
-                SELECT DISTINCT oracle_id FROM enr.staples
-            )
-            AND (i.price_usd IS NULL OR i.price_usd < ?)
-            GROUP BY i.id
-            ORDER BY i.name ASC
-            """,
-            (max_price,),
-        ).fetchall()
-
-        result = []
-        for row in rows:
-            d = dict(row)
-            tags = set((d.pop("matched_tags") or "").split(","))
-            reasons = []
-            if "vanilla" in tags:
-                reasons.append("vanilla")
-            if "french-vanilla" in tags:
-                reasons.append("french-vanilla")
-            reasons.append("no_staple")
-            reasons.append("low_price")
-            d["cull_reasons"] = reasons
-            result.append(d)
-        return result
-
-    except Exception:
+        from web_enrichment.cull import get_cull_candidates as _cull
+        return _cull(
+            conn,
+            enr_db_path=enr_db_path,
+            max_market_price=max_price,
+            max_buylist_price=max_buylist_price,
+            min_quantity=min_quantity,
+            exclude_staples=exclude_staples,
+            preset=preset,
+        )
+    except ImportError:
         return []
-    finally:
-        if attached:
-            try:
-                conn.execute("DETACH DATABASE enr")
-            except Exception:
-                pass
 
 
 def get_scan_history(conn, session_id=None, limit=None):

@@ -1183,11 +1183,22 @@
                         <div class="card">
                             <div class="card-header">Cull Settings</div>
                             <div class="card-body">
-                                <label class="form-label small mb-1">Max price to cull</label>
+                                <label class="form-label small mb-1">Preset</label>
+                                <select class="form-select form-select-sm mb-3" id="cull-preset">
+                                    <option value="default" selected>Default — low price + no staple</option>
+                                    <option value="strict">Strict — price must be $0</option>
+                                </select>
+                                <label class="form-label small mb-1">Max market price</label>
                                 <div class="input-group input-group-sm mb-2">
                                     <span class="input-group-text">$</span>
                                     <input type="number" class="form-control" id="cull-max-price"
                                            value="1.00" min="0" step="0.25">
+                                </div>
+                                <label class="form-label small mb-1">Max CK buylist price</label>
+                                <div class="input-group input-group-sm mb-3">
+                                    <span class="input-group-text">$</span>
+                                    <input type="number" class="form-control" id="cull-max-buylist"
+                                           value="0.05" min="0" step="0.01">
                                 </div>
                                 <button class="btn btn-primary btn-sm w-100 mb-2"
                                         onclick="loadCullCandidates()">Find Candidates</button>
@@ -1195,40 +1206,46 @@
                                         onclick="exportCullCSV()">Export CSV</button>
                                 <hr>
                                 <p class="small text-muted mb-0">
-                                    Shows owned cards that are vanilla or french-vanilla,
-                                    have no staple value, and are worth less than the price
-                                    threshold.
+                                    Dead-weight cards: vanilla/french-vanilla text, no staple
+                                    tier, low salt score, and below the buylist threshold.
                                 </p>
                                 <p class="small text-muted mt-1 mb-0">
-                                    Requires enrichment data to be refreshed first.
+                                    Requires enrichment data (EDHREC + CK buylist) to be
+                                    refreshed for best results.
                                 </p>
                             </div>
                         </div>
                     </div>
                     <div class="col-md-9">
                         <div class="card">
-                            <div class="card-header">
-                                Cull Candidates
-                                <span class="badge bg-danger ms-1" id="cull-count">0</span>
+                            <div class="card-header d-flex align-items-center gap-2">
+                                <span>Cull Candidates</span>
+                                <span class="badge bg-danger" id="cull-count">0</span>
                             </div>
                             <div class="card-body p-0">
                                 <div id="cull-status" class="text-muted small text-center py-3" style="display:none">
-                                    Loading…
+                                    Loading&hellip;
                                 </div>
                                 <div id="cull-empty" class="text-muted small text-center py-3" style="display:none">
                                     No candidates found. Run enrichment refresh first if this seems wrong.
                                 </div>
+                                <div class="table-responsive">
                                 <table class="table table-sm table-striped mb-0" id="cull-table" style="display:none">
                                     <thead><tr>
                                         <th>Name</th>
                                         <th>Set</th>
                                         <th>Type</th>
                                         <th>Price</th>
+                                        <th>Buylist</th>
+                                        <th>Salt</th>
                                         <th>Qty</th>
+                                        <th>Action</th>
+                                        <th>Location</th>
                                         <th>Reasons</th>
                                     </tr></thead>
                                     <tbody id="cull-body"></tbody>
                                 </table>
+                                </div>
                             </div>
                         </div>
                     </div>
