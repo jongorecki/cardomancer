@@ -183,6 +183,92 @@ class EnrichmentRepo:
         finally:
             conn.close()
 
+    def get_salt_score(self, oracle_id: str) -> Optional[float]:
+        """Return the EDHREC salt score for oracle_id, or None if unknown.
+
+        Salt scores are populated by EDHRECSource from individual card pages.
+        Returns None if no score has been loaded yet.
+        """
+        conn = self._conn()
+        try:
+            row = conn.execute(
+                "SELECT salt FROM salt_scores WHERE oracle_id = ?",
+                (oracle_id,),
+            ).fetchone()
+            return row["salt"] if row else None
+        finally:
+            conn.close()
+
+    def get_commander_popularity(self, oracle_id: str) -> Optional[int]:
+        """Return the deck_count (number of EDHREC decks) for a commander.
+
+        Populated by EDHRECSource from the top-commanders page.  Non-commander
+        cards will return None.  Returns None if not found.
+        """
+        conn = self._conn()
+        try:
+            row = conn.execute(
+                "SELECT deck_count FROM commander_ranks WHERE oracle_id = ?",
+                (oracle_id,),
+            ).fetchone()
+            return row["deck_count"] if row else None
+        finally:
+            conn.close()
+
+    def get_staples_by_theme(self, theme_name: str) -> list[str]:
+        """Return oracle_ids that are members of the given EDHREC theme.
+
+        Reads from the themes table (populated by EDHRECSource).
+        Returns an empty list if the theme is unknown or the source hasn't run.
+        """
+        conn = self._conn()
+        try:
+            rows = conn.execute(
+                "SELECT DISTINCT oracle_id FROM themes WHERE theme_name = ?",
+                (theme_name,),
+            )
+            return [r["oracle_id"] for r in rows]
+        finally:
+            conn.close()
+
+    def get_staples_by_color_or_theme(self, color_or_theme: str) -> list[str]:
+        """Return oracle_ids associated with a color identity or theme.
+
+        Searches two sources:
+          1. themes table: cards with theme_name == color_or_theme
+          2. staples table: cards with tier='archetype' whose archetypes_json
+             contains color_or_theme as a list element (legacy named-list rows)
+
+        Returns a deduplicated list. Query-parser tokens use this to resolve
+        staple:archetype:<theme> queries.  No network calls made.
+        """
+        conn = self._conn()
+        try:
+            # Source 1: themes membership table (Phase 1.10 EDHRECSource output)
+            theme_rows = conn.execute(
+                "SELECT DISTINCT oracle_id FROM themes WHERE theme_name = ?",
+                (color_or_theme,),
+            ).fetchall()
+            oids: set[str] = {r["oracle_id"] for r in theme_rows}
+
+            # Source 2: staples.archetypes_json containing the slug as a list
+            # element (only applies if archetypes_json holds a JSON array)
+            archetype_rows = conn.execute(
+                """SELECT oracle_id, archetypes_json FROM staples
+                   WHERE tier = 'archetype' AND archetypes_json IS NOT NULL""",
+            ).fetchall()
+            for row in archetype_rows:
+                try:
+                    arches = json.loads(row["archetypes_json"])
+                    if isinstance(arches, list) and color_or_theme in arches:
+                        oids.add(row["oracle_id"])
+                except (ValueError, TypeError):
+                    pass
+
+            return sorted(oids)
+        finally:
+            conn.close()
+
     def get_cedh_staples(self, min_play_rate: float = 0.0) -> list[dict]:
         """Return cEDH staples from edhtop16, filtered by minimum play rate.
 
