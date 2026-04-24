@@ -1950,6 +1950,51 @@ def api_collection_locate():
         conn.close()
 
 
+@app.route('/api/locator/query', methods=['POST'])
+def api_locator_query():
+    """Physical locator — POST variant (Phase 2.11 acceptance-criteria path).
+
+    Request body (JSON):
+      { "q": "<scryfall-style query>" }
+
+    Returns JSON identical to GET /api/collection/locate:
+      { "query": "<q>",
+        "total_cards": N,
+        "groups": [ {box_name, divider_label, divider_id, box_id,
+                     count, unique_cards, oracle_ids}, ... ] }
+
+    Empty or missing `q` returns 400.
+    """
+    import collection_db
+    data = request.get_json(silent=True) or {}
+    query_str = (data.get('q') or '').strip()
+    if not query_str:
+        return jsonify({'error': 'Query string (q) is required',
+                        'groups': [], 'total_cards': 0}), 400
+
+    try:
+        from query_parser import parse_query, QueryParseError
+        parse_query(query_str)  # Validate up front for a clean 400.
+    except QueryParseError as exc:
+        return jsonify({'error': f'Invalid query: {exc}',
+                        'groups': [], 'total_cards': 0}), 400
+    except Exception as exc:
+        return jsonify({'error': f'Invalid query: {exc}',
+                        'groups': [], 'total_cards': 0}), 400
+
+    conn = collection_db.get_connection()
+    try:
+        groups = collection_db.locate_cards_by_query(conn, query_str)
+        total = sum(g['count'] for g in groups)
+        return jsonify({
+            'query': query_str,
+            'total_cards': total,
+            'groups': groups,
+        })
+    finally:
+        conn.close()
+
+
 @app.route('/api/collection/boxes/manage', methods=['GET', 'POST'])
 def api_collection_boxes_manage():
     """List or create first-class boxes (Phase 2.12).
