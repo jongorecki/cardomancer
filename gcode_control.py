@@ -38,7 +38,12 @@ X_CAMERA_POSITION = 138.0     # X position for on-carriage camera to see staging
 # camera_x_offset=...)` when the new hardware setup applies its results.
 # The default 100.0 matches BinCalibrator's CAMERA_X_OFFSET default.
 _camera_x_offset = 100.0
-Z_CAMERA_POSITION = 204.0     # Z height for on-carriage camera to see staging area
+Z_CAMERA_POSITION = 200.0     # Z height for on-carriage camera to see staging area.
+                                # Kept equal to Z_CLEAR_HEIGHT so move_to_camera_position
+                                # is a no-op Z move after a staging drop — the camera is
+                                # mounted on the X carriage, not the Z arm, so it sees
+                                # the staging area fine at travel height and there is no
+                                # reason to lift Z specifically for the camera.
 
 # Z positions (mm) — Z=max is home (top), Z=0 is fully extended
 Z_CLEAR_HEIGHT  = 200.0        # Z position to clear bin walls during X travel.
