@@ -1167,6 +1167,195 @@ def api_collection_inventory():
         conn.close()
 
 
+# ---------------------------------------------------------------------------
+# /api/collection/filter  —  Phase 2 item 2.13 (tag filters)
+#
+# Runs a compiled query string from the Collection tab filter-chips UI
+# through query_parser.evaluate_query against the inventory table,
+# enriching each row with staple/salt/combo/buylist data from
+# enrichment.db. Accepts the same tokens as sort-config queries
+# (staple:*, salt>N, combo:true, buylist:ck, cull:true, usd<X,
+# t:creature, c:ur, etc.). On QueryParseError returns 400.
+#
+# The Collection-tab UI (templates/index.html + static/app.js) compiles
+# chip state into a query string and hits this endpoint.
+# ---------------------------------------------------------------------------
+
+def _inventory_row_to_card_data(row):
+    """Build a Scryfall-card-like dict from an inventory row."""
+    colors_raw = row.get('colors') or ''
+    if ',' in colors_raw:
+        colors = [c.strip() for c in colors_raw.split(',') if c.strip()]
+    else:
+        colors = [c for c in colors_raw if c.strip()]
+    price_usd = row.get('price_usd')
+    prices = {'usd': str(price_usd) if price_usd is not None else None}
+    return {
+        'name': row.get('name') or '',
+        'oracle_id': row.get('oracle_id'),
+        'set': (row.get('set_code') or '').lower(),
+        'colors': colors,
+        'color_identity': colors,
+        'type_line': row.get('type_line') or '',
+        'cmc': row.get('cmc'),
+        'rarity': (row.get('rarity') or '').lower(),
+        'prices': prices,
+        'oracle_text': '',
+    }
+
+
+def _fetch_enrichment_for_oracle(enr_conn, oracle_id):
+    """Pull per-card enrichment dict for query_parser evaluate_query."""
+    if not oracle_id:
+        return {}
+    try:
+        tiers = {
+            r[0] for r in enr_conn.execute(
+                "SELECT tier FROM staples WHERE oracle_id=?",
+                (oracle_id,),
+            ).fetchall()
+        }
+        salt_row = enr_conn.execute(
+            "SELECT salt FROM salt_scores WHERE oracle_id=?",
+            (oracle_id,),
+        ).fetchone()
+        combo_row = enr_conn.execute(
+            "SELECT 1 FROM combo_membership WHERE oracle_id=? LIMIT 1",
+            (oracle_id,),
+        ).fetchone()
+        buylist_row = enr_conn.execute(
+            "SELECT price_usd FROM buylists "
+            "WHERE oracle_id=? AND vendor='ck' LIMIT 1",
+            (oracle_id,),
+        ).fetchone()
+        return {
+            "staple_universal":  "universal"  in tiers,
+            "staple_cedh":       "cedh"       in tiers,
+            "staple_archetype":  "archetype"  in tiers,
+            "salt":              salt_row[0] if salt_row else None,
+            "in_combo":          combo_row is not None,
+            "buylist_ck_price":  buylist_row[0] if buylist_row else None,
+        }
+    except Exception:
+        return {}
+
+
+@app.route('/api/collection/filter')
+def api_collection_filter():
+    """
+    Filter the inventory table using a Scryfall-like query string.
+
+    Query params:
+      q         — compiled query (e.g. "staple:universal usd<1.00").
+                  Empty or missing means no filter (full inventory).
+      page      — 1-indexed page number
+      per_page  — page size (default 50)
+      sort/dir  — forwarded to collection_db.get_inventory
+
+    Returns: {items, total, page, per_page, pages, query, error?}
+    """
+    import collection_db
+    import query_parser
+
+    q = (request.args.get('q') or '').strip()
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 50, type=int)
+    sort_by = request.args.get('sort', 'name')
+    sort_dir = request.args.get('dir', 'ASC')
+
+    ast = None
+    if q:
+        try:
+            ast = query_parser.parse_query(q)
+        except query_parser.QueryParseError as exc:
+            return jsonify({
+                'items': [], 'total': 0, 'page': page,
+                'per_page': per_page, 'pages': 0, 'query': q,
+                'error': f'Query syntax error: {exc}',
+            }), 400
+
+    conn = collection_db.get_connection()
+    enr_conn = None
+    try:
+        rows = collection_db.get_inventory(
+            conn, order_by=sort_by, order_dir=sort_dir
+        )
+
+        if ast is None:
+            filtered = rows
+        else:
+            try:
+                enr_conn = enrichment_db.get_connection()
+            except Exception as exc:
+                print(f"[collection/filter] enrichment.db unavailable: {exc}")
+                enr_conn = None
+
+            enr_cache = {}
+            filtered = []
+            parse_error = None
+            for row in rows:
+                card_data = _inventory_row_to_card_data(row)
+                oracle_id = row.get('oracle_id')
+                if oracle_id and enr_conn is not None:
+                    if oracle_id not in enr_cache:
+                        enr_cache[oracle_id] = _fetch_enrichment_for_oracle(
+                            enr_conn, oracle_id
+                        )
+                    enrichment_data = enr_cache[oracle_id]
+                else:
+                    enrichment_data = {}
+
+                try:
+                    try:
+                        matched = query_parser.evaluate_query(
+                            ast, card_data,
+                            enrichment_data=enrichment_data,
+                        )
+                    except TypeError:
+                        matched = query_parser.evaluate_query(
+                            ast, card_data
+                        )
+                except query_parser.QueryParseError as exc:
+                    parse_error = str(exc)
+                    break
+                except Exception as exc:
+                    print(f"[collection/filter] eval error: {exc}")
+                    continue
+
+                if matched:
+                    filtered.append(row)
+
+            if parse_error is not None:
+                return jsonify({
+                    'items': [], 'total': 0, 'page': page,
+                    'per_page': per_page, 'pages': 0, 'query': q,
+                    'error': f'Query syntax error: {parse_error}',
+                }), 400
+
+        total = len(filtered)
+        start = (page - 1) * per_page
+        end = start + per_page
+        page_rows = filtered[start:end]
+        return jsonify({
+            'items': page_rows,
+            'total': total,
+            'page': page,
+            'per_page': per_page,
+            'pages': (total + per_page - 1) // per_page if per_page else 0,
+            'query': q,
+        })
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        if enr_conn is not None:
+            try:
+                enr_conn.close()
+            except Exception:
+                pass
+
+
 @app.route('/api/collection/sessions')
 def api_collection_sessions():
     import collection_db

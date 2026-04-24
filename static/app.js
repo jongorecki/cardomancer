@@ -2427,8 +2427,28 @@ function _renderInventoryRow(item) {
 async function loadInventory(page) {
     _inventoryPage = page || 1;
     try {
-        const data = await apiGet(`/api/collection/inventory?page=${_inventoryPage}&per_page=50&sort=${_inventorySort}&dir=${_inventorySortDir}`);
-        document.getElementById('inventory-count').textContent = data.total;
+        // If any filter chips are active OR free-text query is present,
+        // hit the filter endpoint with the compiled query; otherwise
+        // fall back to the raw inventory endpoint.
+        const q = _compileCollectionQuery();
+        let url;
+        if (q) {
+            url = `/api/collection/filter?q=${encodeURIComponent(q)}&page=${_inventoryPage}&per_page=50&sort=${_inventorySort}&dir=${_inventorySortDir}`;
+        } else {
+            url = `/api/collection/inventory?page=${_inventoryPage}&per_page=50&sort=${_inventorySort}&dir=${_inventorySortDir}`;
+        }
+        const data = await apiGet(url);
+        const errEl = document.getElementById('collection-filter-error');
+        if (errEl) {
+            if (data && data.error) {
+                errEl.textContent = data.error;
+                errEl.style.display = '';
+            } else {
+                errEl.textContent = '';
+                errEl.style.display = 'none';
+            }
+        }
+        document.getElementById('inventory-count').textContent = data.total || 0;
         const tbody = document.getElementById('inventory-body');
         tbody.innerHTML = '';
         for (const item of data.items || []) {
@@ -2447,7 +2467,103 @@ async function loadInventory(page) {
                 pagDiv.appendChild(btn);
             }
         }
-    } catch (e) {}
+    } catch (e) {
+        const errEl = document.getElementById('collection-filter-error');
+        if (errEl && e && e.message) {
+            errEl.textContent = e.message;
+            errEl.style.display = '';
+        }
+    }
+}
+
+// ---- Collection tab filter chips (2.13) ----
+
+/**
+ * Walk the Filters card and compile the active chip selections into a
+ * query string. Within a group chips are ORed; groups are ANDed.
+ * Free-text from #collection-filter-raw is ANDed at the end.
+ * Returns '' when no filters are active.
+ */
+function _compileCollectionQuery() {
+    const groups = document.querySelectorAll('#collection-filters-card [data-filter-group]');
+    const groupFrags = [];
+    groups.forEach(grp => {
+        const active = grp.querySelectorAll('.chip.active');
+        if (!active.length) return;
+        // "Any staple" overrides the others if selected.
+        let exclusive = null;
+        active.forEach(c => { if (c.dataset.chipExclusive === '1') exclusive = c; });
+        const chips = exclusive ? [exclusive] : Array.from(active);
+        const tokens = chips.map(c => c.dataset.chipToken).filter(Boolean);
+        if (!tokens.length) return;
+        if (tokens.length === 1) {
+            groupFrags.push(tokens[0]);
+        } else {
+            groupFrags.push('(' + tokens.join(' or ') + ')');
+        }
+    });
+    const rawInput = document.getElementById('collection-filter-raw');
+    const raw = rawInput ? rawInput.value.trim() : '';
+    if (raw) groupFrags.push(raw);
+    return groupFrags.join(' ');
+}
+
+/** Refresh the compiled-query preview and reload the inventory list. */
+function updateCollectionFilter() {
+    const compiled = _compileCollectionQuery();
+    const preview = document.getElementById('collection-filter-compiled');
+    if (preview) preview.textContent = compiled || '(none)';
+    loadInventory(1);
+}
+
+/** Clear every chip + free text, then reload. */
+function clearCollectionFilters() {
+    document.querySelectorAll('#collection-filters-card .chip.active').forEach(c => {
+        c.classList.remove('active');
+    });
+    const rawInput = document.getElementById('collection-filter-raw');
+    if (rawInput) rawInput.value = '';
+    updateCollectionFilter();
+}
+
+/** Toggle a chip on click; enforce exclusive chips within a group. */
+function _initCollectionFilterChips() {
+    const card = document.getElementById('collection-filters-card');
+    if (!card) return;
+    card.querySelectorAll('.chip').forEach(chip => {
+        chip.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            const group = chip.closest('[data-filter-group]');
+            const wasActive = chip.classList.contains('active');
+            if (chip.dataset.chipExclusive === '1') {
+                // Exclusive chip: toggle it and clear siblings.
+                if (group) {
+                    group.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+                }
+                if (!wasActive) chip.classList.add('active');
+            } else {
+                // Non-exclusive: toggle it; if an exclusive sibling is
+                // active, clear it (the two can't coexist).
+                if (group) {
+                    group.querySelectorAll('.chip[data-chip-exclusive="1"].active')
+                         .forEach(c => c.classList.remove('active'));
+                }
+                chip.classList.toggle('active');
+            }
+            updateCollectionFilter();
+        });
+    });
+    // Initial preview render.
+    const preview = document.getElementById('collection-filter-compiled');
+    if (preview) preview.textContent = '(none)';
+}
+
+if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', _initCollectionFilterChips);
+    } else {
+        _initCollectionFilterChips();
+    }
 }
 
 function _updateSortArrows() {

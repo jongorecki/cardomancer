@@ -977,6 +977,58 @@
                         </div>
                     </div>
                     <div class="col-md-9">
+                        <div class="card mb-2" id="collection-filters-card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span>Filters</span>
+                                <button class="btn btn-outline-secondary btn-sm py-0" onclick="clearCollectionFilters()">Clear all</button>
+                            </div>
+                            <div class="card-body py-2">
+                                <div class="mb-2">
+                                    <label class="form-label small mb-1 fw-bold">Staples</label>
+                                    <div class="btn-group btn-group-sm flex-wrap" role="group" data-filter-group="staples">
+                                        <button type="button" class="btn btn-outline-primary chip" data-chip-token="staple:universal">Universal staple</button>
+                                        <button type="button" class="btn btn-outline-primary chip" data-chip-token="staple:cedh">cEDH staple</button>
+                                        <button type="button" class="btn btn-outline-primary chip" data-chip-token="staple:archetype">Archetype staple</button>
+                                        <button type="button" class="btn btn-outline-primary chip" data-chip-token="staple:any" data-chip-exclusive="1">Any staple</button>
+                                    </div>
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label small mb-1 fw-bold">Price / value</label>
+                                    <div class="btn-group btn-group-sm flex-wrap" role="group" data-filter-group="value">
+                                        <button type="button" class="btn btn-outline-success chip" data-chip-token="usd<1.00">Under $1</button>
+                                        <button type="button" class="btn btn-outline-success chip" data-chip-token="usd>=5.00">$5+</button>
+                                        <button type="button" class="btn btn-outline-success chip" data-chip-token="buylist:ck">On CK buylist</button>
+                                        <button type="button" class="btn btn-outline-success chip" data-chip-token="cull:true">Cull candidates</button>
+                                    </div>
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label small mb-1 fw-bold">Salt</label>
+                                    <div class="btn-group btn-group-sm flex-wrap" role="group" data-filter-group="salt">
+                                        <button type="button" class="btn btn-outline-warning chip" data-chip-token="salt>2">Salty (&gt;2)</button>
+                                        <button type="button" class="btn btn-outline-warning chip" data-chip-token="salt>3">Very salty (&gt;3)</button>
+                                    </div>
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label small mb-1 fw-bold">Combo</label>
+                                    <div class="btn-group btn-group-sm flex-wrap" role="group" data-filter-group="combo">
+                                        <button type="button" class="btn btn-outline-info chip" data-chip-token="combo:true">In a combo</button>
+                                    </div>
+                                </div>
+                                <div class="mb-2">
+                                    <a class="small text-secondary" data-bs-toggle="collapse" href="#collection-filters-advanced" role="button">Advanced (raw query)</a>
+                                    <div class="collapse mt-1" id="collection-filters-advanced">
+                                        <input type="text" class="form-control form-control-sm" id="collection-filter-raw"
+                                               placeholder='Extra tokens, e.g. t:creature c:ur' oninput="updateCollectionFilter()">
+                                        <div class="form-text small">Free text is ANDed with the chips above.</div>
+                                    </div>
+                                </div>
+                                <div class="small text-secondary">
+                                    Compiled query:
+                                    <code id="collection-filter-compiled" class="ms-1">(none)</code>
+                                </div>
+                                <div id="collection-filter-error" class="small text-danger mt-1" style="display:none"></div>
+                            </div>
+                        </div>
                         <div class="card">
                             <div class="card-header">
                                 Inventory <span class="badge bg-secondary" id="inventory-count">0</span>
