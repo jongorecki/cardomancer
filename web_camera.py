@@ -54,6 +54,10 @@ class CameraManager:
         self._cap = None
         self._frame = None
         self._lock = threading.Lock()
+        # Serializes start()/stop() so concurrent callers (e.g. two MJPEG
+        # endpoints auto-starting the camera at the same time) can't both
+        # race into _open_capture() and clobber self._cap mid-init.
+        self._lifecycle_lock = threading.Lock()
         self._thread = None
         self._watchdog_thread = None
         self._running = False
@@ -115,44 +119,61 @@ class CameraManager:
     # -------------------------------------------------------------------
 
     def start(self):
-        """Start the camera capture thread + watchdog."""
-        if self._running:
+        """Start the camera capture thread + watchdog.
+
+        Serialized via _lifecycle_lock so concurrent callers (e.g. the
+        Flask MJPEG feed endpoints both auto-starting on the same page
+        load) can't both race into _open_capture() and clobber
+        self._cap while the first open is mid-warmup.
+        """
+        with self._lifecycle_lock:
+            # Double-check inside the lock — another caller may have
+            # started the camera while we were waiting on the lock.
+            if self._running:
+                return True
+
+            if not self._open_capture():
+                return False
+
+            self._running = True
+            self._set_health('ok')
+            self._last_good_frame_time = time.time()
+
+            self._thread = threading.Thread(
+                target=self._capture_loop, daemon=True,
+                name='camera-capture')
+            self._thread.start()
+
+            self._watchdog_thread = threading.Thread(
+                target=self._watchdog_loop, daemon=True,
+                name='camera-watchdog')
+            self._watchdog_thread.start()
+
+            print(f"[camera] Started on device {self.device_index} "
+                  f"(buffer_size=1, watchdog on)")
             return True
-
-        if not self._open_capture():
-            return False
-
-        self._running = True
-        self._set_health('ok')
-        self._last_good_frame_time = time.time()
-
-        self._thread = threading.Thread(
-            target=self._capture_loop, daemon=True, name='camera-capture')
-        self._thread.start()
-
-        self._watchdog_thread = threading.Thread(
-            target=self._watchdog_loop, daemon=True, name='camera-watchdog')
-        self._watchdog_thread.start()
-
-        print(f"[camera] Started on device {self.device_index} "
-              f"(buffer_size=1, watchdog on)")
-        return True
 
     def stop(self):
         """Stop the camera, capture thread, and watchdog."""
-        self._running = False
-        # Both threads are daemons with short sleep intervals, so they'll
-        # exit quickly on their own. Give them a moment to notice.
-        for t in (self._thread, self._watchdog_thread):
-            if t is not None:
-                t.join(timeout=2)
-        self._thread = None
-        self._watchdog_thread = None
-        self._release_capture()
-        with self._lock:
-            self._frame = None
-        self._set_health('unknown')
-        print("[camera] Stopped")
+        with self._lifecycle_lock:
+            if not self._running and self._cap is None:
+                return
+            self._running = False
+            # Both threads are daemons with short sleep intervals, so
+            # they'll exit quickly on their own. Give them a moment to
+            # notice. Capture these refs before joining — another thread
+            # can't replace them while we hold the lifecycle lock.
+            threads = (self._thread, self._watchdog_thread)
+            self._thread = None
+            self._watchdog_thread = None
+            for t in threads:
+                if t is not None:
+                    t.join(timeout=2)
+            self._release_capture()
+            with self._lock:
+                self._frame = None
+            self._set_health('unknown')
+            print("[camera] Stopped")
 
     # -------------------------------------------------------------------
     # Capture device management (open / release / reconnect)
@@ -301,25 +322,37 @@ class CameraManager:
         Tear down and reopen the capture device. Called by the capture loop
         after too many consecutive read failures, or by the watchdog after
         a stall. This runs on whatever thread noticed the problem.
+
+        Single-flight via _lifecycle_lock with a non-blocking acquire —
+        the watchdog fires every 1s, and _open_capture takes several
+        seconds, so without this guard 2-3 reconnects stack up and race
+        on self._cap, breaking the device entirely.
         """
-        print(f"[camera] reconnecting ({reason})")
-        self._set_health('dead')
-        self._focus_locked = False  # Reset — new device needs fresh AF
-        self._release_capture()
-        time.sleep(0.5)
-        # Try up to 3 times, sleeping longer between attempts
-        for attempt in range(3):
-            if self._open_capture():
-                self._reconnect_count += 1
-                self._set_health('ok')
-                self._last_good_frame_time = time.time()
-                print(f"[camera] reconnected on attempt {attempt + 1} "
-                      f"(total reconnects: {self._reconnect_count})")
-                return True
-            time.sleep(1.0 * (attempt + 1))
-        print("[camera] reconnect failed after 3 attempts")
-        self._set_health('dead')
-        return False
+        if not self._lifecycle_lock.acquire(blocking=False):
+            # Another thread is already reconnecting (or start/stop is
+            # in progress). Let that one finish — no point racing.
+            return False
+        try:
+            print(f"[camera] reconnecting ({reason})")
+            self._set_health('dead')
+            self._focus_locked = False  # Reset — new device needs fresh AF
+            self._release_capture()
+            time.sleep(0.5)
+            # Try up to 3 times, sleeping longer between attempts
+            for attempt in range(3):
+                if self._open_capture():
+                    self._reconnect_count += 1
+                    self._set_health('ok')
+                    self._last_good_frame_time = time.time()
+                    print(f"[camera] reconnected on attempt {attempt + 1} "
+                          f"(total reconnects: {self._reconnect_count})")
+                    return True
+                time.sleep(1.0 * (attempt + 1))
+            print("[camera] reconnect failed after 3 attempts")
+            self._set_health('dead')
+            return False
+        finally:
+            self._lifecycle_lock.release()
 
     # -------------------------------------------------------------------
     # Capture loop — runs in its own thread
