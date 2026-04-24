@@ -8,7 +8,7 @@
 #   salt>N  salt<N  salt>=N  salt<=N  salt=N
 #   combo:true  combo:any
 #   buylist:ck  buylist:ck>=1.00
-#   cull:true / cull:false  — dead-weight flag (vanilla/no-staple/no-buylist/not-in-decks)
+#   cull:true / cull:false  — dead-weight flag (vanilla/no-staple/no-buylist/not-in-any-deck)
 #   deck:<deck_id>           — card is in the Moxfield deck (any printing)
 #   deck:<deck_id>!exact     — card is in the Moxfield deck (exact printing by set+cn)
 #   wishlist:<username>      — card is in the user's Moxfield wishlist (any printing)
@@ -737,12 +737,11 @@ def _eval_field_query(fq, card_data, otag_cache=None, enrichment_data=None):
     #      Evaluated directly from card_data['oracle_text'] — no enrichment needed.
     #   2. NOT a staple at any tier (staple:any is false).
     #   3. NOT on the CardKingdom buylist (buylist_ck_price is None or 0).
-    #   4. NOT in any of the user's Moxfield decks.
-    #      TODO: AND with deck-usage lookup once Phase 3 item 3.18 (Moxfield
-    #      deck-usage overlay) is implemented.  For now treated as trivially
-    #      true (we conservatively assume the card is not in any deck unless
-    #      proven otherwise — this means the cull flag is *looser* until 3.18
-    #      lands, but never produces false negatives once deck data exists).
+    #   4. NOT in any of the user's Moxfield decks or wishlists.
+    #      Reads enrichment_data["in_deck"] (True when deck_count > 0 OR
+    #      wishlist_count > 0 in the deck_usage overlay table).
+    #      If enrichment_data is None or key absent, treated as False
+    #      (conservative — card assumed not in any deck).
     if field == 'cull':
         val_lower = val.lower()
         want_cull = val_lower in ('true', 'yes', '1')
@@ -780,12 +779,19 @@ def _eval_field_query(fq, card_data, otag_cache=None, enrichment_data=None):
         if on_buylist:
             return not want_cull
 
-        # Predicate 4: NOT in any of the user's Moxfield decks.
-        # TODO: AND with deck-usage lookup once Phase 3 item 3.18 lands.
-        # in_deck = enrichment_data.get("in_deck", False) if enrichment_data else False
-        # if in_deck:
-        #     return not want_cull
-        in_deck = False  # trivially False until 3.18 is implemented
+        # Predicate 4: NOT in any of the user's Moxfield decks or wishlists.
+        # Populated by the deck_usage overlay (Phase 3 item 3.18).
+        # enrichment_data["in_deck"] is True when deck_count > 0 OR
+        # wishlist_count > 0 for this oracle_id in the deck_usage table.
+        # Falls back to False (conservative — card is assumed not-in-deck)
+        # when enrichment_data is None or the key is absent.
+        if enrichment_data is not None:
+            in_deck = bool(enrichment_data.get("in_deck", False))
+        else:
+            in_deck = False
+
+        if in_deck:
+            return not want_cull
 
         # All predicates satisfied — this IS a cull candidate
         is_cull = is_vanilla and not is_staple and not on_buylist and not in_deck
@@ -931,6 +937,8 @@ def evaluate_query(ast, card_data, otag_cache=None, enrichment_data=None):
                        salt: float | None
                        in_combo: bool
                        buylist_ck_price: float | None
+                       in_deck: bool  -- True if card is in any cached Moxfield
+                                         deck or wishlist (deck_usage overlay)
     """
     if isinstance(ast, FieldQuery):
         return _eval_field_query(ast, card_data, otag_cache, enrichment_data)

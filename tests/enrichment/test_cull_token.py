@@ -557,5 +557,88 @@ class TestEnrichmentRepoCullMethods(unittest.TestCase):
             edb.DB_PATH = orig
 
 
+# ---------------------------------------------------------------------------
+# cull:true with in_deck predicate (Phase 3 item 3.18)
+# ---------------------------------------------------------------------------
+
+class TestCullTokenInDeckPredicate(unittest.TestCase):
+    """Tests for predicate 4 of cull: — 'NOT in any Moxfield deck or wishlist'.
+
+    Covers the query_parser path (enrichment_data["in_deck"]).
+    DB-backed path is covered in tests/enrichment/test_deck_usage.py.
+    """
+
+    def _enr(self, *, in_deck=False, staple_universal=False,
+             buylist_ck_price=None):
+        return {
+            "staple_universal": staple_universal,
+            "staple_cedh": False,
+            "staple_archetype": False,
+            "salt": None,
+            "in_combo": False,
+            "buylist_ck_price": buylist_ck_price,
+            "in_deck": in_deck,
+        }
+
+    def test_in_deck_true_makes_vanilla_not_cull(self):
+        """Vanilla card with in_deck=True: cull:true → False."""
+        enr = self._enr(in_deck=True)
+        self.assertFalse(matches_query("cull:true", GRIZZLY_BEARS,
+                                       enrichment_data=enr))
+
+    def test_in_deck_false_vanilla_still_cull(self):
+        """Vanilla card with in_deck=False (and no staple/buylist): cull:true → True."""
+        enr = self._enr(in_deck=False)
+        self.assertTrue(matches_query("cull:true", GRIZZLY_BEARS,
+                                      enrichment_data=enr))
+
+    def test_in_deck_true_cull_false_is_true(self):
+        """Vanilla card with in_deck=True: cull:false → True (not a cull candidate)."""
+        enr = self._enr(in_deck=True)
+        self.assertTrue(matches_query("cull:false", GRIZZLY_BEARS,
+                                      enrichment_data=enr))
+
+    def test_in_deck_key_absent_treated_as_false(self):
+        """enrichment_data without 'in_deck' key: treated as False (conservative)."""
+        enr = {
+            "staple_universal": False,
+            "staple_cedh": False,
+            "staple_archetype": False,
+            "salt": None,
+            "in_combo": False,
+            "buylist_ck_price": None,
+            # 'in_deck' key deliberately absent
+        }
+        # Should still be a cull candidate (key absent = not in deck)
+        self.assertTrue(matches_query("cull:true", GRIZZLY_BEARS,
+                                      enrichment_data=enr))
+
+    def test_in_deck_none_enrichment_conservative(self):
+        """enrichment_data=None: in_deck treated as False → vanilla card is cull."""
+        # With no enrichment_data, staple=False, buylist=False, in_deck=False
+        # so vanilla card IS a cull candidate.
+        self.assertTrue(matches_query("cull:true", GRIZZLY_BEARS,
+                                      enrichment_data=None))
+
+    def test_in_deck_supersedes_all_other_passing_predicates(self):
+        """Even if vanilla + no-staple + no-buylist, in_deck=True makes it not cull."""
+        enr = self._enr(in_deck=True, staple_universal=False,
+                        buylist_ck_price=None)
+        self.assertFalse(matches_query("cull:true", GRIZZLY_BEARS,
+                                       enrichment_data=enr))
+
+    def test_complex_text_still_fails_even_with_in_deck_false(self):
+        """Complex oracle text fails predicate 1 regardless of in_deck."""
+        enr = self._enr(in_deck=False)
+        self.assertFalse(matches_query("cull:true", LIGHTNING_BOLT,
+                                       enrichment_data=enr))
+
+    def test_collect_enrichment_fields_still_has_cull(self):
+        """cull: still reported as enrichment field after 3.18 changes."""
+        from query_parser import collect_enrichment_fields
+        ast = parse_query("cull:true")
+        self.assertIn("cull", collect_enrichment_fields(ast))
+
+
 if __name__ == "__main__":
     unittest.main()
