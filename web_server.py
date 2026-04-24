@@ -924,6 +924,70 @@ def api_session_wishlist_bin():
     return jsonify({'queued': True})
 
 
+# --- Priority bin (Phase 4.21) ---
+
+@app.route('/api/session/priority-bin', methods=['POST'])
+def api_session_priority_bin():
+    """
+    Configure the priority-bin route.  Body:
+        {"bin": <int|null>, "wishlist_source": "moxfield:<user>"|null}
+    Both null => disabled.
+    """
+    data = request.json or {}
+    bin_number = data.get('bin')
+    wishlist_source = data.get('wishlist_source')
+    if bin_number is not None:
+        bin_number = int(bin_number)
+    worker.enqueue('set_priority_bin',
+                   bin_number=bin_number,
+                   wishlist_source=wishlist_source)
+    return jsonify({'queued': True})
+
+
+@app.route('/api/integrations/moxfield/wishlist/list')
+def api_integrations_moxfield_wishlist_list():
+    """List cached Moxfield wishlist sources (for UI dropdown)."""
+    import collection_db
+    conn = collection_db.get_connection()
+    try:
+        items = collection_db.list_moxfield_wishlists(conn)
+    finally:
+        conn.close()
+    return jsonify({'wishlists': items})
+
+
+@app.route('/api/integrations/moxfield/wishlist/upsert', methods=['POST'])
+def api_integrations_moxfield_wishlist_upsert():
+    """
+    Create or replace a cached Moxfield wishlist.  Body:
+        {"source_key": "moxfield:<user>",
+         "username": "<user>",
+         "display_name": "...",
+         "cards": [{"oracle_id": "...", "name": "...",
+                    "set_code": "...", "image_uri": "..."}]}
+
+    Used by tests and by the (future) Moxfield sync worker.  Basic
+    lands are filtered out at upsert time.
+    """
+    import collection_db
+    data = request.json or {}
+    source_key = data.get('source_key')
+    if not source_key:
+        return jsonify({'error': 'source_key required'}), 400
+    conn = collection_db.get_connection()
+    try:
+        wid = collection_db.upsert_moxfield_wishlist(
+            conn,
+            source_key=source_key,
+            cards=data.get('cards') or [],
+            username=data.get('username'),
+            display_name=data.get('display_name'),
+        )
+    finally:
+        conn.close()
+    return jsonify({'id': wid, 'source_key': source_key})
+
+
 @app.route('/api/session/rehome-interval', methods=['POST'])
 def api_session_rehome_interval():
     data = request.json or {}

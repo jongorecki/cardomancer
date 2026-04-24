@@ -131,6 +131,16 @@ class SortWorker:
         # Wishlist bin
         self.wishlist_bin = None  # Bin number reserved for wishlist matches
 
+        # --- Priority bin (Phase 4.21) ---
+        # Highest-precedence routing layer: if the scanned card's oracle_id
+        # is in the configured Moxfield wishlist AND priority_bin is set,
+        # route here — above override bins and regular sort-config bins.
+        # priority_wishlist_source: "moxfield:<username>" | None
+        # priority_oracle_ids:     pre-loaded set for O(1) lookup
+        self.priority_bin = None
+        self.priority_wishlist_source = None
+        self.priority_oracle_ids = set()
+
         # Bin overflow / fullness tracking
         # overflow_map: logical_bin -> [physical_bin_1, physical_bin_2, ...]
         # When a physical bin fills up, cards route to the next bin in the chain.
@@ -1408,6 +1418,20 @@ class SortWorker:
                 except Exception as e:
                     self.log(f"Wishlist check error: {e}")
 
+            # --- Priority bin (Phase 4.21) ---
+            # Highest-precedence routing layer. If this card is in the
+            # configured Moxfield wishlist AND a priority_bin is set,
+            # it beats both override bins AND the regular sort config.
+            # Runs *after* the legacy wishlist_bin block so it wins there
+            # too.  Basic lands are already excluded at cache-fill time,
+            # so the oracle_id set here never contains them.
+            priority_hit = self._check_priority_match(card_data, card_info)
+            if priority_hit is not None:
+                logical_bin = self.priority_bin
+                self.log(f"PRIORITY MATCH: {card_name} -> "
+                         f"Priority bin {logical_bin}")
+                self.emit('wishlist_match', priority_hit)
+
             # Overflow resolution
             physical_bin = self.resolve_bin(logical_bin)
 
@@ -1925,6 +1949,96 @@ class SortWorker:
         else:
             self.wishlist_bin = None
             self.log("Wishlist bin disabled")
+
+    # --- Priority bin (Phase 4.21) ---
+
+    def _cmd_set_priority_bin(self, bin_number=None, wishlist_source=None,
+                              **kwargs):
+        """
+        Configure the highest-precedence priority-bin route.
+
+        bin_number:      physical bin number, or None to disable.
+        wishlist_source: "moxfield:<username>" identifier of a cached
+                         Moxfield wishlist, or None to disable.
+
+        Both must be set for the priority route to fire.  Pre-loads the
+        set of oracle_ids from collection_db so per-card routing is O(1).
+        """
+        self.priority_bin = int(bin_number) if bin_number is not None else None
+        self.priority_wishlist_source = wishlist_source or None
+        self.priority_oracle_ids = set()
+
+        if self.priority_bin is not None and self.priority_wishlist_source:
+            try:
+                import collection_db
+                conn = collection_db.get_connection()
+                self.priority_oracle_ids = \
+                    collection_db.get_moxfield_wishlist_oracle_ids(
+                        conn, self.priority_wishlist_source)
+                conn.close()
+                self.log(f"Priority bin = {self.priority_bin} "
+                         f"(wishlist='{self.priority_wishlist_source}', "
+                         f"{len(self.priority_oracle_ids)} cards)")
+            except Exception as e:
+                self.log(f"Priority bin load error: {e}")
+                self.priority_oracle_ids = set()
+        else:
+            self.log("Priority bin disabled")
+
+    def _check_priority_match(self, card_data, card_info):
+        """
+        Return a dict payload for `wishlist_match` if the scanned card is
+        in the configured priority wishlist, else None.
+
+        Payload shape:
+            {oracle_id, name, image_uri, set, priority_bin}
+
+        Safe to call with priority_bin / wishlist_source unset — returns
+        None in that case.
+        """
+        if self.priority_bin is None:
+            return None
+        if not self.priority_oracle_ids:
+            return None
+
+        oracle_id = None
+        if card_data:
+            oracle_id = card_data.get('oracle_id')
+        if not oracle_id:
+            return None
+        if oracle_id not in self.priority_oracle_ids:
+            return None
+
+        # Resolve image / set / name — prefer the cached wishlist entry
+        # so alerts show the user's intended art, fall back to the scan.
+        name = (card_info or {}).get('Name') if card_info else None
+        set_code = (card_info or {}).get('Set') if card_info else None
+        image_uri = None
+        try:
+            import collection_db
+            conn = collection_db.get_connection()
+            cached = collection_db.get_moxfield_wishlist_card(
+                conn, self.priority_wishlist_source, oracle_id)
+            conn.close()
+            if cached:
+                name = cached.get('name') or name
+                set_code = cached.get('set_code') or set_code
+                image_uri = cached.get('image_uri')
+        except Exception as e:
+            self.log(f"Priority cache lookup error: {e}")
+
+        if not image_uri and card_data:
+            # Fallback: Scryfall image URIs from enriched card_data
+            imgs = card_data.get('image_uris') or {}
+            image_uri = imgs.get('normal') or imgs.get('small')
+
+        return {
+            'oracle_id': oracle_id,
+            'name': name or 'Unknown',
+            'image_uri': image_uri,
+            'set': set_code,
+            'priority_bin': self.priority_bin,
+        }
 
     # --- Bin Overflow / Fullness ---
 

@@ -4354,8 +4354,61 @@ socket.on('sort_undone', (data) => {
 });
 
 socket.on('wishlist_match', (data) => {
-    addLog(`\u2B50 WISHLIST MATCH: ${data.name} -> Wishlist bin ${data.bin}`);
+    // Two shapes are emitted on this channel:
+    //   legacy collection_db match: {name, bin, wishlist_item}
+    //   priority-bin match (4.21):  {oracle_id, name, image_uri, set, priority_bin}
+    const binNum = data.priority_bin !== undefined ? data.priority_bin : data.bin;
+    addLog(`\u2B50 WISHLIST MATCH: ${data.name} -> bin ${binNum}`);
+    // Render a non-modal toast for priority-bin matches.  Session keeps
+    // scanning; the toast stays until the user dismisses it.
+    if (data.priority_bin !== undefined) {
+        showPriorityToast(data);
+    }
 });
+
+// =========================================================================
+// Priority-bin toast (Phase 4.21)
+// Non-modal, anchored to the bin-layout card.  Stays until dismissed.
+// =========================================================================
+
+function showPriorityToast(data) {
+    const stack = document.getElementById('priority-toast-stack');
+    if (!stack) return;
+
+    const toast = document.createElement('div');
+    toast.className = 'toast show border border-warning';
+    toast.setAttribute('role', 'alert');
+    toast.style.pointerEvents = 'auto';
+    toast.style.minWidth = '260px';
+    toast.style.backgroundColor = 'rgba(30, 30, 50, 0.97)';
+    toast.style.color = '#fff';
+    toast.style.boxShadow = '0 0 12px rgba(255, 193, 7, 0.6)';
+
+    const img = data.image_uri
+        ? `<img src="${escapeHtml(data.image_uri)}" alt="" style="width:60px; height:auto; border-radius:4px; margin-right:8px;">`
+        : '';
+    const setBadge = data.set
+        ? `<span class="badge bg-secondary ms-1">${escapeHtml(String(data.set).toUpperCase())}</span>`
+        : '';
+
+    toast.innerHTML = `
+        <div class="toast-header bg-warning text-dark">
+            <strong class="me-auto">\u2B50 Wishlist Match</strong>
+            <button type="button" class="btn-close" aria-label="Dismiss"></button>
+        </div>
+        <div class="toast-body d-flex align-items-start">
+            ${img}
+            <div class="flex-grow-1">
+                <div><strong>${escapeHtml(data.name || 'Unknown')}</strong>${setBadge}</div>
+                <div class="small text-warning">Routed to bin #${data.priority_bin}</div>
+            </div>
+        </div>
+    `;
+    toast.querySelector('.btn-close').addEventListener('click', () => {
+        toast.remove();
+    });
+    stack.appendChild(toast);
+}
 
 socket.on('bin_fullness_warning', (data) => {
     addLog(`\u26A0\uFE0F BIN ${data.bin} NEARLY FULL! Only ${data.remaining_mm.toFixed(1)}mm clearance.`);
@@ -4370,6 +4423,43 @@ function setWishlistBin() {
     const binNum = val ? parseInt(val) : null;
     apiPost('/api/session/wishlist-bin', { bin: binNum });
     addLog(binNum ? `Wishlist bin set to ${binNum}` : 'Wishlist bin disabled');
+}
+
+// --- Priority bin (Phase 4.21) ---
+
+async function loadPriorityWishlistSources() {
+    const sel = document.getElementById('priority-wishlist-select');
+    if (!sel) return;
+    try {
+        const data = await apiGet('/api/integrations/moxfield/wishlist/list');
+        const current = sel.value;
+        sel.innerHTML = '<option value="">\u2014 wishlist \u2014</option>';
+        for (const w of (data.wishlists || [])) {
+            const opt = document.createElement('option');
+            opt.value = w.source_key;
+            opt.textContent = `${w.display_name || w.source_key} (${w.card_count})`;
+            sel.appendChild(opt);
+        }
+        if (current) sel.value = current;
+    } catch (e) {
+        console.warn('loadPriorityWishlistSources failed', e);
+    }
+}
+
+function setPriorityBin() {
+    const binVal = document.getElementById('priority-bin-input').value;
+    const src = document.getElementById('priority-wishlist-select').value;
+    const binNum = binVal ? parseInt(binVal) : null;
+    const wishlistSource = src || null;
+    apiPost('/api/session/priority-bin', {
+        bin: binNum,
+        wishlist_source: wishlistSource,
+    });
+    if (binNum && wishlistSource) {
+        addLog(`Priority bin set to ${binNum} (wishlist: ${wishlistSource})`);
+    } else {
+        addLog('Priority bin disabled');
+    }
 }
 
 function setRehomeInterval() {
@@ -4409,6 +4499,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadBinLocations();
     loadBinTable();
     drawMotionCanvas();
+    loadPriorityWishlistSources();
 
     // Load collection data when tab is shown
     document.querySelector('a[href="#tab-collection"]').addEventListener('shown.bs.tab', () => {

@@ -147,6 +147,32 @@ def _create_tables(conn):
 
         CREATE INDEX IF NOT EXISTS idx_detection_reviews_variable
             ON detection_reviews(variable, verdict, confidence);
+
+        -- Moxfield wishlist source cache (Phase 4.21 priority bin).
+        CREATE TABLE IF NOT EXISTS moxfield_wishlists (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_key TEXT NOT NULL UNIQUE,
+            username TEXT,
+            display_name TEXT,
+            last_synced TEXT,
+            card_count INTEGER DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS moxfield_wishlist_cards (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            wishlist_id INTEGER NOT NULL,
+            oracle_id TEXT NOT NULL,
+            name TEXT,
+            set_code TEXT,
+            image_uri TEXT,
+            FOREIGN KEY (wishlist_id)
+                REFERENCES moxfield_wishlists(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_mox_wishlist_card_wid
+            ON moxfield_wishlist_cards(wishlist_id);
+        CREATE INDEX IF NOT EXISTS idx_mox_wishlist_card_oid
+            ON moxfield_wishlist_cards(oracle_id);
     """)
     # Migration: add box column if missing (existing databases)
     try:
@@ -1415,6 +1441,96 @@ def check_wishlist_match(conn, card_name):
         (card_name,)
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Moxfield wishlist cache (Phase 4.21 priority bin)
+# ---------------------------------------------------------------------------
+
+_BASIC_LAND_NAMES = {
+    "plains", "island", "swamp", "mountain", "forest",
+    "wastes", "snow-covered plains", "snow-covered island",
+    "snow-covered swamp", "snow-covered mountain", "snow-covered forest",
+}
+
+
+def list_moxfield_wishlists(conn):
+    rows = conn.execute(
+        "SELECT * FROM moxfield_wishlists ORDER BY source_key"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def upsert_moxfield_wishlist(conn, source_key, cards,
+                             username=None, display_name=None):
+    filtered = [
+        c for c in cards
+        if c.get('oracle_id')
+        and (c.get('name') or '').strip().lower() not in _BASIC_LAND_NAMES
+    ]
+    now = datetime.now().isoformat()
+    conn.execute(
+        """INSERT INTO moxfield_wishlists
+               (source_key, username, display_name, last_synced, card_count)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(source_key) DO UPDATE SET
+               username=excluded.username,
+               display_name=excluded.display_name,
+               last_synced=excluded.last_synced,
+               card_count=excluded.card_count""",
+        (source_key, username, display_name, now, len(filtered))
+    )
+    row = conn.execute(
+        "SELECT id FROM moxfield_wishlists WHERE source_key=?",
+        (source_key,)
+    ).fetchone()
+    wid = row['id']
+    conn.execute(
+        "DELETE FROM moxfield_wishlist_cards WHERE wishlist_id=?", (wid,)
+    )
+    conn.executemany(
+        """INSERT INTO moxfield_wishlist_cards
+               (wishlist_id, oracle_id, name, set_code, image_uri)
+           VALUES (?, ?, ?, ?, ?)""",
+        [(wid, c['oracle_id'], c.get('name'),
+          c.get('set_code'), c.get('image_uri')) for c in filtered]
+    )
+    conn.commit()
+    return wid
+
+
+def get_moxfield_wishlist_cards(conn, source_key):
+    rows = conn.execute(
+        """SELECT c.oracle_id, c.name, c.set_code, c.image_uri
+           FROM moxfield_wishlist_cards c
+           JOIN moxfield_wishlists w ON c.wishlist_id = w.id
+           WHERE w.source_key = ?""",
+        (source_key,)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_moxfield_wishlist_oracle_ids(conn, source_key):
+    return {r['oracle_id']
+            for r in get_moxfield_wishlist_cards(conn, source_key)}
+
+
+def get_moxfield_wishlist_card(conn, source_key, oracle_id):
+    row = conn.execute(
+        """SELECT c.oracle_id, c.name, c.set_code, c.image_uri
+           FROM moxfield_wishlist_cards c
+           JOIN moxfield_wishlists w ON c.wishlist_id = w.id
+           WHERE w.source_key = ? AND c.oracle_id = ?""",
+        (source_key, oracle_id)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def delete_moxfield_wishlist(conn, source_key):
+    conn.execute(
+        "DELETE FROM moxfield_wishlists WHERE source_key=?", (source_key,)
+    )
+    conn.commit()
 
 
 # ---------------------------------------------------------------------------

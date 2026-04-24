@@ -256,10 +256,17 @@
                         </div>
                     </div>
                     <div class="col-md-6">
-                        <div class="card mb-2">
+                        <div class="card mb-2 position-relative">
                             <div class="card-header">Bin Layout</div>
                             <div class="card-body p-2">
                                 <canvas id="bin-layout-canvas" width="800" height="160" class="w-100" style="border:1px solid #333; background:#1a1a2e;"></canvas>
+                            </div>
+                            <!-- Priority-bin match alerts (non-modal; stacks). -->
+                            <div id="priority-toast-stack"
+                                 style="position:absolute; top:8px; right:8px;
+                                        z-index:1080; max-width:320px;
+                                        pointer-events:none;
+                                        display:flex; flex-direction:column; gap:8px;">
                             </div>
                         </div>
                         <div class="card">
@@ -586,6 +593,16 @@
                                         <span class="input-group-text">Wishlist Bin</span>
                                         <input type="number" id="wishlist-bin-input" class="form-control" placeholder="None" min="1" max="10" title="Bin for wishlist matches (leave empty to disable)">
                                         <button class="btn btn-outline-secondary" onclick="setWishlistBin()">Set</button>
+                                    </div>
+                                    <!-- Priority bin (Phase 4.21): Moxfield wishlist -> priority bin. -->
+                                    <div class="input-group input-group-sm" style="max-width:260px;"
+                                         title="Cards in the selected Moxfield wishlist are routed to the priority bin (overrides all other sort rules).">
+                                        <span class="input-group-text">Priority Bin</span>
+                                        <input type="number" id="priority-bin-input" class="form-control" placeholder="None" min="1" max="10">
+                                        <select id="priority-wishlist-select" class="form-select" title="Moxfield wishlist source">
+                                            <option value="">— wishlist —</option>
+                                        </select>
+                                        <button class="btn btn-outline-warning" onclick="setPriorityBin()">Set</button>
                                     </div>
                                     <div class="input-group input-group-sm" style="max-width:220px;">
                                         <span class="input-group-text">Re-home every</span>
