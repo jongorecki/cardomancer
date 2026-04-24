@@ -171,14 +171,33 @@ class RefreshScheduler:
 
     def _run_source(self, source_name: str, full: bool = False,
                     manual: bool = False) -> None:
-        """Invoke a source's refresh() with error containment."""
+        """Invoke a source's refresh() with error containment.
+
+        Called two ways:
+          - From trigger() via a dedicated thread (manual=True): trigger()
+            has already claimed the `_running` slot under the lock, so we
+            skip the concurrency check and proceed directly.
+          - From APScheduler (cron path, manual=False): we must check for a
+            concurrent run ourselves. If one is already in progress (e.g. a
+            manual trigger fired recently), log a warning and skip gracefully.
+        """
         source = self._sources.get(source_name)
         if source is None:
             logger.error("RefreshScheduler: unknown source '%s'", source_name)
             return
 
-        with self._lock:
-            self._running.add(source_name)
+        if not manual:
+            # Cron path: guard against overlapping with a manual/prior cron run.
+            with self._lock:
+                if source_name in self._running:
+                    logger.warning(
+                        "Skipping scheduled run for '%s': refresh already"
+                        " in progress",
+                        source_name,
+                    )
+                    return
+                self._running.add(source_name)
+        # manual=True: trigger() already added us to _running under its lock.
 
         start_ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
         self._emit_event("enrichment_refresh_started", {
