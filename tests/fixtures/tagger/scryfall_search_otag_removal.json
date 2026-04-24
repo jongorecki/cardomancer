@@ -1,0 +1,35 @@
+{
+  "_comment": "Minimal synthetic Scryfall search response for otag:removal (page 1 of 1). Used by test_tagger_probe.py and test_tagger.py to exercise the search-API fallback path without hitting the network.",
+  "object": "list",
+  "total_cards": 3,
+  "has_more": false,
+  "data": [
+    {
+      "object": "card",
+      "id": "aaa00001-0000-0000-0000-000000000001",
+      "oracle_id": "oid-path-to-exile",
+      "name": "Path to Exile",
+      "type_line": "Instant",
+      "color_identity": ["W"],
+      "legalities": { "commander": "legal" }
+    },
+    {
+      "object": "card",
+      "id": "aaa00002-0000-0000-0000-000000000002",
+      "oracle_id": "oid-swords-to-plowshares",
+      "name": "Swords to Plowshares",
+      "type_line": "Instant",
+      "color_identity": ["W"],
+      "legalities": { "commander": "legal" }
+    },
+    {
+      "object": "card",
+      "id": "aaa00003-0000-0000-0000-000000000003",
+      "oracle_id": "oid-assassins-trophy",
+      "name": "Assassin's Trophy",
+      "type_line": "Instant",
+      "color_identity": ["B", "G"],
+      "legalities": { "commander": "legal" }
+    }
+  ]
+}
