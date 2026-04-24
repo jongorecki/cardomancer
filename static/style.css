@@ -898,3 +898,31 @@ tr.price-mythic { border-left: 3px solid var(--accent-red); }
     background-color: var(--bg-surface);
     color: var(--text-secondary);
 }
+
+/* =========================================================================
+ * Calibration wizard (Phase 4 item 4.22)
+ * ========================================================================= */
+.wizard-step-pill {
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+    background: var(--bg-surface);
+    font-size: 0.82em;
+}
+.wizard-step-pill.is-active {
+    color: var(--text-primary);
+    border-color: var(--accent-blue);
+    background: rgba(91, 156, 245, 0.15);
+}
+.wizard-step-pill.is-done {
+    color: var(--accent-green);
+    border-color: var(--accent-green);
+}
+.wizard-step-pill.is-done::before {
+    content: "\2713  ";
+}
+#btn-open-calibration-wizard.is-calibrated {
+    color: var(--accent-green);
+    border-color: var(--accent-green);
+}

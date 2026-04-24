@@ -49,6 +49,25 @@
             <!-- DASHBOARD TAB -->
             <!-- ============================================================ -->
             <div class="tab-pane fade show active" id="tab-dashboard">
+                <!-- Calibration wizard launcher — one click to open Phase 4
+                     item 4.22 wizard. Button turns green ("Calibrated")
+                     when every step is already satisfied. -->
+                <div class="row mb-3">
+                    <div class="col-12">
+                        <div class="d-flex align-items-center gap-2">
+                            <button id="btn-open-calibration-wizard"
+                                    class="btn btn-outline-primary"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#calibration-wizard-modal">
+                                Run calibration wizard
+                            </button>
+                            <span id="wizard-status-summary"
+                                  class="small text-muted">
+                                Checking calibration status…
+                            </span>
+                        </div>
+                    </div>
+                </div>
                 <div class="row">
                     <div class="col-md-6">
                         <div class="card">
@@ -1335,11 +1354,66 @@
                 </div>
             </div><!-- /#tab-session-review -->
 
+            <!-- ============================================================ -->
+            <!-- CALIBRATION WIZARD MODAL (Phase 4 item 4.22)                 -->
+            <!-- Orchestrates existing calibration endpoints in a 7-step flow -->
+            <!-- so a single "Start" click on a new session does a card pick  -->
+            <!-- immediately.                                                 -->
+            <!-- ============================================================ -->
+            <div class="modal fade" id="calibration-wizard-modal" tabindex="-1" aria-hidden="true">
+              <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title">
+                      Calibration Wizard
+                      <span id="wizard-step-header" class="badge bg-secondary ms-2">Step 1 of 7</span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                  </div>
+                  <div class="modal-body">
+                    <!-- Step progress rail -->
+                    <ol id="wizard-step-rail" class="list-unstyled small d-flex flex-wrap gap-2 mb-3">
+                      <li data-wizard-step="1" class="wizard-step-pill">1. Machine</li>
+                      <li data-wizard-step="2" class="wizard-step-pill">2. Camera</li>
+                      <li data-wizard-step="3" class="wizard-step-pill">3. ArUco markers</li>
+                      <li data-wizard-step="4" class="wizard-step-pill">4. Bin X calibration</li>
+                      <li data-wizard-step="5" class="wizard-step-pill">5. Bin Z probe</li>
+                      <li data-wizard-step="6" class="wizard-step-pill">6. Staging ROI</li>
+                      <li data-wizard-step="7" class="wizard-step-pill">7. Focus lock</li>
+                    </ol>
+
+                    <!-- Active step title + body -->
+                    <h5 id="wizard-step-title">Connecting to machine…</h5>
+                    <div id="wizard-step-body" class="mt-2"></div>
+
+                    <!-- Surface the last error without closing the modal -->
+                    <div id="wizard-error" class="alert alert-danger mt-3" style="display:none;"></div>
+                    <div id="wizard-info"  class="alert alert-info mt-3"   style="display:none;"></div>
+                  </div>
+                  <div class="modal-footer justify-content-between">
+                    <div>
+                      <button type="button" class="btn btn-outline-secondary btn-sm"
+                              id="wizard-btn-back">Back</button>
+                      <button type="button" class="btn btn-outline-warning btn-sm"
+                              id="wizard-btn-skip">Skip step</button>
+                    </div>
+                    <div>
+                      <button type="button" class="btn btn-secondary"
+                              data-bs-dismiss="modal">Close</button>
+                      <button type="button" class="btn btn-primary"
+                              id="wizard-btn-next">Next</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div><!-- /#calibration-wizard-modal -->
+
         </div><!-- /tab-content -->
     </div><!-- /container -->
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script src="/static/app.js"></script>
+    <script src="/static/calibration_wizard.js"></script>
 </body>
 </html>

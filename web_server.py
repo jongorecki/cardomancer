@@ -2630,11 +2630,125 @@ def api_calibration_retry():
 
 @app.route('/api/calibration/status')
 def api_calibration_status():
-    """Get current calibration status."""
+    """
+    Combined calibration status — both the ArUco sweep-in-progress state
+    and the per-step "is this step already satisfied" booleans used by
+    the calibration wizard (Phase 4 item 4.22).
+
+    The old ``calibrator.get_status()`` shape (running/progress/message/
+    bins_found/discovered) is preserved for backward compatibility. The
+    wizard consumes the new booleans under ``wizard``:
+
+        wizard.machine_connected    — serial port open
+        wizard.camera_connected     — camera device active
+        wizard.bin_x_calibrated     — ArUco sweep has run + saved bin X positions
+        wizard.bin_z_probed         — every bin has a probe_results entry
+        wizard.staging_roi_set      — staging_roi.json exists
+        wizard.focus_locked         — camera has locked its autofocus
+
+    Top-level booleans are also mirrored so lightweight consumers can
+    read e.g. ``machine_connected`` directly without digging in.
+    """
     status = calibrator.get_status()
     if calibrator.calibration_result:
         status['result'] = calibrator.calibration_result
+
+    wizard = _wizard_step_status()
+    status['wizard'] = wizard
+    # Mirror flat — handy for quick probes and simpler tests.
+    for k, v in wizard.items():
+        status.setdefault(k, v)
     return jsonify(status)
+
+
+def _wizard_step_status():
+    """
+    Inspect live state + on-disk calibration artifacts and return the
+    per-step satisfaction booleans for the calibration wizard.
+
+    Kept as a plain function (not a method on any class) so unit tests
+    can patch its dependencies cleanly.
+    """
+    import gcode_control
+    from config import STAGING_ROI_PATH
+
+    # Step 1: machine connected
+    try:
+        machine_connected = bool(gcode_control.is_connected())
+    except Exception:
+        machine_connected = False
+
+    # Step 2: camera connected
+    try:
+        camera_connected = bool(camera.is_active)
+    except Exception:
+        camera_connected = False
+
+    # Steps 4 + 5: bin X calibrated + bin Z probed. `_last_setup.json`
+    # is auto-written at the end of a full ArUco sweep + probe pass and
+    # is the authoritative "we've done this" marker. Probe results are
+    # only populated once every destination bin has been touched down.
+    bin_x_calibrated = False
+    bin_z_probed = False
+    try:
+        last_setup_path = getattr(worker, '_last_setup_path', None)
+        if last_setup_path and os.path.exists(last_setup_path):
+            with open(last_setup_path, 'r') as f:
+                setup = json.load(f) or {}
+            locs = setup.get('locations') or {}
+            # At least one destination bin (>0) must be recorded. Bin 0
+            # is the source bin, so we ignore it for "calibrated".
+            dest_locs = [k for k in locs.keys() if str(k) != '0']
+            bin_x_calibrated = bool(dest_locs)
+            probes = setup.get('probe_results') or {}
+            probed_dests = [k for k in probes.keys() if str(k) != '0']
+            bin_z_probed = bin_x_calibrated and len(probed_dests) >= len(dest_locs)
+    except Exception:
+        pass
+
+    # Step 6: staging ROI — the JSON file is written by save_staging_roi().
+    try:
+        staging_roi_set = os.path.exists(STAGING_ROI_PATH)
+    except Exception:
+        staging_roi_set = False
+
+    # Step 7: focus locked — camera exposes this as a live attribute.
+    try:
+        focus_locked = bool(getattr(camera, 'focus_locked', False))
+    except Exception:
+        focus_locked = False
+
+    return {
+        'machine_connected': machine_connected,
+        'camera_connected': camera_connected,
+        'bin_x_calibrated': bin_x_calibrated,
+        'bin_z_probed': bin_z_probed,
+        'staging_roi_set': staging_roi_set,
+        'focus_locked': focus_locked,
+    }
+
+
+@app.route('/api/calibration/wizard/lock-focus', methods=['POST'])
+def api_wizard_lock_focus():
+    """
+    Standalone focus-lock endpoint used by the calibration wizard.
+
+    The existing ``/api/session/confirm-focus`` only works mid-session
+    (it releases a worker-side Event waited on by the sort loop). The
+    wizard needs to lock focus in isolation, before any session exists,
+    so we call ``camera.lock_focus()`` directly. The camera must be
+    running for the underlying cv2.VideoCapture property write to take
+    effect.
+    """
+    if not camera.is_active:
+        camera.start()
+        import time
+        time.sleep(0.5)
+    try:
+        camera.lock_focus()
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+    return jsonify({'ok': camera.focus_locked, 'focus_locked': camera.focus_locked})
 
 
 @app.route('/api/calibration/detect-markers', methods=['POST'])
