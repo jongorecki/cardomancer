@@ -63,7 +63,7 @@ class SortConfig:
         # Track how many cards have been placed in each bin
         self.bin_card_counts = {}
         # Enrichment support: populated by from_lines/from_file when needed
-        self._needs_enrichment = False   # True if any query uses staple/salt/combo
+        self._needs_enrichment = False   # True if any query uses staple/salt/combo/cull
         self._enr_cache: dict = {}       # oracle_id → enrichment data dict
 
     def get_bin(self, card_data):
@@ -135,7 +135,12 @@ class SortConfig:
           staple_universal, staple_cedh, staple_archetype (bool)
           salt (float|None)
           in_combo (bool)
+          buylist_ck_price (float|None)
         Degrades to {} if enrichment.db is unavailable.
+
+        Note: cull:true evaluation also uses card_data['oracle_text'] directly
+        (for the vanilla/french-vanilla check) — that part needs no DB query.
+        The enrichment keys above supply the staple and buylist predicates.
         """
         if oracle_id in self._enr_cache:
             return self._enr_cache[oracle_id]
@@ -359,14 +364,14 @@ class SortConfig:
         if all_otags:
             config.otag_cache = fetch_otag_data(all_otags)
 
-        # Flag if any queries use enrichment tokens (staple/salt/combo)
+        # Flag if any queries use enrichment tokens (staple/salt/combo/cull)
         for _bn, _qs, ast in bin_queries:
             if collect_enrichment_fields(ast):
                 config._needs_enrichment = True
                 break
         if config._needs_enrichment:
             print("[sort_config] Enrichment tokens detected — "
-                  "staple/salt/combo will be resolved per card from enrichment.db")
+                  "staple/salt/combo/cull will be resolved per card from enrichment.db")
 
         return config
 
@@ -493,7 +498,7 @@ def prompt_manual_config():
             break
     if config._needs_enrichment:
         print("[sort_config] Enrichment tokens detected — "
-              "staple/salt/combo will be resolved per card from enrichment.db")
+              "staple/salt/combo/cull will be resolved per card from enrichment.db")
 
     print(f"\n{config.describe()}")
     return config

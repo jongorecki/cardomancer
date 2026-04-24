@@ -215,6 +215,61 @@ class EnrichmentRepo:
         finally:
             conn.close()
 
+    def is_cull_candidate(self, oracle_id: str, oracle_text: str = "") -> bool:
+        """Return True if this oracle_id is a dead-weight cull candidate.
+
+        Cull criteria (ALL must hold):
+          1. Vanilla or french-vanilla oracle text.
+          2. No staple row in the staples table at any tier.
+          3. No CK buylist entry with price > 0.
+          4. Not in any of the user's Moxfield decks.
+             TODO: AND with deck-usage lookup once Phase 3 item 3.18
+             (Moxfield deck-usage overlay) is implemented.  For now treated
+             as trivially satisfied (not in any deck) since the deck_usage
+             table does not yet exist.
+
+        Parameters
+        ----------
+        oracle_id:
+            Scryfall oracle_id for the card.
+        oracle_text:
+            The card's oracle text (Scryfall ``oracle_text`` field).
+            Pass ``""`` for textless / vanilla cards.
+        """
+        from web_enrichment.vanilla import is_vanilla_or_french_vanilla
+        if not is_vanilla_or_french_vanilla(oracle_text):
+            return False
+
+        conn = self._conn()
+        try:
+            staple_row = conn.execute(
+                "SELECT 1 FROM staples WHERE oracle_id = ? LIMIT 1",
+                (oracle_id,),
+            ).fetchone()
+            if staple_row is not None:
+                return False
+
+            buylist_row = conn.execute(
+                "SELECT price_usd FROM buylists "
+                "WHERE oracle_id = ? AND vendor = 'ck' LIMIT 1",
+                (oracle_id,),
+            ).fetchone()
+            if buylist_row is not None and buylist_row["price_usd"] \
+                    and buylist_row["price_usd"] > 0:
+                return False
+
+            # TODO: check deck_usage table once Phase 3 item 3.18 lands.
+            # deck_row = conn.execute(
+            #     "SELECT 1 FROM deck_usage WHERE oracle_id = ? LIMIT 1",
+            #     (oracle_id,),
+            # ).fetchone()
+            # if deck_row is not None:
+            #     return False
+
+            return True
+        finally:
+            conn.close()
+
     # -- Coverage -----------------------------------------------------------
 
     def coverage_overview(self) -> dict:

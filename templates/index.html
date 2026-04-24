@@ -410,6 +410,56 @@
                                                     Example: <code>(c:w OR c:u) t:creature cmc&lt;=3</code> &mdash; cheap Azorius creatures
                                                 </div>
                                             </div>
+                                            <!-- Query reference panel (collapsible) -->
+                                            <div class="mt-2">
+                                                <a class="small text-muted text-decoration-none"
+                                                   data-bs-toggle="collapse"
+                                                   href="#sort-query-reference"
+                                                   role="button">
+                                                    &#9658; Query reference
+                                                </a>
+                                                <div class="collapse" id="sort-query-reference">
+                                                    <div class="mt-2 p-2 rounded small sort-query-ref-box">
+
+                                                        <p class="mb-1 fw-semibold">Basic fields</p>
+                                                        <table class="table table-sm table-borderless mb-2" style="font-size:0.8rem">
+                                                            <tbody>
+                                                                <tr><td class="text-nowrap pe-3"><code>c:r</code></td><td>Color &mdash; W U B R G or C (colorless). Combine: <code>c:wr</code></td></tr>
+                                                                <tr><td class="text-nowrap pe-3"><code>t:creature</code></td><td>Type line contains word. Also: <code>t:land</code>, <code>t:artifact</code>, <code>t:instant</code></td></tr>
+                                                                <tr><td class="text-nowrap pe-3"><code>cmc&lt;=3</code></td><td>Mana value. Operators: <code>&lt; &lt;= = &gt;= &gt;</code></td></tr>
+                                                                <tr><td class="text-nowrap pe-3"><code>usd&lt;1.00</code></td><td>TCGPlayer price in USD</td></tr>
+                                                                <tr><td class="text-nowrap pe-3"><code>r:mythic</code></td><td>Rarity &mdash; common uncommon rare mythic</td></tr>
+                                                                <tr><td class="text-nowrap pe-3"><code>otag:removal</code></td><td>Scryfall function tag. Fetched from API on load.</td></tr>
+                                                            </tbody>
+                                                        </table>
+
+                                                        <p class="mb-1 fw-semibold">Enrichment fields <span class="badge bg-info text-dark ms-1" style="font-size:0.7rem">requires enrichment refresh</span></p>
+                                                        <table class="table table-sm table-borderless mb-2" style="font-size:0.8rem">
+                                                            <tbody>
+                                                                <tr><td class="text-nowrap pe-3"><code>staple:universal</code></td><td>In top EDHREC inclusion lists (appears in &gt;5% of decks)</td></tr>
+                                                                <tr><td class="text-nowrap pe-3"><code>staple:cedh</code></td><td>Appears in &gt;15% of top-16 cEDH tournament decks</td></tr>
+                                                                <tr><td class="text-nowrap pe-3"><code>staple:archetype</code></td><td>Top card in &ge;3 EDHREC archetypes</td></tr>
+                                                                <tr><td class="text-nowrap pe-3"><code>staple:any</code></td><td>Any staple tier (universal, cedh, or archetype)</td></tr>
+                                                                <tr><td class="text-nowrap pe-3"><code>salt&gt;2</code></td><td>EDHREC salt score above threshold. Range &asymp; 0&ndash;4.</td></tr>
+                                                                <tr><td class="text-nowrap pe-3"><code>combo:true</code></td><td>Appears in a Commander Spellbook combo</td></tr>
+                                                                <tr><td class="text-nowrap pe-3"><code>buylist:ck</code></td><td>Card is on CardKingdom's buylist (any price &gt; 0)</td></tr>
+                                                                <tr><td class="text-nowrap pe-3"><code>buylist:ck&gt;=1.00</code></td><td>CK buylist price &ge; $1. Operators: <code>&lt; &lt;= = &gt;= &gt;</code></td></tr>
+                                                                <tr><td class="text-nowrap pe-3"><code>cull:true</code></td><td>Dead-weight flag: vanilla/french-vanilla AND no staple tier AND no CK buylist entry. Route these to a cull bin.</td></tr>
+                                                                <tr><td class="text-nowrap pe-3"><code>cull:false</code></td><td>Negation of <code>cull:true</code> &mdash; card has some value (has text, is a staple, or is on a buylist).</td></tr>
+                                                            </tbody>
+                                                        </table>
+
+                                                        <p class="mb-1 fw-semibold">Logic &amp; grouping</p>
+                                                        <div class="text-muted" style="font-size:0.8rem">
+                                                            Space = AND &nbsp;|&nbsp; <code>OR</code> &nbsp;|&nbsp; <code>-</code> = NOT &nbsp;|&nbsp; <code>(&hellip;)</code> = group<br>
+                                                            Example: <code>-staple:any usd&lt;1.00</code> &mdash; cheap non-staples (junk pile)<br>
+                                                            Example: <code>staple:cedh OR combo:true</code> &mdash; high-value targets<br>
+                                                            Example: <code>cull:true</code> &mdash; vanilla cards with no buylist value (route to cull bin)
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
                                         </div>
                                     </div>
 

@@ -7,6 +7,8 @@
 #   staple:universal / staple:cedh / staple:archetype / staple:any
 #   salt>N  salt<N  salt>=N  salt<=N  salt=N
 #   combo:true  combo:any
+#   buylist:ck  buylist:ck>=1.00
+#   cull:true / cull:false  — dead-weight flag (vanilla/no-staple/no-buylist/not-in-decks)
 #
 # otag: hierarchy rollup:
 #   Call expand_otag_cache(cache, conn) after building the otag_cache to union
@@ -136,6 +138,7 @@ FIELD_ALIASES = {
     "salt": "salt",
     "combo": "combo",
     "buylist": "buylist",
+    "cull": "cull",
 }
 
 
@@ -391,11 +394,11 @@ def collect_otag_terms(ast):
 def collect_enrichment_fields(ast) -> set:
     """Walk the AST and return which enrichment fields are used.
 
-    Returns a subset of {'staple', 'salt', 'combo', 'buylist'}.  Used by
-    SortConfig to decide whether to fetch enrichment data during bin
-    evaluation.
+    Returns a subset of {'staple', 'salt', 'combo', 'buylist', 'cull'}.
+    Used by SortConfig to decide whether to fetch enrichment data during
+    bin evaluation.
     """
-    ENRICHMENT = frozenset(('staple', 'salt', 'combo', 'buylist'))
+    ENRICHMENT = frozenset(('staple', 'salt', 'combo', 'buylist', 'cull'))
     fields = set()
     if isinstance(ast, FieldQuery):
         if ast.field in ENRICHMENT:
@@ -687,6 +690,70 @@ def _eval_field_query(fq, card_data, otag_cache=None, enrichment_data=None):
             return False
         return _compare(ck_price, cmp_op, cmp_val)
 
+    # --- Enrichment: dead-weight cull flag ---
+    # Syntax:
+    #   cull:true  — card is a dead-weight cull candidate (all 3 predicates true)
+    #   cull:false — card is NOT a cull candidate (negation of the above)
+    #
+    # A card is a cull candidate when ALL of:
+    #   1. Vanilla or french-vanilla (oracle_text empty OR only keyword abilities).
+    #      Evaluated directly from card_data['oracle_text'] — no enrichment needed.
+    #   2. NOT a staple at any tier (staple:any is false).
+    #   3. NOT on the CardKingdom buylist (buylist_ck_price is None or 0).
+    #   4. NOT in any of the user's Moxfield decks.
+    #      TODO: AND with deck-usage lookup once Phase 3 item 3.18 (Moxfield
+    #      deck-usage overlay) is implemented.  For now treated as trivially
+    #      true (we conservatively assume the card is not in any deck unless
+    #      proven otherwise — this means the cull flag is *looser* until 3.18
+    #      lands, but never produces false negatives once deck data exists).
+    if field == 'cull':
+        val_lower = val.lower()
+        want_cull = val_lower in ('true', 'yes', '1')
+        want_not_cull = val_lower in ('false', 'no', '0')
+        if not want_cull and not want_not_cull:
+            return False
+
+        # Predicate 1: vanilla / french-vanilla
+        from web_enrichment.vanilla import is_vanilla_or_french_vanilla
+        oracle_text = card_data.get('oracle_text') or ''
+        is_vanilla = is_vanilla_or_french_vanilla(oracle_text)
+
+        if not is_vanilla:
+            # Card has complex text → definitely not a cull candidate
+            return not want_cull  # True if cull:false, False if cull:true
+
+        # Predicate 2: NOT a staple at any tier
+        if enrichment_data is not None:
+            is_staple = any(enrichment_data.get(f"staple_{t}", False)
+                            for t in ("universal", "cedh", "archetype"))
+        else:
+            # No enrichment data available — conservatively assume not a staple
+            is_staple = False
+
+        if is_staple:
+            return not want_cull
+
+        # Predicate 3: NOT on CK buylist
+        if enrichment_data is not None:
+            ck_price = enrichment_data.get("buylist_ck_price")
+            on_buylist = (ck_price is not None and ck_price > 0)
+        else:
+            on_buylist = False
+
+        if on_buylist:
+            return not want_cull
+
+        # Predicate 4: NOT in any of the user's Moxfield decks.
+        # TODO: AND with deck-usage lookup once Phase 3 item 3.18 lands.
+        # in_deck = enrichment_data.get("in_deck", False) if enrichment_data else False
+        # if in_deck:
+        #     return not want_cull
+        in_deck = False  # trivially False until 3.18 is implemented
+
+        # All predicates satisfied — this IS a cull candidate
+        is_cull = is_vanilla and not is_staple and not on_buylist and not in_deck
+        return is_cull if want_cull else not is_cull
+
     return False
 
 
@@ -771,6 +838,7 @@ def evaluate_query(ast, card_data, otag_cache=None, enrichment_data=None):
                        staple_universal, staple_cedh, staple_archetype: bool
                        salt: float | None
                        in_combo: bool
+                       buylist_ck_price: float | None
     """
     if isinstance(ast, FieldQuery):
         return _eval_field_query(ast, card_data, otag_cache, enrichment_data)
