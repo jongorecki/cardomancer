@@ -1199,8 +1199,9 @@ class SortWorker:
         # offset. The card is stationary on staging, so pairing these two
         # rectified crops gives two slightly different viewing angles of
         # the same card — the signal foil detection needs (specular
-        # highlight shift, hue/saturation delta). Z stays at Z_MAX so
-        # this is a pure X move (no Z/X overlap).
+        # highlight shift, hue/saturation delta). Z stays at Z_CLEAR_HEIGHT
+        # (where drop_on_staging left it), so this is a pure X shift —
+        # no Z/X overlap and no wasted Z travel.
         try:
             self._capture_foil_pair(corners, dx_mm=5.0)
         except Exception as e:

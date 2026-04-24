@@ -716,10 +716,21 @@ def move_to_detection_position():
 # =========================================================================
 
 def move_x(x_pos):
-    """Move X axis to an absolute position. Ensures Z is at top first."""
+    """Move X axis to an absolute position.
+
+    Safety-lifts Z to Z_CLEAR_HEIGHT (the bin-wall clearance height)
+    first rather than all the way to Z_MAX. Z_MAX was overly
+    conservative — the 20mm extra round-trip (Z_CLEAR_HEIGHT→Z_MAX
+    on move_x, then Z_MAX→Z_CLEAR_HEIGHT on the next card-handling
+    move) added ~40mm of wasted Z travel per X shift with no
+    clearance benefit. Every card-handling helper (drop_on_staging,
+    pick_from_staging, pick_from_source_bin, etc.) already starts
+    and ends at Z_CLEAR_HEIGHT, so from their perspective this
+    command is a no-op Z move.
+    """
     _send_and_wait("G90")
-    _send_and_wait(f"G0 Z{Z_MAX} F{Z_FEEDRATE}")
-    _send_and_wait("M400")  # Z must be at top before any X move
+    _send_and_wait(f"G0 Z{Z_CLEAR_HEIGHT} F{Z_FEEDRATE}")
+    _send_and_wait("M400")  # Z must be at clear height before any X move
     _send_and_wait(f"G0 X{x_pos} F{X_FEEDRATE}")
 
 
