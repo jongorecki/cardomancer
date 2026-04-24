@@ -1,8 +1,10 @@
+# money legends garbage ramp removal staples
 bins: 7
 fallback: 7
+overrides: 6
 bin1: usd>=1
 bin2: usd<1 t:legend
-bin3: usd<1 NOT otag:ramp
-bin4: usd<1 otag:ramp
-bin5: usd<1 otag:removal
-bin6: usd<1 staple:any
+bin3: usd<1 staple:any
+bin4: usd<1 NOT otag:ramp
+bin5: usd<1 otag:ramp
+bin6: is:foil
