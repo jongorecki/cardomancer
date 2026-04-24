@@ -368,6 +368,97 @@ socket.on('card_detected', (data) => {
     drawCameraOverlay(data);
 });
 
+// =========================================================================
+// Live Card Info panel (Phase 4 item 4.19)
+// =========================================================================
+//
+// Shows image, name, set, border, and TCGPlayer USD price for the card
+// the worker just identified. Subscribes to the same `card_detected`
+// socket event as the other handlers, then fetches
+// /api/card/overlay-info?name=...&set=... for the image + border fields
+// that the worker payload does not include.
+//
+// v1 deliberately shows only: image, name, set, border, price. Tags,
+// salt, combos, and deck-usage are deferred to a future drawer.
+
+let _cardOverlayReqId = 0;
+
+function _borderBadgeClass(border) {
+    switch ((border || '').toLowerCase()) {
+        case 'black':      return 'bg-dark text-light';
+        case 'white':      return 'bg-light text-dark border';
+        case 'silver':     return 'bg-secondary';
+        case 'gold':       return 'bg-warning text-dark';
+        case 'borderless': return 'bg-info text-dark';
+        default:           return 'bg-secondary';
+    }
+}
+
+function renderCardOverlay(info, fallbackPrice) {
+    const panel = document.getElementById('card-overlay-panel');
+    if (!panel) return;
+    if (!info) {
+        panel.innerHTML = '<p class="text-muted small mb-0">Card not found in local data.</p>';
+        return;
+    }
+    const name = info.name || '(unknown)';
+    const setCode = (info.set || '').toUpperCase();
+    const border = info.border || 'unknown';
+    const badgeCls = _borderBadgeClass(border);
+    // Price: prefer server-side float; fall back to the string the worker
+    // already put on the card_detected event.
+    let priceText = 'N/A';
+    if (typeof info.price_usd === 'number' && !isNaN(info.price_usd)) {
+        priceText = '$' + info.price_usd.toFixed(2);
+    } else if (fallbackPrice && fallbackPrice !== 'N/A') {
+        priceText = fallbackPrice;
+    }
+    const imgHtml = info.image_url
+        ? `<img src="${info.image_url}" alt="${name}"
+               style="width:100%; max-width:240px; border-radius:4.75% / 3.5%;
+                      display:block; margin:0 auto 0.5rem;">`
+        : `<div class="text-muted small text-center mb-2"
+               style="height:160px; display:flex; align-items:center;
+                      justify-content:center; border:1px dashed #555;">
+             (no image available)
+           </div>`;
+    panel.innerHTML = `
+        ${imgHtml}
+        <div class="d-flex justify-content-between align-items-baseline mb-1">
+            <strong style="word-break:break-word;">${name}</strong>
+            <span class="small text-muted ms-2">${setCode}</span>
+        </div>
+        <div class="d-flex justify-content-between align-items-center">
+            <span class="badge ${badgeCls}" title="Border color">${border}</span>
+            <span class="small"><strong>${priceText}</strong></span>
+        </div>
+    `;
+}
+
+socket.on('card_detected', (data) => {
+    const panel = document.getElementById('card-overlay-panel');
+    if (!panel) return;
+    if (!data || !data.recognized) {
+        panel.innerHTML = '<p class="text-muted small mb-0">Unrecognized card.</p>';
+        return;
+    }
+    const reqId = ++_cardOverlayReqId;
+    panel.innerHTML = '<p class="text-muted small mb-0">Loading card info&hellip;</p>';
+    const params = new URLSearchParams({ name: data.name || '' });
+    if (data.set) params.set('set', data.set);
+    fetch('/api/card/overlay-info?' + params.toString())
+        .then((r) => (r.ok ? r.json() : null))
+        .then((info) => {
+            // Drop stale responses if a newer card_detected fired mid-flight.
+            if (reqId !== _cardOverlayReqId) return;
+            renderCardOverlay(info, data.price);
+        })
+        .catch(() => {
+            if (reqId !== _cardOverlayReqId) return;
+            renderCardOverlay(null, data.price);
+        });
+});
+
 socket.on('card_picked_up', (data) => {
     const el = document.getElementById('suction-status');
     el.textContent = data.name || 'UNKNOWN';

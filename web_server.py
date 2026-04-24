@@ -1085,6 +1085,109 @@ def api_cards_autocomplete():
     return jsonify({'suggestions': matches[:20]})
 
 
+def _build_card_overlay_info(name, set_code=None):
+    """Build the payload consumed by the Sort Session live card-info overlay
+    (Phase 4 item 4.19).
+
+    Looks up a card by name (case-insensitive) in the Scryfall bulk-data
+    cache (`cards.CARDS_DATA`). If `set_code` is provided, returns the
+    matching printing; otherwise returns the first paper English printing.
+
+    Returns a dict with the fields the overlay renders:
+      - name, set, oracle_id
+      - image_url  (Scryfall `image_uris.normal`, or None if unavailable)
+      - border     (Scryfall `border_color`: "black" / "white" / "silver" /
+                    "borderless" / "gold", or None)
+      - price_usd  (float or None)
+
+    Returns None if no matching card is found. Pure function — no Flask
+    dependency — so it can be unit-tested directly.
+    """
+    if not name:
+        return None
+    from cards import CARDS_DATA
+    key = (name or '').strip().lower()
+    if not key:
+        return None
+    set_key = (set_code or '').strip().lower() or None
+
+    best = None  # preferred printing once we find a set match
+    fallback = None  # first paper English printing of any set
+    for c in CARDS_DATA:
+        if c.get('lang') != 'en' or 'paper' not in c.get('games', []):
+            continue
+        if (c.get('name') or '').lower() != key:
+            continue
+        if set_key and (c.get('set') or '').lower() == set_key:
+            best = c
+            break
+        if fallback is None:
+            fallback = c
+
+    card = best or fallback
+    if card is None:
+        return None
+
+    # Prefer `normal`; fall back through the Scryfall image_uris priority.
+    image_uris = card.get('image_uris') or {}
+    image_url = (
+        image_uris.get('normal')
+        or image_uris.get('large')
+        or image_uris.get('small')
+        or image_uris.get('png')
+    )
+    # Some card objects (MDFC, transform) have image_uris nested under
+    # card_faces instead of the top level.
+    if not image_url:
+        faces = card.get('card_faces') or []
+        if faces:
+            face_uris = (faces[0] or {}).get('image_uris') or {}
+            image_url = (
+                face_uris.get('normal')
+                or face_uris.get('large')
+                or face_uris.get('small')
+                or face_uris.get('png')
+            )
+
+    prices = card.get('prices') or {}
+    price_raw = prices.get('usd') or prices.get('usd_foil')
+    try:
+        price_usd = float(price_raw) if price_raw is not None else None
+    except (TypeError, ValueError):
+        price_usd = None
+
+    return {
+        'name': card.get('name'),
+        'set': card.get('set'),
+        'oracle_id': card.get('oracle_id'),
+        'image_url': image_url,
+        'border': card.get('border_color'),
+        'price_usd': price_usd,
+    }
+
+
+@app.route('/api/card/overlay-info')
+def api_card_overlay_info():
+    """Return the minimal card-info payload for the Sort Session live
+    overlay (Phase 4 item 4.19).
+
+    Query params:
+      - name (required): card name (case-insensitive)
+      - set  (optional): Scryfall set code to prefer a specific printing
+
+    Response body: see `_build_card_overlay_info`. Returns 400 if name is
+    missing, 404 if the card is not in the local Scryfall bulk cache.
+    """
+    name = (request.args.get('name') or '').strip()
+    set_code = (request.args.get('set') or '').strip() or None
+    if not name:
+        return jsonify({'error': 'name required'}), 400
+    info = _build_card_overlay_info(name, set_code)
+    if info is None:
+        return jsonify({'error': 'not found', 'name': name}), 404
+    return jsonify(info)
+
+
 @app.route('/api/cards/printings')
 def api_cards_printings():
     name = (request.args.get('name') or '').strip()
