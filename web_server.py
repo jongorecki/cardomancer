@@ -609,6 +609,12 @@ def api_bins_fullness():
 
 @app.route('/api/sort/modes')
 def api_sort_modes():
+    # Legacy endpoint — kept so any older clients that still poll it don't
+    # break. Phase 0.1 removed the parallel "mode" concept from the UI;
+    # every preset is now a file under sort_configs/ and the client picks
+    # one via /api/sort/configs. `custom_manual` was a synthetic mode that
+    # meant "post custom_queries dict"; the new UI posts config_lines
+    # directly so that mode is no longer advertised.
     return jsonify({
         'modes': {k: v for k, v in SORTING_MODES.items()},
         'descriptions': {
@@ -617,55 +623,226 @@ def api_sort_modes():
             'set': 'Sort by set code',
             'price': 'Sort by USD price tiers',
             'type': 'Sort by card type (Creature/Artifact/Enchantment/etc)',
-            'custom_file': 'Load custom sort config from file',
-            'custom_manual': 'Define custom Scryfall queries per bin',
         }
     })
 
 
+# ---------------------------------------------------------------------------
+# Preset filename hardening.
+#
+# Phase 0.1 unified every sort preset (built-ins + user saves + one-shot
+# custom queries) behind sort_configs/*.txt. A single preset dropdown is
+# the only entry point, so the filename becomes the primary key. Keep
+# the sanitizer strict:
+#
+#   - reject absolute paths and any path separator (".." traversal,
+#     "configs/other", "C:\...", etc.)
+#   - reject hidden / empty names
+#   - normalize trailing ".txt"
+#
+# We also expose the set of built-in presets via a module-level constant
+# so the client can render the "(built-in)" badge without hardcoding the
+# list in JS (the source of truth is here).
+# ---------------------------------------------------------------------------
+
+BUILTIN_SORT_PRESETS = frozenset({
+    'color.txt', 'mana_value.txt', 'price.txt', 'price_tiers.txt',
+    'set.txt', 'type.txt', 'color_type.txt', 'edh_staples.txt',
+})
+
+
+def _safe_preset_filename(raw):
+    """Validate + normalize a preset filename, returning the basename.
+
+    Returns (filename, error_string). filename is None iff error_string is set.
+    """
+    if not raw or not isinstance(raw, str):
+        return None, 'Filename is required'
+    name = raw.strip()
+    if not name:
+        return None, 'Filename is required'
+    # Reject anything that looks like a path. Flask's <filename> converter
+    # already blocks "/", but users can still type ".." or back-slashes,
+    # and we're about to join against SORT_CONFIGS_DIR.
+    if '/' in name or '\\' in name or name.startswith('.') or name == '..':
+        return None, 'Invalid filename'
+    if os.path.basename(name) != name:
+        return None, 'Invalid filename'
+    if not name.endswith('.txt'):
+        name = name + '.txt'
+    # Double-check against traversal after appending .txt.
+    target = os.path.abspath(os.path.join(SORT_CONFIGS_DIR, name))
+    root = os.path.abspath(SORT_CONFIGS_DIR)
+    if not target.startswith(root + os.sep) and target != root:
+        return None, 'Invalid filename'
+    return name, None
+
+
+def _describe_preset(content):
+    """Extract a short description + bin count from preset text.
+
+    The first "# ..." comment line is treated as the preset description
+    (matches the convention used by every built-in). `bins:` is parsed
+    leniently — a missing/invalid value returns None so the UI can fall
+    back gracefully without blocking on a malformed preset.
+    """
+    description = ''
+    bin_count = None
+    for raw in (content or '').splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith('#') and not description:
+            description = line.lstrip('#').strip()
+            continue
+        if line.lower().startswith('bins:'):
+            try:
+                bin_count = int(line.split(':', 1)[1].strip())
+            except (ValueError, IndexError):
+                bin_count = None
+    return description, bin_count
+
+
 @app.route('/api/sort/configs')
 def api_sort_configs():
+    """List all sort preset files with metadata.
+
+    Phase 0.1: this is the single source for the preset dropdown. We ship
+    description + bin_count + builtin so the client can render a rich
+    option list without re-reading every file.
+    """
     os.makedirs(SORT_CONFIGS_DIR, exist_ok=True)
     configs = []
     for f in sorted(os.listdir(SORT_CONFIGS_DIR)):
-        if f.endswith('.txt'):
-            filepath = os.path.join(SORT_CONFIGS_DIR, f)
-            configs.append({
-                'filename': f,
-                'size': os.path.getsize(filepath),
-            })
-    return jsonify({'configs': configs})
+        if not f.endswith('.txt'):
+            continue
+        filepath = os.path.join(SORT_CONFIGS_DIR, f)
+        try:
+            with open(filepath, 'r', encoding='utf-8') as fh:
+                content = fh.read()
+        except OSError:
+            content = ''
+        description, bin_count = _describe_preset(content)
+        configs.append({
+            'filename': f,
+            'size': os.path.getsize(filepath),
+            'description': description,
+            'bin_count': bin_count,
+            'builtin': f in BUILTIN_SORT_PRESETS,
+        })
+    return jsonify({
+        'configs': configs,
+        'builtins': sorted(BUILTIN_SORT_PRESETS),
+    })
 
 
-@app.route('/api/sort/configs/<filename>', methods=['GET'])
+@app.route('/api/sort/configs/<path:filename>', methods=['GET'])
 def api_sort_config_get(filename):
-    filepath = os.path.join(SORT_CONFIGS_DIR, filename)
+    name, err = _safe_preset_filename(filename)
+    if err:
+        return jsonify({'error': err}), 400
+    filepath = os.path.join(SORT_CONFIGS_DIR, name)
     if not os.path.exists(filepath):
         return jsonify({'error': 'Config not found'}), 404
     with open(filepath, 'r', encoding='utf-8') as f:
         content = f.read()
-    return jsonify({'filename': filename, 'content': content})
+    description, bin_count = _describe_preset(content)
+    return jsonify({
+        'filename': name,
+        'content': content,
+        'description': description,
+        'bin_count': bin_count,
+        'builtin': name in BUILTIN_SORT_PRESETS,
+    })
 
 
-@app.route('/api/sort/configs/<filename>', methods=['POST'])
+@app.route('/api/sort/configs/<path:filename>', methods=['POST'])
 def api_sort_config_save(filename):
-    if not filename.endswith('.txt'):
-        filename += '.txt'
+    name, err = _safe_preset_filename(filename)
+    if err:
+        return jsonify({'error': err}), 400
+    if name in BUILTIN_SORT_PRESETS:
+        return jsonify({
+            'error': 'Built-in presets are read-only. Use Duplicate/Save As.',
+        }), 403
     os.makedirs(SORT_CONFIGS_DIR, exist_ok=True)
-    filepath = os.path.join(SORT_CONFIGS_DIR, filename)
-    content = request.json.get('content', '')
+    filepath = os.path.join(SORT_CONFIGS_DIR, name)
+    payload = request.json or {}
+    content = payload.get('content', '')
+    if not isinstance(content, str):
+        return jsonify({'error': 'content must be a string'}), 400
+    # Reject blank files outright — saving an empty preset serves no
+    # purpose and later load attempts would fail in SortConfig.from_lines
+    # with a confusing error.
+    if not content.strip():
+        return jsonify({'error': 'Preset content is empty'}), 400
+    # Validate parseability unless the caller explicitly opts out via
+    # ?skip_validation=1 (reserved for future UI that wants to save a
+    # draft mid-edit). Default is strict.
+    if not request.args.get('skip_validation'):
+        try:
+            from sort_config import SortConfig
+            SortConfig.from_lines(content.splitlines())
+        except Exception as e:
+            return jsonify({
+                'error': 'invalid_content',
+                'message': f'Preset failed to parse: {e}',
+            }), 400
     with open(filepath, 'w', encoding='utf-8') as f:
         f.write(content)
-    return jsonify({'saved': True, 'filename': filename})
+    return jsonify({'saved': True, 'filename': name})
 
 
-@app.route('/api/sort/configs/<filename>', methods=['DELETE'])
+@app.route('/api/sort/configs/<path:filename>', methods=['DELETE'])
 def api_sort_config_delete(filename):
-    filepath = os.path.join(SORT_CONFIGS_DIR, filename)
-    if os.path.exists(filepath):
-        os.remove(filepath)
-        return jsonify({'deleted': True})
-    return jsonify({'error': 'Config not found'}), 404
+    name, err = _safe_preset_filename(filename)
+    if err:
+        return jsonify({'error': err}), 400
+    if name in BUILTIN_SORT_PRESETS:
+        return jsonify({'error': 'Built-in presets cannot be deleted'}), 403
+    filepath = os.path.join(SORT_CONFIGS_DIR, name)
+    if not os.path.exists(filepath):
+        return jsonify({'error': 'Config not found'}), 404
+    os.remove(filepath)
+    return jsonify({'deleted': True, 'filename': name})
+
+
+@app.route('/api/sort/configs/<path:filename>/duplicate', methods=['POST'])
+def api_sort_config_duplicate(filename):
+    """Copy an existing preset to a new filename.
+
+    Body: {"target": "new_name"} — ".txt" is appended if missing. If the
+    target already exists, respond 409 so the UI can prompt the user for
+    a different name instead of silently clobbering.
+    """
+    src_name, err = _safe_preset_filename(filename)
+    if err:
+        return jsonify({'error': f'source: {err}'}), 400
+    src_path = os.path.join(SORT_CONFIGS_DIR, src_name)
+    if not os.path.exists(src_path):
+        return jsonify({'error': 'Source preset not found'}), 404
+    payload = request.json or {}
+    target_raw = payload.get('target')
+    target_name, err = _safe_preset_filename(target_raw)
+    if err:
+        return jsonify({'error': f'target: {err}'}), 400
+    if target_name == src_name:
+        return jsonify({'error': 'Target must differ from source'}), 400
+    target_path = os.path.join(SORT_CONFIGS_DIR, target_name)
+    if os.path.exists(target_path):
+        return jsonify({
+            'error': 'target_exists',
+            'message': f'"{target_name}" already exists',
+        }), 409
+    with open(src_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    with open(target_path, 'w', encoding='utf-8') as f:
+        f.write(content)
+    return jsonify({
+        'duplicated': True,
+        'source': src_name,
+        'filename': target_name,
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -1150,8 +1327,21 @@ def api_sim_test_run():
     card_count = data.get('card_count', 10)
     mode = data.get('mode', 'color')
 
+    # Phase 0.1: the unified preset UI posts `config_lines` — the raw text
+    # content of a preset file. The legacy `custom_file` (load from named
+    # preset) and `custom_manual` (inline dict) paths are kept only for
+    # back-compat with older test scripts; all new callers should pass
+    # config_lines directly.
     sort_config = None
-    if mode == 'custom_file' and data.get('config_file'):
+    if data.get('config_lines') is not None:
+        from sort_config import SortConfig
+        raw = data['config_lines']
+        lines = raw.splitlines() if isinstance(raw, str) else list(raw)
+        try:
+            sort_config = SortConfig.from_lines(lines)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 400
+    elif mode == 'custom_file' and data.get('config_file'):
         from sort_config import SortConfig
         filepath = data['config_file']
         if not os.path.isabs(filepath):
@@ -1161,6 +1351,7 @@ def api_sim_test_run():
         except Exception as e:
             return jsonify({'error': str(e)}), 400
     elif mode == 'custom_manual' and data.get('custom_queries'):
+        # Legacy dict form — kept for back-compat. New UI posts config_lines.
         from sort_config import SortConfig
         queries = data['custom_queries']
         lines = ['bins: ' + str(queries.get('bin_count', 10)),
