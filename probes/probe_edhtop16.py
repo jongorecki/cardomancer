@@ -1,8 +1,21 @@
 # probes/probe_edhtop16.py
 # ---------------------------------------------------------------------------
-# Probe edhtop16.com/api/graphql. Runs a minimal introspection query to
-# prove the GraphQL endpoint is up and the schema exposes its queryType.
-# Per-field queries land in Phase 1 once the Phase 1 agent picks names.
+# Probe edhtop16.com/api/graphql. Two checks:
+#   1. Introspection: GraphQL schema exposes queryType with expected fields.
+#   2. Staples shape: a minimal staples query returns cards with the fields
+#      our refresh() code depends on (oracleId, playRateLastYear, type).
+#
+# Results are pinned to tests/probe_snapshots/edhtop16_pinned.json.
+# Shape drift aborts the refresh — see EDHTop16Source.probe().
+#
+# GraphQL introspection result (confirmed 2026-04-24):
+#   - queryType fields include: staples, tournaments, card, commanders, ...
+#   - staples args: colorId (String), type (String)
+#   - Card fields: name, oracleId, colorId, type, playRateLastYear, ...
+#   - TournamentFilters: timePeriod (TimePeriod enum), minSize, minDate, maxDate
+#   - TimePeriod enum values: ALL_TIME, ONE_MONTH, THREE_MONTHS, SIX_MONTHS,
+#     ONE_YEAR, POST_BAN
+#   - Tournament.entries(maxStanding: Int) -> [Card!]
 # ---------------------------------------------------------------------------
 
 from __future__ import annotations
@@ -21,24 +34,27 @@ from probes.base import (
 SOURCE = "edhtop16"
 ENDPOINT = "https://edhtop16.com/api/graphql"
 
-INTROSPECTION_QUERY = (
-    "{ __schema { queryType { name fields { name } } } }"
+# Minimal staples query — we only request 1 card to keep the probe fast.
+# The shape of this response is what we pin and diff against.
+STAPLES_PROBE_QUERY = (
+    "{ staples { name oracleId colorId type playRateLastYear } }"
 )
 
+# Required paths in the probe response
 REQUIRED = [
     "data",
-    "data.__schema",
-    "data.__schema.queryType",
-    "data.__schema.queryType.name",
-    "data.__schema.queryType.fields",
-    "data.__schema.queryType.fields[].name",
+    "data.staples",
+    "data.staples[].name",
+    "data.staples[].oracleId",
+    "data.staples[].playRateLastYear",
+    "data.staples[].type",
 ]
 
 
-def _fetch():
+def _fetch() -> dict:
     r = httpx.post(
         ENDPOINT,
-        json={"query": INTROSPECTION_QUERY},
+        json={"query": STAPLES_PROBE_QUERY},
         timeout=DEFAULT_TIMEOUT_S,
         headers={
             "User-Agent": USER_AGENT,
@@ -47,7 +63,14 @@ def _fetch():
         },
     )
     r.raise_for_status()
-    return r.json()
+    data = r.json()
+    if "errors" in data:
+        raise RuntimeError(f"GraphQL errors: {data['errors'][:2]}")
+    # Truncate to first 3 cards so the pinned snapshot stays small
+    staples = (data.get("data") or {}).get("staples") or []
+    if len(staples) > 3:
+        data = {**data, "data": {**data["data"], "staples": staples[:3]}}
+    return data
 
 
 def probe() -> ProbeResult:
