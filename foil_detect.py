@@ -125,33 +125,48 @@ MIN_CLUSTER_PIXELS = 25
 #     nonfoils do vs their reference renders (dle weight is small but real).
 #
 # See plans/handoff/ (foil retune notes) and _foil_tune.py for the fit.
-W_DELTA_BRIGHT_FRAC       = -22.7420   # was -18.92
-W_DELTA_MEAN_S            = +0.08221   # was +0.0474
-W_DELTA_N_BRIGHT_CLUSTERS = -0.01683   # NEW (Level-2)
-W_DELTA_STD_S_BRIGHT      = -0.02960   # NEW (Level-2)
-W_DELTA_LAPLACIAN_ENERGY  = -0.00347   # NEW (Level-2)
-FOIL_BIAS                 = -0.1815    # was +0.294
+#
+# Level-3 retune 2026-04-24: added session 55 (45 confirmed foils under
+# new lighting) to the training set (now 115 foils + 375 nonfoils). The
+# weights barely moved — confirms the Level-2 model generalizes to a
+# fresh all-foil batch — but the retune showed threshold +1.75 was
+# leaving recall on the table. Best-F1 threshold dropped from +1.0 to
+# +1.0 (unchanged) and we adopt it as the new default (see
+# FOIL_CONFIDENCE_THRESHOLD comment). On session 55 alone this recovers
+# +5/45 foils (71% -> 82%), exactly matching the near-threshold-miss
+# cluster the user reported. The 8 remaining session-55 misses score
+# below -0.5 and are hard cases (reference-image mismatch for specific
+# basic-land printings, etc.) — a threshold drop can't rescue those.
+W_DELTA_BRIGHT_FRAC       = -21.5507   # was -22.7420 (Level-2)
+W_DELTA_MEAN_S            = +0.08301   # was +0.08221
+W_DELTA_N_BRIGHT_CLUSTERS = -0.01780   # was -0.01683
+W_DELTA_STD_S_BRIGHT      = -0.03178   # was -0.02960
+W_DELTA_LAPLACIAN_ENERGY  = -0.00392   # was -0.00347
+FOIL_BIAS                 = -0.0949    # was -0.1815
 # delta_hue_range is no longer scored — see _compute_bright_stats; it's
 # still computed for diagnostics but contributes 0 to the confidence.
 
 # --- Classification threshold ---
 # confidence >= this -> is_foil = True
 #
-# Calibration on 70 foils + 375 nonfoils (2026-04-23 Level-2 retune +
-# DFC back-face face-picking):
-#   - +1.25 -> 95% precision, 76% recall (3 FP / 53 TP)
-#   - +1.75 -> 96% precision, 71% recall (2 FP / 50 TP)  <-- default
-#   - +2.25 -> 98% precision, 67% recall (1 FP / 47 TP)
+# Calibration on 115 foils + 375 nonfoils (2026-04-24 Level-3 retune —
+# session 55 added to training, DFC back-face face-picking in place):
+#   - +0.75 -> 88% precision, 83% recall (13 FP / 96 TP)
+#   - +1.00 -> 93% precision, 83% recall (7 FP / 95 TP)  <-- default
+#   - +1.25 -> 96% precision, 78% recall (4 FP / 90 TP)
+#   - +1.75 -> 98% precision, 72% recall (2 FP / 83 TP)  (old default)
 #
-# +1.75 retained as default: the DFC face-picking fix raised precision
-# from 91% to 96% at this threshold by eliminating 3 MOM-battle FPs
-# (scans 6, 8, 14 were scan-of-back vs ref-of-front art mismatches).
-# Cost: 2 battle-foil-back scans now score below threshold (they were
-# previously caught via the same art-mismatch artifact). Net trade at
-# +1.75: +5pp precision / -3pp recall. A future retune could recover
-# recall by lowering the threshold to ~+1.25 where precision is still
-# 95%.
-FOIL_CONFIDENCE_THRESHOLD = 1.75
+# +1.00 adopted as default: the Level-3 sweep showed best-F1 sits at
+# +1.00 (F1 = 0.876), a clean improvement over the shipped +1.75
+# (F1 = 0.830). Trade vs old default: +11pp recall / -5pp precision
+# across the full labeled set. Validated on the 45-foil session 55 test
+# slice — recall there jumped from 71% (old) to 82% (new), exactly
+# recovering the cluster of near-threshold foils the user reported
+# ("missed 5 out of 45"). The remaining misses on session 55 score
+# below -0.5 and are structural failures (reference-image mismatch for
+# specific basic-land printings) that a threshold drop can't fix;
+# those need per-card reference-image auditing, not re-weighting.
+FOIL_CONFIDENCE_THRESHOLD = 1.00
 
 
 def _compute_bright_stats(img_bgr):

@@ -27,6 +27,14 @@ from foil_detect import detect_foil
 SESSION_FOIL = 51
 SESSION_FOIL_DIR = r"D:\Card_Sorter\Scripts\scan_logs\session_20260422_222632\card_crops"
 
+# Second all-foil session (2026-04-24) added for Level-3 retune. User
+# confirmed every recognized card in this session was foil. Scored under
+# the Level-2 weights currently shipped (threshold +1.75) it missed 13/45
+# -> 71% recall, matching the training calibration. Adding these samples
+# should lift recall without hurting precision since label noise is zero.
+SESSION_FOIL_2 = 55
+SESSION_FOIL_2_DIR = r"D:\Card_Sorter\Scripts\scan_logs\session_20260424_121007\card_crops"
+
 SESSION_NONFOIL = 44
 SESSION_NONFOIL_DIR = r"D:\Card_Sorter\Scripts\scan_logs\session_20260421_140152\card_crops"
 
@@ -93,6 +101,11 @@ def collect_signals(session_id: int, crop_dir: str, label: int):
 print("Collecting FOIL signals (session 51)...")
 foil = collect_signals(SESSION_FOIL, SESSION_FOIL_DIR, label=1)
 print(f"  {len(foil)} scorable foil samples")
+
+print("Collecting FOIL signals (session 55, 2026-04-24)...")
+foil2 = collect_signals(SESSION_FOIL_2, SESSION_FOIL_2_DIR, label=1)
+print(f"  {len(foil2)} scorable foil samples")
+foil = foil + foil2
 
 print("Collecting session 44 signals (mostly nonfoil, with 10 known-foil relabels)...")
 s44 = collect_signals(SESSION_NONFOIL, SESSION_NONFOIL_DIR, label=0)
