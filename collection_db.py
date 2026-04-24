@@ -131,6 +131,22 @@ def _create_tables(conn):
 
         CREATE INDEX IF NOT EXISTS idx_dividers_box_pos
             ON dividers(box_id, position);
+
+        CREATE TABLE IF NOT EXISTS detection_reviews (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scan_id INTEGER NOT NULL,
+            variable TEXT NOT NULL,
+            detected_value TEXT,
+            confidence REAL,
+            verdict TEXT,
+            correction TEXT,
+            reviewed_at TEXT,
+            UNIQUE(scan_id, variable),
+            FOREIGN KEY (scan_id) REFERENCES scan_history(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_detection_reviews_variable
+            ON detection_reviews(variable, verdict, confidence);
     """)
     # Migration: add box column if missing (existing databases)
     try:
@@ -1399,6 +1415,206 @@ def check_wishlist_match(conn, card_name):
         (card_name,)
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Per-attribute detection review queues
+# ---------------------------------------------------------------------------
+
+# Variables the review system knows about. Keeping this list centralized so
+# the API layer, tests, and UI can validate without hard-coding strings.
+DETECTION_VARIABLES = ('foil', 'border', 'set_symbol')
+
+VALID_VERDICTS = ('correct', 'wrong', 'skip')
+
+
+def upsert_detection_review(conn, scan_id, variable,
+                            detected_value=None, confidence=None):
+    """
+    Idempotently insert (or refresh the detected value / confidence of) a
+    review row for a (scan, variable) pair. Never overwrites an existing
+    verdict — once a human has reviewed, the row is sticky.
+
+    Returns the detection_reviews.id.
+    """
+    if variable not in DETECTION_VARIABLES:
+        raise ValueError(f"unknown variable: {variable!r}")
+
+    existing = conn.execute(
+        "SELECT id, verdict FROM detection_reviews "
+        "WHERE scan_id=? AND variable=?",
+        (scan_id, variable)
+    ).fetchone()
+    if existing:
+        # Refresh detected_value / confidence only when no verdict yet.
+        if existing['verdict'] is None:
+            conn.execute(
+                """UPDATE detection_reviews
+                   SET detected_value=?, confidence=?
+                   WHERE id=?""",
+                (detected_value, confidence, existing['id'])
+            )
+            conn.commit()
+        return existing['id']
+
+    cur = conn.execute(
+        """INSERT INTO detection_reviews
+           (scan_id, variable, detected_value, confidence)
+           VALUES (?, ?, ?, ?)""",
+        (scan_id, variable, detected_value, confidence)
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def list_detection_reviews(conn, variable, include_reviewed=False, limit=200):
+    """
+    Return review items for a given variable, ordered ASCENDING by confidence
+    so uncertain cases surface first. NULL confidences sort FIRST (most
+    important to review — the detector didn't know).
+
+    Joins scan_history + sessions so the UI has the data it needs to render
+    the crop image and card context.
+    """
+    if variable not in DETECTION_VARIABLES:
+        raise ValueError(f"unknown variable: {variable!r}")
+
+    where = ["dr.variable = ?"]
+    params = [variable]
+    if not include_reviewed:
+        where.append("dr.verdict IS NULL")
+
+    sql = f"""
+        SELECT dr.id, dr.scan_id, dr.variable, dr.detected_value,
+               dr.confidence, dr.verdict, dr.correction, dr.reviewed_at,
+               sh.scan_num, sh.name, sh.set_code, sh.collector_number,
+               sh.session_id, s.start_time as session_start_time
+        FROM detection_reviews dr
+        JOIN scan_history sh ON dr.scan_id = sh.id
+        LEFT JOIN sessions s ON sh.session_id = s.id
+        WHERE {' AND '.join(where)}
+        ORDER BY
+          CASE WHEN dr.confidence IS NULL THEN 0 ELSE 1 END ASC,
+          dr.confidence ASC,
+          dr.id ASC
+        LIMIT ?
+    """
+    rows = conn.execute(sql, params + [int(limit)]).fetchall()
+    return [dict(r) for r in rows]
+
+
+def set_detection_verdict(conn, review_id, verdict, correction=None):
+    """
+    Mark a review row with a verdict. Idempotent on the same verdict (just
+    refreshes reviewed_at). Returns True on success, False if row missing.
+    """
+    if verdict not in VALID_VERDICTS:
+        raise ValueError(f"invalid verdict: {verdict!r}")
+
+    row = conn.execute(
+        "SELECT id FROM detection_reviews WHERE id=?",
+        (review_id,)
+    ).fetchone()
+    if not row:
+        return False
+
+    now = datetime.now().isoformat()
+    conn.execute(
+        """UPDATE detection_reviews
+           SET verdict=?, correction=?, reviewed_at=?
+           WHERE id=?""",
+        (verdict, correction, now, review_id)
+    )
+    conn.commit()
+    return True
+
+
+def seed_detection_reviews_from_scans(conn, variables=None,
+                                       only_recognized=True, limit=None):
+    """
+    Walk scan_history and ensure there is a detection_reviews row for every
+    (scan, variable). Detectors that don't emit per-scan confidence today
+    produce rows with confidence=NULL — those surface first in the queue.
+
+    Detected values are pulled from whatever the DB already knows:
+      - foil:       unknown (NULL) — no detector yet
+      - border:     unknown (NULL) — detect_border_type() isn't persisted
+      - set_symbol: set_code from scan_history (best available proxy)
+
+    Intended to be called occasionally by the UI / a maintenance job, not on
+    every scan. Idempotent: re-running won't duplicate rows or stomp verdicts.
+
+    Returns the number of rows inserted (new reviews).
+    """
+    if variables is None:
+        variables = DETECTION_VARIABLES
+    for v in variables:
+        if v not in DETECTION_VARIABLES:
+            raise ValueError(f"unknown variable: {v!r}")
+
+    where = []
+    params = []
+    if only_recognized:
+        where.append("recognized = 1")
+    sql = "SELECT id, set_code FROM scan_history"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY id DESC"
+    if limit:
+        sql += f" LIMIT {int(limit)}"
+
+    scans = conn.execute(sql, params).fetchall()
+
+    inserted = 0
+    for scan in scans:
+        scan_id = scan['id']
+        set_code = scan['set_code'] or None
+        for variable in variables:
+            detected = None
+            if variable == 'set_symbol':
+                # The best proxy for "detected set symbol" we currently have
+                # is the set code that identification landed on. It's not
+                # the symbol detector's own output — but it's what the user
+                # would verify as right/wrong until a real detector lands.
+                detected = set_code
+            # foil + border: no detector output stored → leave NULL so these
+            # cases bubble to the top of the queue.
+            existing = conn.execute(
+                "SELECT id FROM detection_reviews "
+                "WHERE scan_id=? AND variable=?",
+                (scan_id, variable)
+            ).fetchone()
+            if existing:
+                continue
+            conn.execute(
+                """INSERT INTO detection_reviews
+                   (scan_id, variable, detected_value, confidence)
+                   VALUES (?, ?, ?, NULL)""",
+                (scan_id, variable, detected)
+            )
+            inserted += 1
+    conn.commit()
+    return inserted
+
+
+def get_detection_review_counts(conn):
+    """Return {variable: {'pending': n, 'reviewed': n}} for the dashboard."""
+    out = {v: {'pending': 0, 'reviewed': 0} for v in DETECTION_VARIABLES}
+    rows = conn.execute(
+        """SELECT variable,
+                  SUM(CASE WHEN verdict IS NULL THEN 1 ELSE 0 END) AS pending,
+                  SUM(CASE WHEN verdict IS NOT NULL THEN 1 ELSE 0 END) AS reviewed
+             FROM detection_reviews
+             GROUP BY variable"""
+    ).fetchall()
+    for r in rows:
+        v = r['variable']
+        if v in out:
+            out[v] = {
+                'pending': int(r['pending'] or 0),
+                'reviewed': int(r['reviewed'] or 0),
+            }
+    return out
 
 
 # ---------------------------------------------------------------------------

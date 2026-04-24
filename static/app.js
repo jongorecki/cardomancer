@@ -4634,3 +4634,189 @@ function onResortToggle() {
     if (!toggle || !row) return;
     row.style.display = toggle.checked ? '' : 'none';
 }
+
+
+// =========================================================================
+// Per-attribute Detection Review Queues (Session Review tab)
+// =========================================================================
+
+let _currentDetectionVariable = 'foil';
+
+function selectDetectionReview(variable) {
+    _currentDetectionVariable = variable;
+    document.querySelectorAll('#detection-review-subnav .nav-link').forEach(el => {
+        el.classList.toggle('active',
+            el.getAttribute('data-review-variable') === variable);
+    });
+    loadDetectionReviewQueue();
+    return false;
+}
+
+async function loadDetectionReviewCounts() {
+    try {
+        const resp = await fetch('/api/detection-reviews/counts');
+        if (!resp.ok) return;
+        const counts = await resp.json();
+        let total = 0;
+        for (const variable of ['foil', 'border', 'set_symbol']) {
+            const pending = (counts[variable] && counts[variable].pending) || 0;
+            total += pending;
+            const badge = document.getElementById('detection-badge-' + variable);
+            if (badge) badge.textContent = pending;
+        }
+        const totalBadge = document.getElementById('detection-review-total-badge');
+        if (totalBadge) {
+            totalBadge.textContent = total;
+            totalBadge.style.display = total > 0 ? '' : 'none';
+        }
+        // If the tab is currently visible, refresh the active queue.
+        const pane = document.getElementById('tab-session-review');
+        if (pane && pane.classList.contains('active')) {
+            loadDetectionReviewQueue();
+        }
+    } catch (e) {
+        console.error('loadDetectionReviewCounts failed', e);
+    }
+}
+
+async function seedDetectionReviews() {
+    try {
+        await fetch('/api/detection-reviews/seed', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({only_recognized: true}),
+        });
+    } catch (e) {
+        console.error('seedDetectionReviews failed', e);
+    }
+    await loadDetectionReviewCounts();
+    await loadDetectionReviewQueue();
+}
+
+function _detectionConfidenceLabel(r) {
+    if (r.confidence === null || r.confidence === undefined) return 'unknown';
+    try {
+        return Number(r.confidence).toFixed(3);
+    } catch (e) {
+        return String(r.confidence);
+    }
+}
+
+function _detectionVerdictBadge(r) {
+    if (!r.verdict) return '';
+    const colors = {correct: 'success', wrong: 'danger', skip: 'secondary'};
+    const color = colors[r.verdict] || 'info';
+    return `<span class="badge bg-${color} ms-1">${r.verdict}</span>`;
+}
+
+async function loadDetectionReviewQueue() {
+    const variable = _currentDetectionVariable;
+    const includeReviewed = document.getElementById('detection-show-reviewed');
+    const include = includeReviewed && includeReviewed.checked ? '1' : '0';
+    const body = document.getElementById('detection-review-body');
+    const empty = document.getElementById('detection-review-empty');
+    if (!body) return;
+    body.innerHTML = '<p class="text-muted small">Loading…</p>';
+    try {
+        const resp = await fetch(
+            `/api/detection-reviews/${encodeURIComponent(variable)}`
+            + `?include_reviewed=${include}&limit=200`);
+        if (!resp.ok) {
+            body.innerHTML = `<p class="text-danger">Failed to load queue.</p>`;
+            return;
+        }
+        const data = await resp.json();
+        const items = data.items || [];
+        if (!items.length) {
+            body.innerHTML = '';
+            if (empty) {
+                empty.style.display = '';
+                body.appendChild(empty);
+            } else {
+                body.innerHTML = '<p class="text-muted text-center py-4">Nothing to review.</p>';
+            }
+            return;
+        }
+
+        const rows = items.map(r => {
+            const crop = r.crop_url
+                ? `<img src="${r.crop_url}" style="max-height:140px;max-width:110px" class="rounded border">`
+                : `<div class="text-muted small">no crop</div>`;
+            const card = r.name
+                ? `<div><strong>${_escapeHtml(r.name)}</strong></div>`
+                  + `<div class="text-muted small">${_escapeHtml(r.set_code || '')} ${_escapeHtml(r.collector_number || '')}</div>`
+                : `<div class="text-muted">unknown card</div>`;
+            const detected = r.detected_value
+                ? `<code>${_escapeHtml(String(r.detected_value))}</code>`
+                : `<span class="text-muted">—</span>`;
+            const conf = _detectionConfidenceLabel(r);
+            const verdictBadge = _detectionVerdictBadge(r);
+            const correctionInput = r.verdict
+                ? ''
+                : `<input type="text" class="form-control form-control-sm mt-1 d-none"
+                          id="correction-${r.id}" placeholder="correct value (optional)">`;
+            const actions = r.verdict
+                ? `<span class="text-muted small">reviewed ${r.reviewed_at || ''}</span>`
+                : `
+                  <button class="btn btn-success btn-sm"
+                          onclick="markDetectionVerdict(${r.id}, 'correct')">Correct</button>
+                  <button class="btn btn-danger btn-sm"
+                          onclick="markDetectionVerdict(${r.id}, 'wrong')">Wrong</button>
+                  <button class="btn btn-outline-secondary btn-sm"
+                          onclick="markDetectionVerdict(${r.id}, 'skip')">Skip</button>
+                `;
+            return `
+              <tr data-review-id="${r.id}">
+                <td style="width:130px">${crop}</td>
+                <td>${card}</td>
+                <td>${detected}</td>
+                <td><span class="badge bg-info">${conf}</span></td>
+                <td>${verdictBadge}</td>
+                <td style="min-width:260px">${actions}${correctionInput}</td>
+              </tr>`;
+        }).join('');
+
+        body.innerHTML = `
+          <table class="table table-sm align-middle">
+            <thead><tr>
+              <th>Crop</th><th>Card</th><th>Detected</th>
+              <th>Confidence</th><th>Verdict</th><th>Actions</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>`;
+    } catch (e) {
+        console.error('loadDetectionReviewQueue failed', e);
+        body.innerHTML = '<p class="text-danger">Error loading queue.</p>';
+    }
+}
+
+async function markDetectionVerdict(reviewId, verdict) {
+    let correction = null;
+    if (verdict === 'wrong') {
+        const input = document.getElementById('correction-' + reviewId);
+        if (input) {
+            input.classList.remove('d-none');
+            correction = input.value || null;
+        }
+    }
+    try {
+        await fetch(`/api/detection-reviews/${reviewId}/verdict`, {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({verdict, correction}),
+        });
+    } catch (e) {
+        console.error('markDetectionVerdict failed', e);
+        return;
+    }
+    await loadDetectionReviewCounts();
+    await loadDetectionReviewQueue();
+}
+
+function _escapeHtml(s) {
+    if (s === null || s === undefined) return '';
+    return String(s).replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;',
+        '"': '&quot;', "'": '&#39;',
+    }[c]));
+}

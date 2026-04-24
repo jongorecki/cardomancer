@@ -3004,6 +3004,109 @@ def api_review_dismiss(scan_id):
 
 
 # =========================================================================
+# Per-attribute Detection Review Queues (Phase 4 item 4.20)
+# =========================================================================
+
+@app.route('/api/detection-reviews/counts')
+def api_detection_review_counts():
+    """Pending + reviewed counts per variable. Used to populate tab badges."""
+    import collection_db
+    conn = collection_db.get_connection()
+    try:
+        return jsonify(collection_db.get_detection_review_counts(conn))
+    finally:
+        conn.close()
+
+
+@app.route('/api/detection-reviews/seed', methods=['POST'])
+def api_detection_reviews_seed():
+    """
+    Ensure detection_reviews rows exist for every scan (one per variable).
+    Idempotent — safe to call repeatedly. No detector modifications; rows
+    where the detector can't supply confidence surface with confidence=NULL
+    (sorted first in the queue so the human reviews the most important
+    cases first).
+    """
+    import collection_db
+    body = request.get_json(silent=True) or {}
+    only_recognized = bool(body.get('only_recognized', True))
+    limit = body.get('limit')
+    conn = collection_db.get_connection()
+    try:
+        inserted = collection_db.seed_detection_reviews_from_scans(
+            conn, only_recognized=only_recognized, limit=limit)
+        return jsonify({'inserted': inserted})
+    finally:
+        conn.close()
+
+
+@app.route('/api/detection-reviews/<variable>')
+def api_detection_reviews_list(variable):
+    """
+    Queue items for one variable, ordered by ascending confidence (NULLs
+    first). `?include_reviewed=1` shows items that already have a verdict.
+    """
+    import collection_db
+    if variable not in collection_db.DETECTION_VARIABLES:
+        return jsonify({'error': f'unknown variable: {variable}'}), 400
+
+    include_reviewed = request.args.get('include_reviewed', '0') == '1'
+    limit = int(request.args.get('limit', 200))
+
+    conn = collection_db.get_connection()
+    try:
+        rows = collection_db.list_detection_reviews(
+            conn, variable,
+            include_reviewed=include_reviewed, limit=limit)
+        # Add crop + scan image URLs so the UI can render the card.
+        for r in rows:
+            scan_ref = {
+                'session_start_time': r.get('session_start_time', ''),
+                'scan_num': r.get('scan_num', 0),
+            }
+            r['crop_url'] = _resolve_crop_url(scan_ref)
+            r['scan_url'] = _resolve_scan_url(scan_ref)
+        return jsonify({
+            'variable': variable,
+            'items': rows,
+            'include_reviewed': include_reviewed,
+        })
+    finally:
+        conn.close()
+
+
+@app.route('/api/detection-reviews/<int:review_id>/verdict',
+           methods=['PATCH', 'POST'])
+def api_detection_review_verdict(review_id):
+    """
+    Record a user's verdict on a review row. Body:
+      { "verdict": "correct" | "wrong" | "skip",
+        "correction": "optional free-text if wrong" }
+    Idempotent — repeating the same verdict refreshes reviewed_at.
+    """
+    import collection_db
+    body = request.get_json(silent=True) or {}
+    verdict = (body.get('verdict') or '').strip()
+    correction = body.get('correction')
+    if verdict not in collection_db.VALID_VERDICTS:
+        return jsonify({
+            'error': 'verdict must be one of '
+                     f'{collection_db.VALID_VERDICTS}',
+        }), 400
+
+    conn = collection_db.get_connection()
+    try:
+        ok = collection_db.set_detection_verdict(
+            conn, review_id, verdict, correction=correction)
+        if not ok:
+            return jsonify({'error': 'review not found'}), 404
+        return jsonify({'ok': True, 'review_id': review_id,
+                        'verdict': verdict})
+    finally:
+        conn.close()
+
+
+# =========================================================================
 # Price Update API
 # =========================================================================
 
