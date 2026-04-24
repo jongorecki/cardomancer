@@ -1445,6 +1445,166 @@ def api_collection_assign_box(item_id):
         conn.close()
 
 
+@app.route('/api/collection/locate')
+def api_collection_locate():
+    """Physical locator (Phase 2.11).
+
+    Query params:
+      q: Scryfall-like query string (same syntax as sort bin queries).
+
+    Returns JSON:
+      { "query": "<q>",
+        "total_cards": N,
+        "groups": [ {box_name, divider_label, divider_id, box_id,
+                     count, unique_cards, oracle_ids}, ... ] }
+
+    Empty/whitespace `q` returns 400 to match the convention used by
+    /api/sort/validate-query and /api/collection/inventory POST.
+    """
+    import collection_db
+    query_str = (request.args.get('q') or '').strip()
+    if not query_str:
+        return jsonify({'error': 'Query string (q) is required',
+                        'groups': [], 'total_cards': 0}), 400
+
+    try:
+        from query_parser import parse_query, QueryParseError
+        parse_query(query_str)  # Validate up front for a clean 400.
+    except QueryParseError as exc:
+        return jsonify({'error': f'Invalid query: {exc}',
+                        'groups': [], 'total_cards': 0}), 400
+    except Exception as exc:
+        return jsonify({'error': f'Invalid query: {exc}',
+                        'groups': [], 'total_cards': 0}), 400
+
+    conn = collection_db.get_connection()
+    try:
+        groups = collection_db.locate_cards_by_query(conn, query_str)
+        total = sum(g['count'] for g in groups)
+        return jsonify({
+            'query': query_str,
+            'total_cards': total,
+            'groups': groups,
+        })
+    finally:
+        conn.close()
+
+
+@app.route('/api/collection/boxes/manage', methods=['GET', 'POST'])
+def api_collection_boxes_manage():
+    """List or create first-class boxes (Phase 2.12).
+
+    This sits alongside `/api/collection/boxes` (which returns the legacy
+    free-form box-name list derived from inventory.box). The /manage
+    endpoints operate on the first-class `boxes` table introduced by
+    2.12 and are what the upcoming Collection-tab UI will use.
+    """
+    import collection_db
+    conn = collection_db.get_connection()
+    try:
+        if request.method == 'POST':
+            data = request.json or {}
+            name = (data.get('name') or '').strip()
+            if not name:
+                return jsonify({'error': 'Box name is required'}), 400
+            try:
+                box_id = collection_db.add_box(
+                    conn, name=name,
+                    capacity=data.get('capacity'),
+                    notes=(data.get('notes') or '').strip() or None,
+                )
+            except Exception as exc:
+                return jsonify({'error': str(exc)}), 400
+            return jsonify({'id': box_id, 'created': True})
+        else:
+            return jsonify({'boxes': collection_db.list_boxes(conn)})
+    finally:
+        conn.close()
+
+
+@app.route('/api/collection/boxes/manage/<int:box_id>',
+           methods=['PUT', 'DELETE'])
+def api_collection_boxes_manage_one(box_id):
+    import collection_db
+    conn = collection_db.get_connection()
+    try:
+        if request.method == 'DELETE':
+            ok = collection_db.delete_box(conn, box_id)
+            if not ok:
+                return jsonify({'error': 'Box not found'}), 404
+            return jsonify({'deleted': True})
+        data = request.json or {}
+        ok = collection_db.update_box(
+            conn, box_id,
+            name=data.get('name'),
+            capacity=data.get('capacity'),
+            notes=data.get('notes'),
+        )
+        if not ok:
+            return jsonify({'error': 'Box not found'}), 404
+        return jsonify({'updated': True})
+    finally:
+        conn.close()
+
+
+@app.route('/api/collection/dividers', methods=['GET', 'POST'])
+def api_collection_dividers():
+    """List or create dividers (Phase 2.12)."""
+    import collection_db
+    conn = collection_db.get_connection()
+    try:
+        if request.method == 'POST':
+            data = request.json or {}
+            try:
+                box_id = int(data.get('box_id'))
+            except (TypeError, ValueError):
+                return jsonify({'error': 'box_id is required'}), 400
+            label = (data.get('label') or '').strip()
+            if not label:
+                return jsonify({'error': 'label is required'}), 400
+            try:
+                position = int(data.get('position', 0))
+            except (TypeError, ValueError):
+                return jsonify({'error': 'position must be an integer'}), 400
+            try:
+                div_id = collection_db.add_divider(
+                    conn, box_id=box_id, label=label, position=position,
+                    capacity=data.get('capacity'),
+                )
+            except ValueError as exc:
+                return jsonify({'error': str(exc)}), 400
+            return jsonify({'id': div_id, 'created': True})
+        box_id = request.args.get('box_id', type=int)
+        return jsonify({'dividers': collection_db.list_dividers(conn, box_id)})
+    finally:
+        conn.close()
+
+
+@app.route('/api/collection/dividers/<int:divider_id>',
+           methods=['PUT', 'DELETE'])
+def api_collection_dividers_one(divider_id):
+    import collection_db
+    conn = collection_db.get_connection()
+    try:
+        if request.method == 'DELETE':
+            ok = collection_db.delete_divider(conn, divider_id)
+            if not ok:
+                return jsonify({'error': 'Divider not found'}), 404
+            return jsonify({'deleted': True})
+        data = request.json or {}
+        ok = collection_db.update_divider(
+            conn, divider_id,
+            label=data.get('label'),
+            position=data.get('position'),
+            capacity=data.get('capacity'),
+        )
+        if not ok:
+            return jsonify({'error': 'Divider not found'}), 404
+        return jsonify({'updated': True})
+    finally:
+        conn.close()
+
+
 @app.route('/api/collection/import/csv', methods=['POST'])
 def api_collection_import_csv():
     import collection_db

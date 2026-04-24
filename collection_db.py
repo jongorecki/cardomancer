@@ -110,6 +110,27 @@ def _create_tables(conn):
             added_date TEXT,
             found INTEGER NOT NULL DEFAULT 0
         );
+
+        CREATE TABLE IF NOT EXISTS boxes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            capacity INTEGER,
+            created_at TEXT NOT NULL,
+            notes TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS dividers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            box_id INTEGER NOT NULL,
+            label TEXT NOT NULL,
+            position INTEGER NOT NULL,
+            capacity INTEGER,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (box_id) REFERENCES boxes(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_dividers_box_pos
+            ON dividers(box_id, position);
     """)
     # Migration: add box column if missing (existing databases)
     try:
@@ -135,6 +156,13 @@ def _create_tables(conn):
         conn.execute(
             "ALTER TABLE inventory ADD COLUMN foil_quantity INTEGER NOT NULL DEFAULT 0"
         )
+        conn.commit()
+
+    # Migration: add divider_id column if missing (Phase 2.12)
+    try:
+        conn.execute("SELECT divider_id FROM inventory LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE inventory ADD COLUMN divider_id INTEGER")
         conn.commit()
     conn.commit()
 
@@ -865,6 +893,377 @@ def assign_box(conn, item_id, box_name, move_quantity=None):
 
 
 # ---------------------------------------------------------------------------
+# Boxes & dividers (Phase 2.12 — first-class storage tables)
+# ---------------------------------------------------------------------------
+#
+# The legacy `inventory.box` TEXT column still exists and holds a free-form
+# box name for backward-compatibility with existing UI code. Phase 2.12
+# introduces the first-class `boxes` and `dividers` tables so a row in
+# inventory can be pinned to a specific divider (which in turn belongs to a
+# box). The new `inventory.divider_id` column is nullable: rows without a
+# divider fall back to the legacy `box` TEXT grouping, and rows with
+# neither are reported as "Unassigned" by the locator.
+
+def add_box(conn, name, capacity=None, notes=None):
+    """Create a new box. Returns the new box id.
+
+    Raises sqlite3.IntegrityError if the name already exists.
+    """
+    now = datetime.now().isoformat()
+    cursor = conn.execute(
+        """INSERT INTO boxes (name, capacity, created_at, notes)
+           VALUES (?, ?, ?, ?)""",
+        (name, capacity, now, notes)
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def update_box(conn, box_id, name=None, capacity=None, notes=None):
+    """Update fields on a box. Only provided (non-None) fields change.
+
+    Returns True if the row existed, False otherwise.
+    """
+    row = conn.execute("SELECT id FROM boxes WHERE id=?", (box_id,)).fetchone()
+    if not row:
+        return False
+
+    fields = []
+    params = []
+    if name is not None:
+        fields.append("name=?")
+        params.append(name)
+    if capacity is not None:
+        fields.append("capacity=?")
+        params.append(capacity)
+    if notes is not None:
+        fields.append("notes=?")
+        params.append(notes)
+
+    if not fields:
+        return True
+    params.append(box_id)
+    conn.execute(f"UPDATE boxes SET {', '.join(fields)} WHERE id=?", params)
+    conn.commit()
+    return True
+
+
+def delete_box(conn, box_id):
+    """Delete a box and cascade-delete its dividers.
+
+    Does NOT delete inventory rows; their `divider_id` is set back to NULL
+    via the foreign-key cascade path (sqlite honors our explicit NULL).
+    Returns True if the box existed.
+    """
+    row = conn.execute("SELECT id FROM boxes WHERE id=?", (box_id,)).fetchone()
+    if not row:
+        return False
+    # Null out inventory references pointing at dividers in this box.
+    conn.execute(
+        """UPDATE inventory SET divider_id = NULL
+           WHERE divider_id IN (SELECT id FROM dividers WHERE box_id=?)""",
+        (box_id,)
+    )
+    conn.execute("DELETE FROM dividers WHERE box_id=?", (box_id,))
+    conn.execute("DELETE FROM boxes WHERE id=?", (box_id,))
+    conn.commit()
+    return True
+
+
+def list_boxes(conn):
+    """Return all boxes with divider count + inventory card count.
+
+    Each row is a dict: id, name, capacity, created_at, notes,
+    divider_count, card_count.
+    """
+    rows = conn.execute(
+        """SELECT b.*,
+                  (SELECT COUNT(*) FROM dividers d WHERE d.box_id = b.id)
+                      AS divider_count,
+                  (SELECT COALESCE(SUM(i.quantity), 0)
+                     FROM inventory i
+                     JOIN dividers d2 ON i.divider_id = d2.id
+                    WHERE d2.box_id = b.id) AS card_count
+             FROM boxes b
+            ORDER BY b.name"""
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def add_divider(conn, box_id, label, position, capacity=None):
+    """Create a new divider inside a box. Returns the new divider id.
+
+    Raises ValueError if the box does not exist.
+    """
+    box_row = conn.execute(
+        "SELECT id FROM boxes WHERE id=?", (box_id,)
+    ).fetchone()
+    if not box_row:
+        raise ValueError(f"box_id {box_id} does not exist")
+    now = datetime.now().isoformat()
+    cursor = conn.execute(
+        """INSERT INTO dividers (box_id, label, position, capacity, created_at)
+           VALUES (?, ?, ?, ?, ?)""",
+        (box_id, label, int(position), capacity, now)
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def update_divider(conn, divider_id, label=None, position=None, capacity=None):
+    """Update fields on a divider. Only provided fields change."""
+    row = conn.execute(
+        "SELECT id FROM dividers WHERE id=?", (divider_id,)
+    ).fetchone()
+    if not row:
+        return False
+
+    fields = []
+    params = []
+    if label is not None:
+        fields.append("label=?")
+        params.append(label)
+    if position is not None:
+        fields.append("position=?")
+        params.append(int(position))
+    if capacity is not None:
+        fields.append("capacity=?")
+        params.append(capacity)
+
+    if not fields:
+        return True
+    params.append(divider_id)
+    conn.execute(f"UPDATE dividers SET {', '.join(fields)} WHERE id=?", params)
+    conn.commit()
+    return True
+
+
+def delete_divider(conn, divider_id):
+    """Delete a divider; inventory rows pointing at it are unassigned."""
+    row = conn.execute(
+        "SELECT id FROM dividers WHERE id=?", (divider_id,)
+    ).fetchone()
+    if not row:
+        return False
+    conn.execute(
+        "UPDATE inventory SET divider_id = NULL WHERE divider_id = ?",
+        (divider_id,)
+    )
+    conn.execute("DELETE FROM dividers WHERE id = ?", (divider_id,))
+    conn.commit()
+    return True
+
+
+def list_dividers(conn, box_id=None):
+    """Return dividers, optionally scoped to a single box, ordered by
+    (box_id, position).
+
+    Each row is a dict plus a `box_name` field and a `card_count`.
+    """
+    where = "WHERE d.box_id = ?" if box_id is not None else ""
+    params = (box_id,) if box_id is not None else ()
+    rows = conn.execute(
+        f"""SELECT d.*,
+                   b.name AS box_name,
+                   (SELECT COALESCE(SUM(i.quantity), 0)
+                      FROM inventory i
+                     WHERE i.divider_id = d.id) AS card_count
+              FROM dividers d
+              JOIN boxes b ON d.box_id = b.id
+              {where}
+             ORDER BY d.box_id, d.position""",
+        params
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def assign_inventory_divider(conn, item_id, divider_id):
+    """Set or clear the divider_id for an inventory row.
+
+    Pass divider_id=None to unassign. Returns True if the row existed.
+    """
+    row = conn.execute(
+        "SELECT id FROM inventory WHERE id=?", (item_id,)
+    ).fetchone()
+    if not row:
+        return False
+    if divider_id is not None:
+        div = conn.execute(
+            "SELECT id FROM dividers WHERE id=?", (divider_id,)
+        ).fetchone()
+        if not div:
+            raise ValueError(f"divider_id {divider_id} does not exist")
+    conn.execute(
+        "UPDATE inventory SET divider_id=? WHERE id=?",
+        (divider_id, item_id)
+    )
+    conn.commit()
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Physical locator (Phase 2.11)
+# ---------------------------------------------------------------------------
+
+UNASSIGNED_BOX_NAME = "Unassigned"
+
+
+def _inventory_row_to_card_data(row):
+    """Project an inventory row into the Scryfall-shaped dict the
+    query_parser expects. Used as a fallback when the full Scryfall card
+    dict isn't available via card_lookup.
+    """
+    colors = [c for c in (row.get('colors') or '')]
+    prices = {}
+    if row.get('price_usd') is not None:
+        prices['usd'] = str(row['price_usd'])
+    return {
+        'name': row.get('name') or '',
+        'set': (row.get('set_code') or '').lower(),
+        'collector_number': row.get('collector_number') or '',
+        'oracle_id': row.get('oracle_id'),
+        'illustration_id': row.get('illustration_id'),
+        'colors': colors,
+        'color_identity': colors,
+        'cmc': row.get('cmc'),
+        'type_line': row.get('type_line') or '',
+        'rarity': (row.get('rarity') or '').lower(),
+        'prices': prices,
+        'oracle_text': '',
+        'keywords': [],
+        'legalities': {},
+        'produced_mana': [],
+        'set_type': '',
+    }
+
+
+def _resolve_card_data(row):
+    """Try to look up a full Scryfall card dict for an inventory row,
+    falling back to the projected minimal dict on failure.
+    """
+    # Prefer the loaded bulk data via card_lookup when available.
+    try:
+        import card_lookup
+        set_code = row.get('set_code') or ''
+        collector_number = row.get('collector_number') or ''
+        full = card_lookup.lookup_by_set_collector(set_code, collector_number)
+        if full:
+            return full
+    except Exception:
+        pass
+    return _inventory_row_to_card_data(row)
+
+
+def locate_cards_by_query(conn, query_string, otag_cache=None):
+    """Find owned cards matching a Scryfall-style query and aggregate the
+    results by physical (box, divider) location.
+
+    Returns a list of dicts:
+        [{
+            "box_name": str,
+            "divider_label": str | None,
+            "divider_id": int | None,
+            "box_id": int | None,
+            "count": int,   # total copies in this bucket (sum of quantity)
+            "unique_cards": int,
+            "oracle_ids": [str, ...],
+        }, ...]
+
+    Sorted by (box_name, divider position ASC with NULLs last).
+
+    Cards with no divider_id fall under the legacy inventory.box TEXT
+    grouping (box_name == row['box'] or "Unassigned" if both are NULL).
+    """
+    from query_parser import parse_query, evaluate_query
+
+    query_string = (query_string or '').strip()
+    if not query_string:
+        return []
+
+    ast = parse_query(query_string)
+
+    rows = conn.execute(
+        """SELECT i.*,
+                  d.label  AS divider_label,
+                  d.position AS divider_position,
+                  d.box_id AS divider_box_id,
+                  b.name   AS divider_box_name
+             FROM inventory i
+        LEFT JOIN dividers d ON i.divider_id = d.id
+        LEFT JOIN boxes    b ON d.box_id = b.id"""
+    ).fetchall()
+
+    # Bucket by (box_name, divider_id) — fallback: (inventory.box, None)
+    # -> further fallback: (UNASSIGNED_BOX_NAME, None).
+    buckets = {}
+    for r in rows:
+        row = dict(r)
+        card_data = _resolve_card_data(row)
+        try:
+            if not evaluate_query(ast, card_data, otag_cache):
+                continue
+        except Exception:
+            continue
+
+        if row.get('divider_id') is not None:
+            box_name = row.get('divider_box_name') or UNASSIGNED_BOX_NAME
+            box_id = row.get('divider_box_id')
+            divider_id = row.get('divider_id')
+            divider_label = row.get('divider_label')
+            divider_position = row.get('divider_position')
+        else:
+            legacy_box = row.get('box')
+            box_name = legacy_box if legacy_box else UNASSIGNED_BOX_NAME
+            box_id = None
+            divider_id = None
+            divider_label = None
+            divider_position = None
+
+        key = (box_name, divider_id)
+        bucket = buckets.get(key)
+        if bucket is None:
+            bucket = {
+                'box_name': box_name,
+                'box_id': box_id,
+                'divider_id': divider_id,
+                'divider_label': divider_label,
+                'divider_position': divider_position,
+                'count': 0,
+                'unique_cards': 0,
+                'oracle_ids': [],
+                '_seen_oracle': set(),
+            }
+            buckets[key] = bucket
+
+        qty = int(row.get('quantity') or 1)
+        bucket['count'] += qty
+        bucket['unique_cards'] += 1
+        oid = row.get('oracle_id')
+        if oid and oid not in bucket['_seen_oracle']:
+            bucket['_seen_oracle'].add(oid)
+            bucket['oracle_ids'].append(oid)
+
+    def sort_key(b):
+        # NULL dividers sort after real positions within the same box.
+        pos = b['divider_position']
+        return (
+            b['box_name'] == UNASSIGNED_BOX_NAME,
+            b['box_name'].lower(),
+            0 if pos is not None else 1,
+            pos if pos is not None else 0,
+        )
+
+    result = []
+    for b in sorted(buckets.values(), key=sort_key):
+        b.pop('_seen_oracle', None)
+        # Drop divider_position from the public payload; it's an internal
+        # sort key. Keep divider_id + label which are what callers want.
+        b.pop('divider_position', None)
+        result.append(b)
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Delete / reset operations
 # ---------------------------------------------------------------------------
 
@@ -950,6 +1349,8 @@ def reset_collection(conn):
         DELETE FROM scan_history;
         DELETE FROM sessions;
         DELETE FROM inventory;
+        DELETE FROM dividers;
+        DELETE FROM boxes;
     """)
     conn.commit()
 
