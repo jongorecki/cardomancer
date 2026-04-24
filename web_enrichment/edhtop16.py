@@ -40,6 +40,8 @@ MAX_TOURNAMENTS = 500        # cap on tournaments fetched per refresh
 MIN_TOURNAMENT_SIZE = 16     # minSize filter for tournaments query
 TOP_CUT = 16                 # maxStanding for entries per tournament
 PAGE_SIZE = 50               # tournaments per GraphQL page
+RATE_LIMIT_BACKOFF_S = 2.0   # initial sleep on 429 responses
+RATE_LIMIT_MAX_RETRIES = 3   # max retry attempts per page on 429
 
 SIX_MONTH_QUERY = """
 query ($after: String) {
@@ -127,7 +129,8 @@ class EDHTop16Source(EnrichmentSource):
                 for s in staples:
                     oid = s.get("oracleId")
                     rate = s.get("playRateLastYear") or 0.0
-                    if oid and rate >= CEDH_THRESHOLD:
+                    type_line = s.get("type") or ""
+                    if oid and rate >= CEDH_THRESHOLD and not _is_basic_land(type_line):
                         # Store synthetic count so downstream math works
                         card_counts[oid] = int(rate * 10000)
                 total_entries = 10000
@@ -256,17 +259,39 @@ class EDHTop16Source(EnrichmentSource):
                 if cursor:
                     variables["after"] = cursor
 
-                try:
-                    r = client.post(
-                        ENDPOINT,
-                        json={"query": SIX_MONTH_QUERY,
-                              "variables": variables},
-                    )
-                    r.raise_for_status()
-                    data = r.json()
-                except Exception as exc:
-                    warnings.append(
-                        f"Tournament page fetch error (processed={processed}): {exc}")
+                data = None
+                for attempt in range(RATE_LIMIT_MAX_RETRIES + 1):
+                    try:
+                        r = client.post(
+                            ENDPOINT,
+                            json={"query": SIX_MONTH_QUERY,
+                                  "variables": variables},
+                        )
+                        if r.status_code == 429:
+                            backoff = RATE_LIMIT_BACKOFF_S * (2 ** attempt)
+                            warnings.append(
+                                f"Rate-limited (429) on page "
+                                f"processed={processed}; "
+                                f"sleeping {backoff:.0f}s …")
+                            logger.warning(
+                                "edhtop16: 429 on page %d, attempt %d/%d, "
+                                "backoff %.0fs",
+                                processed, attempt + 1,
+                                RATE_LIMIT_MAX_RETRIES, backoff)
+                            time.sleep(backoff)
+                            continue
+                        r.raise_for_status()
+                        data = r.json()
+                        break
+                    except httpx.HTTPStatusError:
+                        raise
+                    except Exception as exc:
+                        warnings.append(
+                            f"Tournament page fetch error "
+                            f"(processed={processed}, attempt={attempt}): {exc}")
+                        break
+
+                if data is None:
                     break
 
                 if "errors" in data:

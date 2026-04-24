@@ -183,6 +183,44 @@ class EnrichmentRepo:
         finally:
             conn.close()
 
+    def get_cedh_staples(self, min_play_rate: float = 0.0) -> list[dict]:
+        """Return cEDH staples from edhtop16, filtered by minimum play rate.
+
+        Args:
+            min_play_rate: minimum score (0.0–1.0). Default returns all rows.
+
+        Returns:
+            List of dicts with keys: oracle_id, play_rate, tournament_appearances,
+            last_refreshed.  Results ordered by play_rate descending.
+
+        Note: ``tournament_appearances`` is not stored separately in the DB;
+        it is None for all rows.  The ``play_rate`` field maps directly to the
+        ``score`` column in the staples table (fraction of sampled decks that
+        included the card, or playRateLastYear for the fallback path).
+        """
+        conn = self._conn()
+        try:
+            rows = conn.execute(
+                """SELECT oracle_id, score, last_updated
+                   FROM staples
+                   WHERE source = 'edhtop16'
+                     AND tier = 'cedh'
+                     AND score >= ?
+                   ORDER BY score DESC""",
+                (min_play_rate,),
+            ).fetchall()
+            return [
+                {
+                    "oracle_id": r["oracle_id"],
+                    "play_rate": r["score"],
+                    "tournament_appearances": None,
+                    "last_refreshed": r["last_updated"],
+                }
+                for r in rows
+            ]
+        finally:
+            conn.close()
+
     def get_combo_members(self, combo_id: str) -> list[str]:
         """Oracle_ids that make up a combo."""
         conn = self._conn()

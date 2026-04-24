@@ -1,59 +1,27 @@
 {
   "data": {
-    "__schema": {
-      "queryType": {
-        "fields": [
-          {
-            "name": "card"
-          },
-          {
-            "name": "cheaters"
-          },
-          {
-            "name": "commander"
-          },
-          {
-            "name": "commanders"
-          },
-          {
-            "name": "countrySeatWinRates"
-          },
-          {
-            "name": "homePagePromo"
-          },
-          {
-            "name": "leaderboard"
-          },
-          {
-            "name": "monthlySeatWinRates"
-          },
-          {
-            "name": "node"
-          },
-          {
-            "name": "player"
-          },
-          {
-            "name": "searchResults"
-          },
-          {
-            "name": "staples"
-          },
-          {
-            "name": "tournament"
-          },
-          {
-            "name": "tournamentPagePromo"
-          },
-          {
-            "name": "tournaments"
-          },
-          {
-            "name": "viewer"
-          }
-        ],
-        "name": "Query"
+    "staples": [
+      {
+        "colorId": "U",
+        "name": "Mystic Remora",
+        "oracleId": "8a52f3c0-2552-4425-b2e3-5496eb2232a7",
+        "playRateLastYear": 0.9185976731130341,
+        "type": "Enchantment"
+      },
+      {
+        "colorId": "B",
+        "name": "Vampiric Tutor",
+        "oracleId": "ededbdae-d9dc-4206-9335-d7158f2d7700",
+        "playRateLastYear": 0.9071213743181934,
+        "type": "Instant"
+      },
+      {
+        "colorId": "UB",
+        "name": "Underground Sea",
+        "oracleId": "4b22be3a-8ce1-47d1-b82e-6c3ccfb0548b",
+        "playRateLastYear": 0.8997843039654886,
+        "type": "Land \u2014 Island Swamp"
       }
-    }
+    ]
   }
 }

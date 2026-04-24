@@ -137,5 +137,120 @@ class TestEnrichmentRepo(unittest.TestCase):
             card.source_freshness.get("tagger", "").startswith("stale_"))
 
 
+class TestGetCEDHStaples(unittest.TestCase):
+    """Round-trip tests for EnrichmentRepo.get_cedh_staples()."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp(prefix="cedh_repo_test_")
+        self.db_path = os.path.join(self.tmpdir, "enrichment.db")
+        self.conn = enrichment_db.get_connection(db_path=self.db_path)
+        self.repo = EnrichmentRepo(db_path=self.db_path)
+
+    def tearDown(self):
+        self.conn.close()
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _insert_cedh_row(self, oracle_id: str, score: float,
+                         last_updated: str = "2026-01-01T00:00:00") -> None:
+        self.conn.execute(
+            """INSERT INTO staples
+               (oracle_id, tier, source, score, archetypes_json, last_updated)
+               VALUES (?, 'cedh', 'edhtop16', ?, NULL, ?)""",
+            (oracle_id, score, last_updated),
+        )
+        self.conn.commit()
+
+    def test_returns_empty_when_no_data(self):
+        result = self.repo.get_cedh_staples()
+        self.assertEqual(result, [])
+
+    def test_returns_all_cedh_rows(self):
+        self._insert_cedh_row("oid-a", 0.80)
+        self._insert_cedh_row("oid-b", 0.50)
+        result = self.repo.get_cedh_staples()
+        self.assertEqual(len(result), 2)
+
+    def test_result_shape(self):
+        self._insert_cedh_row("thassas-oracle", 0.54, "2026-04-24T00:00:00")
+        result = self.repo.get_cedh_staples()
+        self.assertEqual(len(result), 1)
+        row = result[0]
+        self.assertIn("oracle_id", row)
+        self.assertIn("play_rate", row)
+        self.assertIn("tournament_appearances", row)
+        self.assertIn("last_refreshed", row)
+        self.assertEqual(row["oracle_id"], "thassas-oracle")
+        self.assertAlmostEqual(row["play_rate"], 0.54, places=5)
+        self.assertIsNone(row["tournament_appearances"])
+        self.assertEqual(row["last_refreshed"], "2026-04-24T00:00:00")
+
+    def test_min_play_rate_filters(self):
+        self._insert_cedh_row("above", 0.40)
+        self._insert_cedh_row("below", 0.10)
+        result = self.repo.get_cedh_staples(min_play_rate=0.20)
+        oracle_ids = [r["oracle_id"] for r in result]
+        self.assertIn("above", oracle_ids)
+        self.assertNotIn("below", oracle_ids)
+
+    def test_min_play_rate_zero_returns_all(self):
+        self._insert_cedh_row("a", 0.80)
+        self._insert_cedh_row("b", 0.01)
+        result = self.repo.get_cedh_staples(min_play_rate=0.0)
+        self.assertEqual(len(result), 2)
+
+    def test_min_play_rate_exact_boundary_included(self):
+        # A card at exactly the threshold should be included
+        self._insert_cedh_row("boundary", 0.15)
+        result = self.repo.get_cedh_staples(min_play_rate=0.15)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["oracle_id"], "boundary")
+
+    def test_results_ordered_by_play_rate_descending(self):
+        self._insert_cedh_row("low", 0.20)
+        self._insert_cedh_row("high", 0.90)
+        self._insert_cedh_row("mid", 0.50)
+        result = self.repo.get_cedh_staples()
+        rates = [r["play_rate"] for r in result]
+        self.assertEqual(rates, sorted(rates, reverse=True))
+
+    def test_only_edhtop16_source_returned(self):
+        # Insert an edhrec cedh row — should NOT appear in get_cedh_staples
+        self.conn.execute(
+            """INSERT INTO staples
+               (oracle_id, tier, source, score, archetypes_json, last_updated)
+               VALUES ('edhrec-oid', 'cedh', 'edhrec', 0.9, NULL, '2026-01-01')"""
+        )
+        self._insert_cedh_row("edhtop16-oid", 0.9)
+        self.conn.commit()
+
+        result = self.repo.get_cedh_staples()
+        oracle_ids = [r["oracle_id"] for r in result]
+        self.assertIn("edhtop16-oid", oracle_ids)
+        self.assertNotIn("edhrec-oid", oracle_ids)
+
+    def test_non_cedh_tier_excluded(self):
+        # Insert a universal staple from edhtop16 — should not appear
+        self.conn.execute(
+            """INSERT INTO staples
+               (oracle_id, tier, source, score, archetypes_json, last_updated)
+               VALUES ('universal-oid', 'universal', 'edhtop16', 0.9, NULL, '2026-01-01')"""
+        )
+        self._insert_cedh_row("cedh-oid", 0.9)
+        self.conn.commit()
+
+        result = self.repo.get_cedh_staples()
+        oracle_ids = [r["oracle_id"] for r in result]
+        self.assertIn("cedh-oid", oracle_ids)
+        self.assertNotIn("universal-oid", oracle_ids)
+
+    def test_idempotent_read(self):
+        """Calling twice returns identical results."""
+        self._insert_cedh_row("oid-1", 0.80)
+        self._insert_cedh_row("oid-2", 0.30)
+        first = self.repo.get_cedh_staples()
+        second = self.repo.get_cedh_staples()
+        self.assertEqual(first, second)
+
+
 if __name__ == "__main__":
     unittest.main()
