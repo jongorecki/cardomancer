@@ -295,6 +295,10 @@ def extract_card_info(card_id):
         "Types": found_types,
         "Price": price_str,
         "Rarity": card.get('rarity', ''),
+        # Scryfall border_color: black / white / borderless / silver / gold.
+        # Surfaced so the sort session UI can show it alongside the
+        # live card info (collector number, foil status).
+        "Border": card.get('border_color', ''),
     }
 
     return info

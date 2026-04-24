@@ -1538,6 +1538,7 @@ class SortWorker:
                 'id': card_info.get('Id'),
                 'collector_number': card_info.get('CollectorNumber', ''),
                 'set': card_info.get('Set', '?'),
+                'border': card_info.get('Border', ''),
                 'colors': card_info.get('Colors', []),
                 'types': card_info.get('Types', []),
                 'cmc': card_info.get('CMC', 0),

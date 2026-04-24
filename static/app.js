@@ -282,19 +282,35 @@ function updateSessionButtons() {
 socket.on('card_detected', (data) => {
     const panel = document.getElementById('last-card-info');
     if (data.recognized) {
-        const borderBadge = data.border === 'borderless'
-            ? ' <span class="badge bg-info">Borderless</span>' : '';
+        // Border badge: colored pill per Scryfall border_color. Shown
+        // on every recognized card (not just borderless).
+        const borderClass = {
+            'black':      'bg-dark text-light',
+            'white':      'bg-light text-dark border',
+            'borderless': 'bg-info text-dark',
+            'silver':     'bg-secondary text-light',
+            'gold':       'bg-warning text-dark',
+        }[(data.border || '').toLowerCase()] || 'bg-secondary text-light';
+        const borderLabel = data.border
+            ? data.border.charAt(0).toUpperCase() + data.border.slice(1)
+            : 'Unknown';
+        const borderBadge = ` <span class="badge ${borderClass}">${borderLabel}</span>`;
+        // Foil badge: gold pill when the scan was detected as a
+        // physical foil printing (from foil_detect).
+        const foilBadge = data.is_foil
+            ? ' <span class="badge bg-warning text-dark">★ Foil</span>' : '';
         const layoutBadge = data.layout && data.layout !== 'normal'
             ? ` <span class="badge bg-warning text-dark">${data.layout}</span>` : '';
         const cn = data.collector_number ? ` #${data.collector_number}` : '';
         panel.innerHTML = `
-            <h5>${data.name}${borderBadge}${layoutBadge}</h5>
+            <h5>${data.name}${borderBadge}${foilBadge}${layoutBadge}</h5>
             <p class="mb-1">Set: <strong>${data.set}${cn}</strong> | Colors: <strong>${(data.colors || []).join('')}</strong></p>
             <p class="mb-1">Type: ${(data.types || []).join(' ')} | CMC: ${data.cmc}</p>
             <p class="mb-1">Price: ${data.price} | Rarity: ${data.rarity}</p>
             <p class="mb-0">Bin: <strong>${data.bin}</strong> | Method: <em>${data.method}</em></p>
         `;
-        addLog(`Detected: ${data.name}${cn} -> Bin ${data.bin} (${data.method})`);
+        const foilTag = data.is_foil ? ' [FOIL]' : '';
+        addLog(`Detected: ${data.name}${cn}${foilTag} -> Bin ${data.bin} (${data.method})`);
     } else {
         panel.innerHTML = `<p class="text-danger">Unrecognized card -> Bin ${data.bin || 10}</p>`;
         addLog(`Unrecognized card -> Bin ${data.bin || 10}`);
