@@ -41,6 +41,7 @@ foil_multisignal/*.jpg
 foil_multisignal/*.npz
 foil_review.html
 foil_candidates_review*.html
+foil_review_session_*.html
 pytest_output.txt
 
 # One-off diagnostic / investigation scripts (kept locally, not versioned).
