@@ -53,6 +53,81 @@ Z_MAX           = 220.0        # Z_MAX_POS from Marlin config. Z=220 is top (hom
 Z_DROP_OFFSET   = 50.0         # How far below the top to lower when dropping a card.
                                 # Drop position = Z_MAX - Z_DROP_OFFSET.
                                 # Tune this so the suction head is just below the bin lip.
+                                # Persisted to drop_height.json by set_drop_offset().
+
+# Path for persisted drop height (sits next to the other JSON configs).
+_DROP_HEIGHT_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), 'drop_height.json'
+)
+# Sane bounds for Z_DROP_OFFSET. Below 5mm risks a head crash on the
+# bin lip; above 150mm and the card is dropped from too high to land
+# reliably (Z_MAX is 220mm, Z_CLEAR_HEIGHT is 200mm).
+_DROP_OFFSET_MIN = 5.0
+_DROP_OFFSET_MAX = 150.0
+
+
+def set_drop_offset(value):
+    """Update Z_DROP_OFFSET in-memory and persist it to drop_height.json.
+
+    Validates that value is within [_DROP_OFFSET_MIN, _DROP_OFFSET_MAX].
+    Out-of-range or non-numeric values are rejected with a logged
+    warning and the function returns False.
+    """
+    global Z_DROP_OFFSET
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        print(f"[gcode] set_drop_offset: invalid value {value!r}, ignoring")
+        return False
+    if v < _DROP_OFFSET_MIN or v > _DROP_OFFSET_MAX:
+        print(f"[gcode] set_drop_offset: {v} out of range "
+              f"[{_DROP_OFFSET_MIN}, {_DROP_OFFSET_MAX}], ignoring")
+        return False
+    Z_DROP_OFFSET = v
+    try:
+        import json
+        from datetime import datetime, timezone
+        payload = {
+            'z_drop_offset': v,
+            'updated_at': datetime.now(timezone.utc).isoformat(),
+        }
+        with open(_DROP_HEIGHT_PATH, 'w', encoding='utf-8') as fh:
+            json.dump(payload, fh, indent=2)
+        print(f"[gcode] Z_DROP_OFFSET = {v} mm (saved to "
+              f"{os.path.basename(_DROP_HEIGHT_PATH)})")
+    except Exception as e:
+        print(f"[gcode] set_drop_offset: persisted in-memory but "
+              f"failed to write {_DROP_HEIGHT_PATH}: {e}")
+    return True
+
+
+def _load_drop_offset_from_disk():
+    """Read drop_height.json at module import and apply it.
+
+    A corrupt file or unreadable disk must NOT break gcode_control
+    import — fall back to the hardcoded default in that case.
+    """
+    global Z_DROP_OFFSET
+    try:
+        if not os.path.exists(_DROP_HEIGHT_PATH):
+            return
+        import json
+        with open(_DROP_HEIGHT_PATH, 'r', encoding='utf-8') as fh:
+            data = json.load(fh)
+        v = float(data.get('z_drop_offset'))
+        if _DROP_OFFSET_MIN <= v <= _DROP_OFFSET_MAX:
+            Z_DROP_OFFSET = v
+            print(f"[gcode] Loaded Z_DROP_OFFSET = {v} mm from "
+                  f"{os.path.basename(_DROP_HEIGHT_PATH)}")
+        else:
+            print(f"[gcode] drop_height.json: value {v} out of range, "
+                  f"keeping default {Z_DROP_OFFSET}")
+    except Exception as e:
+        print(f"[gcode] drop_height.json load failed ({e}); "
+              f"keeping default Z_DROP_OFFSET = {Z_DROP_OFFSET}")
+
+
+_load_drop_offset_from_disk()
 
 # Safe machine envelope — all high-level moves should be clamped to
 # these bounds so a bad config, stale probe cache, or buggy calculation
