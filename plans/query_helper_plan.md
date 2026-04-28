@@ -8,6 +8,59 @@ relationship map is reusable infrastructure that unlocks many other
 features (auto-categorization, deck-hole finder, upgrade suggestions,
 namespace-aware search, etc.) beyond the immediate query helper UX.
 
+### Pre-flight findings (2026-04-27)
+
+Scryfall's `default-cards-*.json` bulk dump does NOT carry `oracle_tags`
+or `art_tags` on card records (verified empty across 113,776 records).
+Tagger data is a separate domain.
+
+The app already has substantial otag infrastructure:
+
+- `enrichment.db → tags(oracle_id, tag_name, source)` — otag → card
+  mapping, keyed on oracle_id (one row per logical card per tag).
+- `enrichment.db → art_tags(printing_id, tag_name, source)` — atag →
+  printing mapping, keyed on printing_id (a card's different printings
+  can have different atags).
+- `enrichment.db → tag_catalog(tag_name, tag_type, parent, description,
+  card_count_expected, source)` — catalogue with `tag_type ∈
+  {function, art}`. **`parent` column already exists** but is unused
+  (always `None` from the current search-API path).
+- `web_enrichment/tagger.py → TaggerSource` — populates `tags` /
+  `art_tags` via Scryfall's `?q=otag:<name>` / `?q=atag:<name>` search
+  API. Works around Tagger's GraphQL CSRF auth wall (confirmed by
+  `probes/probe_tagger.py` 2026-04-20).
+- Hardcoded `KNOWN_FUNCTION_TAGS` (~150 tags) and `KNOWN_ART_TAGS`
+  (~11 tags) — definitely incomplete vs Scryfall's full catalogue.
+
+What this means for Phase 1 scope:
+
+- Card-membership data is already populated (via search API). **The
+  per-tag scrape only needs to extract relationships, not card lists.**
+- The "expand to full Tagger catalogue" step is a small docs-page
+  fetch + rerun of TaggerSource — not new infrastructure.
+- The `parent` column in `tag_catalog` is reserved storage; it just
+  needs populating. The new `otag_relations` table (this plan §1.1)
+  covers the seven other relationship types.
+
+### otag vs atag — explicit separation
+
+Two distinct tag domains, treated separately throughout this plan:
+
+| | otag (oracle tag) | atag (art tag) |
+|---|---|---|
+| Domain | Card's mechanical / textual function | Printing's visual / physical treatment |
+| Examples | `removal`, `ramp`, `wrath-effect`, `mana-rock`, `tutor`, `cantrip`, `combo`, `voltron`, `aristocrats` | `borderless`, `extended-art`, `showcase`, `retro-frame`, `phyrexian-frame`, `foil-etched`, `textured-foil`, `art-series`, `alternate-art`, `full-art` |
+| Stored in | `tags` (keyed `oracle_id`) | `art_tags` (keyed `printing_id`) |
+| Query syntax | `otag:wrath` — affects every printing of the card | `atag:borderless` — only specific printings |
+| Hierarchy useful? | Yes — `wrath-effect → creature-removal → removal` | Less so — most atags are mutually exclusive presentation modes |
+| Relationship types this plan addresses | All 8 types (1.2) | Hierarchy, mutual-exclusion (e.g. `borderless` vs `full-art` are usually mutually exclusive); other types are weak signals |
+
+The query helper UI surfaces both, but the relaxation engine treats
+otag much more aggressively than atag — a user looking for `atag:showcase`
+cards usually doesn't want a relaxation to `atag:any-treatment`,
+whereas relaxing `otag:wrath-effect` to `otag:removal` is exactly the
+right move.
+
 ---
 
 ## Goal
@@ -164,29 +217,43 @@ Heuristic: use the hierarchy roots + manual curation seed list, then
 propagate via descent. This is a one-time pass that gets refreshed
 quarterly with the scrape.
 
-### 1.4 Scrape pipeline (`scrape_tagger.py`)
+### 1.4 Scrape pipeline (`scrape_tagger_relationships.py`)
 
-Two-stage:
+Three stages. Note that **stages 1 + 2 leverage the existing
+`TaggerSource` infrastructure**; only stage 3 is genuinely new work.
 
-**Stage 1: Catalogue.**
+**Stage 1: Expand the catalogue.**
 Fetch `https://scryfall.com/docs/tagger-tags` once. The page lists
-every Tagger tag with a short description. Parse → upsert into the
-`otags` table with `scrape_source='docs_page'`. Initial population.
+every Tagger tag with a short description, partitioned into otag
+(function) and atag (art). Parse and merge into the existing
+hardcoded `KNOWN_FUNCTION_TAGS` / `KNOWN_ART_TAGS` lists in
+`web_enrichment/tagger.py`. Going from ~150 → ~1500 otags expands
+the routable predicate vocabulary substantially.
 
-**Stage 2: Per-tag relationships.**
-For each otag in the catalogue, fetch
-`https://tagger.scryfall.com/tags/oracle/<slug>`. Extract:
-- Parent tag links (hierarchy edges)
+**Stage 2: Re-run TaggerSource for new tags.**
+The existing search-API pipeline (`?q=otag:<name>` and
+`?q=atag:<name>`) populates `tags` / `art_tags` for the expanded
+catalogue. Already-incremental (skips tags whose
+`card_count_expected` hasn't changed). One run after stage 1 lands.
+~1500 tags × 100 ms rate limit = ~3 minutes.
+
+**Stage 3: Per-tag relationship scrape (NEW).**
+For each tag in the catalogue, fetch
+`https://tagger.scryfall.com/tags/oracle/<slug>` (or
+`/tags/art/<slug>` for atags). Extract:
+- Parent tag links (hierarchy edges) → write to `tag_catalog.parent`
+  AND to `otag_relations(relation_type='hierarchy')`
 - Aliased / synonym tags (synonym edges, when present)
 - Description text (overrides docs-page description if richer)
 
-Rate limit: 1 req/sec (matching `web_enrichment/edhrec.py`'s
-`RATE_LIMIT_S = 1.0`). At ~1500 tags, total run is ~25 minutes.
-Resumable via a `last_scraped` timestamp — partial runs are fine.
+Rate limit: 1 req/sec. ~1500 tags = ~25 minutes. Resumable via the
+`last_scraped` timestamp — partial runs are fine.
 
-`scrape_tagger.py` lives in `web_enrichment/` and registers as an
-`EnrichmentSource` with the existing scheduler. Defaults to
-quarterly refresh — Tagger doesn't change quickly.
+`scrape_tagger_relationships.py` lives in `web_enrichment/`.
+Registered as a separate `EnrichmentSource` from `TaggerSource` — they
+have different cadences (TaggerSource runs more often as new cards
+release; relationship scrape can run quarterly). Both write to the
+same enrichment.db.
 
 ### 1.5 Derivation pipeline (`derive_otag_relations.py`)
 
@@ -442,19 +509,38 @@ on Scryfall" and is dependency-free.
 - [ ] Tooltip showing dropped clauses
 - [ ] Test pinned mappings
 
-### Phase 1 — v1 (target: 1-2 weeks of work + 25-min scrape run)
+### Phase 1 — v1 (target: 1 week of work + ~30-min scrape runs)
 
-- [ ] Schema (`otags` + `otag_relations` tables in `enrichment.db`)
-- [ ] `web_enrichment/scrape_tagger.py` — Stage 1 catalogue + Stage 2
-      per-tag scrape, registered with refresh scheduler
+Phase 1 reuses substantial existing infrastructure (`tags`, `art_tags`,
+`tag_catalog`, `TaggerSource`); the new work is concentrated in
+relationship extraction.
+
+- [ ] Schema additions:
+  - [ ] New `otag_relations` table (the seven non-hierarchy relation
+        types — hierarchy reuses `tag_catalog.parent` we already have)
+  - [ ] Add `otags(otag, namespace, last_scraped, ...)` table for
+        namespace + scrape metadata. Names redundantly indexed in
+        `tag_catalog` already, but a dedicated table keeps relationship
+        metadata isolated from card-count metadata.
+- [ ] `web_enrichment/scrape_tagger_relationships.py` — three-stage
+      pipeline (expand catalogue, rerun TaggerSource, scrape
+      relationships). Registered as separate `EnrichmentSource`.
+- [ ] Probe extension: `probes/probe_tagger.py` already exists; add
+      a relationship-page check (parent extraction works).
 - [ ] `web_enrichment/derive_otag_relations.py` — co_occurs, implies,
-      synonym, sibling_disjoint, related derivation
-- [ ] Namespace classification pass with seed list
-- [ ] Manual curation files (antagonistic, exclusions)
-- [ ] `probes/probe_tagger.py`
-- [ ] Tests for parser + derivation
-- [ ] First end-to-end run; spot-check 20 known otags for relationship
-      correctness
+      synonym (Jaccard ≥ 0.95), sibling_disjoint, related derivation.
+      Reads `tags` table directly.
+- [ ] Namespace classification pass with seed list.
+- [ ] Manual curation files (`card_data/manual_otag_*.json`):
+      antagonistic, exclusions, namespace seeds.
+- [ ] Tests:
+  - [ ] Tagger relationship-page parser on a fixed HTML fixture
+  - [ ] Derivation produces expected co_occurs / implies on a small
+        synthetic card set
+  - [ ] Namespace classifier handles the seed list correctly
+- [ ] First end-to-end run; spot-check 20 known otags for hierarchy
+      and relationship correctness; confirm `staple:any` predicate
+      still works (TaggerSource refresh doesn't break existing flow).
 
 ### Phase 2 — v1 (target: 3-5 days, gated on Phase 1)
 
@@ -489,12 +575,11 @@ on Scryfall" and is dependency-free.
    Doable in a few minutes if we precompute a `card → otag set`
    index in memory. Plan for ~5 minutes runtime.
 
-3. **What about cards.py's existing `otag` data?** Verify whether
-   `CARDS_DATA` rows already carry oracle-tags from the Scryfall
-   bulk dump. If yes, Phase 1 derivation reads them directly and
-   we don't need Phase 1 Stage 2 scrape for the per-card index —
-   only for the parent/child hierarchy. (The Scryfall bulk data
-   _does_ ship card-level tags as far as I recall — confirm.)
+3. ~~What about cards.py's existing `otag` data?~~ **Resolved
+   2026-04-27**: `CARDS_DATA` does NOT carry tags (verified empty
+   across 113,776 records). Tag → card mapping is already populated
+   in `enrichment.db → tags` via `TaggerSource` using Scryfall's
+   search API. Phase 1 derivation reads from there.
 
 4. **Manual antagonistic curation**: who maintains it? The 50-100
    pairs are stable enough that one curation pass plus quarterly
