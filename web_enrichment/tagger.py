@@ -42,14 +42,16 @@ from web_enrichment.base import EmitFn, EnrichmentSource, RefreshResult
 logger = logging.getLogger(__name__)
 
 SEARCH_URL = "https://api.scryfall.com/cards/search"
-RATE_LIMIT_S = 0.40  # 400ms between requests
-# Note: Scryfall's docs suggest 50-100ms is "safe" but their rate-limiter
-# kicks in HARD on sustained loads of 5000+ requests (a full TaggerSource
-# refresh). Empirically (2026-04-28) a 100ms cadence on a full otag
-# catalogue triggered 838 HTTP 429s in 42 minutes (40% of all requests),
-# blocking the run with 2-second backoffs and pushing total runtime past
-# 7 hours. 400ms keeps us under the throttle and finishes the otag side
-# in ~50-90 minutes wallclock with no retries.
+RATE_LIMIT_S = 1.0  # 1 sec between requests
+# Note: Scryfall's docs suggest 50-100ms is "safe" but their per-IP rate
+# limiter throttles HARD on sustained loads of 5000+ requests (a full
+# TaggerSource refresh). Two empirical data points (2026-04-28):
+#   - 100ms: 838 HTTP 429s in 42 min (40% of requests). Total: ~7+ hr.
+#   - 400ms: same pattern after ~10 min — the limiter slots us into a
+#            stricter band once total volume crosses some threshold.
+# 1 sec/req gives us enough headroom that Scryfall's sustained-load
+# detection doesn't trip. Total otag-only run: ~5184 tags × 1.5 pages
+# avg × 1 sec = ~2 hours wallclock. Slow but reliable.
 TIMEOUT_S = 30
 USER_AGENT = "card-sorter-enrichment/0.1 (+https://example.invalid)"
 
