@@ -219,8 +219,22 @@ quarterly with the scrape.
 
 ### 1.4 Scrape pipeline (`scrape_tagger_relationships.py`)
 
-Three stages. Note that **stages 1 + 2 leverage the existing
-`TaggerSource` infrastructure**; only stage 3 is genuinely new work.
+**Updated 2026-04-28**: live probe of `tagger.scryfall.com/tags/oracle/<slug>`
+returns 404 for every slug — those URLs don't exist publicly. Only the
+GraphQL endpoint at `tagger.scryfall.com/graphql` serves per-tag detail
+data, and that's CSRF-auth-walled (confirmed by `probes/probe_tagger.py`
+2026-04-20). **Per-tag relationship scrape is not feasible without
+browser-session auth.**
+
+Stage 3 ("scrape per-tag pages for hierarchy") is therefore dropped.
+Hierarchy + the other relationship types must be **derived from local
+data** instead of scraped (see §1.5). This is lossier than Tagger's
+canonical hierarchy but produces useful approximations from the data
+we already have access to.
+
+What's still scrapable:
+
+Two stages now. Both leverage existing `TaggerSource` infrastructure.
 
 **Stage 1: Expand the catalogue.**
 Fetch `https://scryfall.com/docs/tagger-tags` once. The page lists
@@ -237,42 +251,45 @@ catalogue. Already-incremental (skips tags whose
 `card_count_expected` hasn't changed). One run after stage 1 lands.
 ~1500 tags × 100 ms rate limit = ~3 minutes.
 
-**Stage 3: Per-tag relationship scrape (NEW).**
-For each tag in the catalogue, fetch
-`https://tagger.scryfall.com/tags/oracle/<slug>` (or
-`/tags/art/<slug>` for atags). Extract:
-- Parent tag links (hierarchy edges) → write to `tag_catalog.parent`
-  AND to `otag_relations(relation_type='hierarchy')`
-- Aliased / synonym tags (synonym edges, when present)
-- Description text (overrides docs-page description if richer)
+**~~Stage 3: Per-tag relationship scrape~~** — **dropped** per the
+auth-wall finding above. Replaced by derivation in §1.5.
 
-Rate limit: 1 req/sec. ~1500 tags = ~25 minutes. Resumable via the
-`last_scraped` timestamp — partial runs are fine.
-
-`scrape_tagger_relationships.py` lives in `web_enrichment/`.
-Registered as a separate `EnrichmentSource` from `TaggerSource` — they
-have different cadences (TaggerSource runs more often as new cards
-release; relationship scrape can run quarterly). Both write to the
-same enrichment.db.
+Catalogue scraper lives in `web_enrichment/scrape_tagger_catalogue.py`
+and registers as an `EnrichmentSource`. Refresh cadence: monthly is
+plenty; the docs page rarely changes by more than a handful of tags
+between releases.
 
 ### 1.5 Derivation pipeline (`derive_otag_relations.py`)
 
-Reads the local Scryfall bulk data (`default-cards-*.json`) +
-the scraped hierarchy. Produces:
+Reads the populated `tags` and `art_tags` tables (card-tag membership
+from TaggerSource's search-API path). All relationships are derived
+from card co-membership. **This is now also where hierarchy comes
+from, since the Tagger per-tag scrape isn't available.**
 
-- **co_occurs** — every otag pair with ≥ 0.05 Jaccard (≥ 5% of
-  cards with either tag have both). Estimated ~20-30k edges.
 - **implies** — every otag pair where 100% of `src` cards also have
-  `dst`. Estimated ~5k edges.
-- **synonym** — Jaccard ≥ 0.95.
-- **sibling_disjoint** — pairs with shared parent in hierarchy AND
-  Jaccard < 0.01.
+  `dst`. (X subset of Y.) Estimated ~5k edges.
+- **hierarchy** (DERIVED) — for each `implies(X, Y)` edge where Y has
+  meaningfully more cards than X (`|cards(Y)| > 1.5 × |cards(X)|`),
+  classify X as a child of Y. The implication graph minus its trivially
+  redundant edges (transitive closure removed) becomes the hierarchy
+  DAG. Imperfect — Tagger may have hierarchy not reflected in card
+  membership — but covers the common case.
+- **synonym** — Jaccard ≥ 0.95 (X cards ≈ Y cards).
+- **co_occurs** — every otag pair with ≥ 0.05 Jaccard. Estimated
+  ~20-30k edges. Weight = Jaccard.
+- **sibling_disjoint** — pairs that share a parent in the derived
+  hierarchy AND have Jaccard < 0.01.
 - **related** — Jaccard 0.01..0.05 (soft, low weight).
 
 Plus the namespace classification pass.
 
-Run after every scrape pass and after every Scryfall bulk-data
-refresh. Pure SQL, runs in a minute or two.
+Run after every TaggerSource refresh. Pure SQL + Python, runs in a
+few minutes.
+
+**Caveat**: derived hierarchy is approximate. A future browser-session
+authenticated scrape (out of scope for this plan) could replace the
+derived hierarchy edges with Tagger's canonical ones. Schema is the
+same; only the source label changes.
 
 ### 1.6 Manual curation files
 
