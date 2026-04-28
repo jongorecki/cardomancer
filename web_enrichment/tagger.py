@@ -171,12 +171,18 @@ class TaggerSource(EnrichmentSource):
         # Load previous expected counts to detect which tags changed
         prev_expected = _load_prev_expected() if not full else {}
 
+        # Load tag lists from tag_catalog if available (populated by
+        # TaggerCatalogueSource.refresh()); fall back to hardcoded lists
+        # for cold-start / offline usage.
+        function_tags = _load_tags_from_catalog("function") or KNOWN_FUNCTION_TAGS
+        art_tags_list = _load_tags_from_catalog("art") or KNOWN_ART_TAGS
+
         tag_rows: list[dict] = []
         art_tag_rows: list[dict] = []
         catalog_rows: list[dict] = []
         coverage_errors: list[str] = []
 
-        total_tags = len(KNOWN_FUNCTION_TAGS) + len(KNOWN_ART_TAGS)
+        total_tags = len(function_tags) + len(art_tags_list)
         done = 0
         ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -186,7 +192,7 @@ class TaggerSource(EnrichmentSource):
             follow_redirects=True,
         ) as client:
             # Function tags
-            for tag in KNOWN_FUNCTION_TAGS:
+            for tag in function_tags:
                 done += 1
                 if done % 20 == 1:
                     _emit_progress(emit, done, total_tags,
@@ -245,7 +251,7 @@ class TaggerSource(EnrichmentSource):
                 })
 
             # Art tags
-            for tag in KNOWN_ART_TAGS:
+            for tag in art_tags_list:
                 done += 1
                 if done % 10 == 1:
                     _emit_progress(emit, done, total_tags,
@@ -517,6 +523,34 @@ def _load_prev_expected() -> dict[str, int]:
             "WHERE tag_type = 'function'"
         ).fetchall()
         return {r["tag_name"]: r["card_count_expected"] or 0 for r in rows}
+    finally:
+        conn.close()
+
+
+def _load_tags_from_catalog(tag_type: str) -> list[str]:
+    """Return tag names from tag_catalog for a given tag_type.
+
+    Returns an empty list (falsy) if tag_catalog has no rows for that type,
+    which triggers the hardcoded-list fallback in TaggerSource.refresh().
+    Art tags stored in tag_catalog may include an 'atag:' prefix from the
+    old hardcoded list — strip it for consistency.
+    """
+    conn = enrichment_db.get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT tag_name FROM tag_catalog WHERE tag_type = ?",
+            (tag_type,)
+        ).fetchall()
+        names: list[str] = []
+        for r in rows:
+            name = r["tag_name"]
+            # Old hardcoded art tags were stored as 'atag:<slug>'; strip prefix.
+            if name.startswith("atag:"):
+                name = name[5:]
+            names.append(name)
+        return names
+    except Exception:
+        return []
     finally:
         conn.close()
 

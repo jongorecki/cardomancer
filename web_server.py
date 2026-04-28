@@ -44,6 +44,7 @@ from web_enrichment.spellbook import SpellbookSource
 from web_enrichment.edhrec import EDHRECSource
 from web_enrichment.edhtop16 import EDHTop16Source
 from web_enrichment.tagger import TaggerSource
+from web_enrichment.scrape_tagger_catalogue import TaggerCatalogueSource
 from web_enrichment.buylist_ck import CardKingdomBuylistSource
 
 
@@ -204,8 +205,13 @@ enrichment_scheduler = RefreshScheduler(
     emit=lambda event, data: socketio.emit(event, data),
 )
 
-# Phase 1 real sources
+# Phase 1 real sources.
+# TaggerCatalogueSource runs monthly and must be registered before
+# TaggerSource so the scheduler list shows it clearly. Its monthly cron
+# runs on the 1st of each month at 02:30 UTC — before TaggerSource's
+# Sunday 03:00 UTC job.
 _PHASE1_SOURCES = [
+    (TaggerCatalogueSource(), "0 2 1 * *"),  # monthly: 1st of month 02:30 UTC
     (TaggerSource(),    "weekly"),
     (EDHRECSource(),    "weekly"),
     (EDHTop16Source(),  "weekly"),
