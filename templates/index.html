@@ -1019,6 +1019,51 @@
                         </div>
                     </div>
                 </div>
+                <!-- Drop-height tuner — standalone tool for dialing in Z_DROP_OFFSET.
+                     Independent of the ArUco sweep; reuse it any time bin geometry changes. -->
+                <div class="row mt-2">
+                    <div class="col-md-12">
+                        <div class="card" id="drop-tuner-card">
+                            <div class="card-header">Drop height tuning</div>
+                            <div class="card-body">
+                                <p class="small text-muted mb-2">
+                                    Tunes the Z height at which cards are released into destination bins.
+                                    Current setting: <code id="drop-tuner-current-offset">50.0</code> mm above the bin.
+                                </p>
+                                <div id="drop-tuner-idle">
+                                    <button id="btn-drop-tuner-start" class="btn btn-outline-primary btn-sm" onclick="dropTunerStart()">
+                                        Start drop tuning
+                                    </button>
+                                </div>
+                                <div id="drop-tuner-active" style="display:none">
+                                    <p id="drop-tuner-status" class="small mb-2"></p>
+                                    <div id="drop-tuner-awaiting" style="display:none">
+                                        <p class="small mb-2">Place ONE card in the destination bin, then click "Pick up".</p>
+                                        <button id="btn-drop-tuner-pickup" class="btn btn-primary btn-sm" onclick="dropTunerPickup()">Pick up</button>
+                                        <button id="btn-drop-tuner-cancel-1" class="btn btn-outline-secondary btn-sm" onclick="dropTunerCancel()">Cancel</button>
+                                    </div>
+                                    <div id="drop-tuner-tuning" style="display:none">
+                                        <p class="small mb-2">
+                                            Current Z: <code id="drop-tuner-current-z">&mdash;</code> mm
+                                            (= drop offset <code id="drop-tuner-pending-offset">&mdash;</code> mm)
+                                        </p>
+                                        <div class="btn-group btn-group-sm mb-2 drop-tuner-step-group" role="group">
+                                            <button class="btn btn-outline-secondary" data-step="-10" onclick="dropTunerStep(-10)">&minus;10mm (deeper)</button>
+                                            <button class="btn btn-outline-secondary" data-step="-1" onclick="dropTunerStep(-1)">&minus;1mm</button>
+                                            <button class="btn btn-outline-secondary" data-step="1" onclick="dropTunerStep(1)">+1mm</button>
+                                            <button class="btn btn-outline-secondary" data-step="10" onclick="dropTunerStep(10)">+10mm (higher)</button>
+                                        </div>
+                                        <div>
+                                            <button id="btn-drop-tuner-test" class="btn btn-info btn-sm" onclick="dropTunerTestDrop()">Drop test</button>
+                                            <button id="btn-drop-tuner-save" class="btn btn-success btn-sm" onclick="dropTunerSave()">Save</button>
+                                            <button id="btn-drop-tuner-cancel-2" class="btn btn-outline-secondary btn-sm" onclick="dropTunerCancel()">Cancel</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div><!-- /#tab-calibration -->
 
             <!-- ============================================================ -->

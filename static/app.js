@@ -5569,3 +5569,161 @@ function _escapeHtml(s) {
         '"': '&quot;', "'": '&#39;',
     }[c]));
 }
+
+// =========================================================================
+// Drop-height tuner (Calibration tab > Drop height tuning)
+// -------------------------------------------------------------------------
+// Drives the standalone tuner state machine in the worker. The buttons
+// fire and forget — UI state advances when the worker emits
+// drop_tuner_progress / drop_tuner_complete events.
+// =========================================================================
+
+let _dropTunerInFlight = false;
+
+function _dropTunerSetButtonsDisabled(disabled) {
+    // Disable every step / test / save button while a worker command is
+    // in flight so a flurry of clicks doesn't queue a multi-step
+    // ladder of moves. Re-enabled on the next progress event.
+    const ids = [
+        'btn-drop-tuner-pickup',
+        'btn-drop-tuner-test',
+        'btn-drop-tuner-save',
+    ];
+    ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = !!disabled;
+    });
+    document.querySelectorAll('.drop-tuner-step-group button').forEach(btn => {
+        btn.disabled = !!disabled;
+    });
+}
+
+function _dropTunerShowPhase(phase) {
+    // 'idle' | 'awaiting_card' | 'tuning'
+    const idle = document.getElementById('drop-tuner-idle');
+    const active = document.getElementById('drop-tuner-active');
+    const awaiting = document.getElementById('drop-tuner-awaiting');
+    const tuning = document.getElementById('drop-tuner-tuning');
+    if (!idle || !active || !awaiting || !tuning) return;
+    if (phase === 'idle' || !phase) {
+        idle.style.display = '';
+        active.style.display = 'none';
+        awaiting.style.display = 'none';
+        tuning.style.display = 'none';
+    } else {
+        idle.style.display = 'none';
+        active.style.display = '';
+        awaiting.style.display = (phase === 'awaiting_card') ? '' : 'none';
+        tuning.style.display = (phase === 'tuning') ? '' : 'none';
+    }
+}
+
+async function _dropTunerCallApi(url, body) {
+    _dropTunerInFlight = true;
+    _dropTunerSetButtonsDisabled(true);
+    const resp = await apiPost(url, body);
+    if (!resp || !resp.ok) {
+        // apiPost already showed an error toast — re-enable buttons
+        // since we won't get a progress event back.
+        _dropTunerInFlight = false;
+        _dropTunerSetButtonsDisabled(false);
+    }
+    return resp;
+}
+
+async function dropTunerStart() {
+    const resp = await _dropTunerCallApi('/api/calibration/drop-tuner/start');
+    if (resp && resp.ok) {
+        addLog('Drop tuner: starting...');
+        const startBtn = document.getElementById('btn-drop-tuner-start');
+        if (startBtn) startBtn.disabled = true;
+    }
+}
+
+async function dropTunerPickup() {
+    addLog('Drop tuner: picking up card...');
+    await _dropTunerCallApi('/api/calibration/drop-tuner/pickup');
+}
+
+async function dropTunerStep(deltaMm) {
+    await _dropTunerCallApi('/api/calibration/drop-tuner/step-z',
+                            { delta_mm: deltaMm });
+}
+
+async function dropTunerTestDrop() {
+    addLog('Drop tuner: test drop...');
+    await _dropTunerCallApi('/api/calibration/drop-tuner/test-drop');
+}
+
+async function dropTunerSave() {
+    addLog('Drop tuner: saving...');
+    await _dropTunerCallApi('/api/calibration/drop-tuner/save');
+}
+
+async function dropTunerCancel() {
+    addLog('Drop tuner: cancelling...');
+    await _dropTunerCallApi('/api/calibration/drop-tuner/cancel');
+}
+
+socket.on('drop_tuner_progress', (data) => {
+    _dropTunerInFlight = false;
+    _dropTunerSetButtonsDisabled(false);
+    const phase = data.phase || 'idle';
+    _dropTunerShowPhase(phase);
+    const status = document.getElementById('drop-tuner-status');
+    if (status) {
+        let text = data.message || '';
+        if (data.bin_number !== undefined && data.bin_number !== null) {
+            text = `Bin ${data.bin_number} @ X=${(data.target_x || 0).toFixed(1)}mm — ${text}`;
+        }
+        status.textContent = text;
+    }
+    const czEl = document.getElementById('drop-tuner-current-z');
+    if (czEl) {
+        czEl.textContent = (data.current_z !== null && data.current_z !== undefined)
+            ? Number(data.current_z).toFixed(1)
+            : '—';
+    }
+    const offEl = document.getElementById('drop-tuner-pending-offset');
+    if (offEl) {
+        offEl.textContent = (data.pending_offset !== undefined && data.pending_offset !== null)
+            ? Number(data.pending_offset).toFixed(1)
+            : '—';
+    }
+});
+
+socket.on('drop_tuner_complete', (data) => {
+    _dropTunerInFlight = false;
+    _dropTunerSetButtonsDisabled(false);
+    _dropTunerShowPhase('idle');
+    const startBtn = document.getElementById('btn-drop-tuner-start');
+    if (startBtn) startBtn.disabled = false;
+    if (data && data.success) {
+        addLog(`Drop tuner: saved Z_DROP_OFFSET = ${Number(data.new_offset).toFixed(2)}mm`);
+        const offEl = document.getElementById('drop-tuner-current-offset');
+        if (offEl) offEl.textContent = Number(data.new_offset).toFixed(1);
+    } else if (data && data.cancelled) {
+        addLog('Drop tuner: cancelled (offset unchanged)');
+    } else if (data && data.error) {
+        addLog(`Drop tuner: failed (${data.error})`);
+    }
+});
+
+socket.on('drop_tuner_error', (data) => {
+    _dropTunerInFlight = false;
+    _dropTunerSetButtonsDisabled(false);
+    if (data && data.error) {
+        addLog(`Drop tuner error: ${data.error}${data.message ? ' — ' + data.message : ''}`);
+    }
+});
+
+// On page load, fetch current Z_DROP_OFFSET so the displayed value is accurate.
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        const data = await apiGet('/api/calibration/drop-tuner/status');
+        const offEl = document.getElementById('drop-tuner-current-offset');
+        if (offEl && data && typeof data.current_offset === 'number') {
+            offEl.textContent = Number(data.current_offset).toFixed(1);
+        }
+    } catch (_) { /* non-fatal */ }
+});
