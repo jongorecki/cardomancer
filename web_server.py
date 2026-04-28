@@ -3019,6 +3019,81 @@ def api_new_hardware_setup():
     return jsonify({'queued': True})
 
 
+# =========================================================================
+# Drop-height tuner API
+# =========================================================================
+# Standalone interactive workflow for dialing in Z_DROP_OFFSET. Runs as
+# a small state machine in the worker (see _cmd_drop_tuner_* in
+# web_worker.py). The user can step Z up/down and test-drop a card
+# before saving the height to drop_height.json.
+# =========================================================================
+
+
+@app.route('/api/calibration/drop-tuner/start', methods=['POST'])
+def api_drop_tuner_start():
+    guard = _ensure_hardware_ready()
+    if guard is not None:
+        return guard
+    data = request.json or {}
+    bin_number = data.get('bin_number')
+    kwargs = {}
+    if bin_number is not None:
+        try:
+            kwargs['bin_number'] = int(bin_number)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'bad_bin_number'}), 400
+    worker.enqueue('drop_tuner_start', **kwargs)
+    return jsonify({'queued': True})
+
+
+@app.route('/api/calibration/drop-tuner/pickup', methods=['POST'])
+def api_drop_tuner_pickup():
+    worker.enqueue('drop_tuner_pickup')
+    return jsonify({'queued': True})
+
+
+@app.route('/api/calibration/drop-tuner/step-z', methods=['POST'])
+def api_drop_tuner_step_z():
+    data = request.json or {}
+    delta = data.get('delta_mm')
+    try:
+        delta_f = float(delta)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'bad_delta_mm'}), 400
+    worker.enqueue('drop_tuner_step_z', delta_mm=delta_f)
+    return jsonify({'queued': True})
+
+
+@app.route('/api/calibration/drop-tuner/test-drop', methods=['POST'])
+def api_drop_tuner_test_drop():
+    worker.enqueue('drop_tuner_test_drop')
+    return jsonify({'queued': True})
+
+
+@app.route('/api/calibration/drop-tuner/save', methods=['POST'])
+def api_drop_tuner_save():
+    worker.enqueue('drop_tuner_save')
+    return jsonify({'queued': True})
+
+
+@app.route('/api/calibration/drop-tuner/cancel', methods=['POST'])
+def api_drop_tuner_cancel():
+    worker.enqueue('drop_tuner_cancel')
+    return jsonify({'queued': True})
+
+
+@app.route('/api/calibration/drop-tuner/status', methods=['GET'])
+def api_drop_tuner_status():
+    """Return current Z_DROP_OFFSET so the UI can display it on load."""
+    import gcode_control
+    return jsonify({
+        'current_offset': gcode_control.Z_DROP_OFFSET,
+        'z_max': gcode_control.Z_MAX,
+        'active': worker._drop_tuner is not None,
+        'phase': (worker._drop_tuner or {}).get('phase'),
+    })
+
+
 @app.route('/api/calibration/last-setup', methods=['GET'])
 def api_calibration_last_setup_get():
     """Return the auto-saved last hardware setup, if one exists."""

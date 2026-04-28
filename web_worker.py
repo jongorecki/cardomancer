@@ -175,6 +175,15 @@ class SortWorker:
         # the user to confirm the staging platform is clear.
         self._staging_capture_event = threading.Event()
 
+        # Drop-height tuner state. None when inactive.
+        # When active, dict with keys:
+        #   phase:           'awaiting_card' | 'tuning'
+        #   target_x:        X position of the destination bin we're tuning
+        #   bin_number:      bin number we're tuning at
+        #   current_z:       current absolute Z (only set during 'tuning')
+        #   original_offset: Z_DROP_OFFSET captured at start (for cancel)
+        self._drop_tuner = None
+
         # Focus lock confirmation — worker blocks on this while the user
         # checks the live feed is in focus on the first card.
         self._focus_confirm_event = threading.Event()
@@ -663,6 +672,323 @@ class SortWorker:
             z = gcode_control._probe_z_cache.get(bin_locs[bin_num])
             results[bin_num] = z
         self.emit('probe_all_complete', {'results': results})
+
+    # ------------------------------------------------------------------
+    # Drop-height tuner
+    # ------------------------------------------------------------------
+    # Standalone interactive workflow for dialing in Z_DROP_OFFSET so
+    # cards land in destination bins without twisting. Runs as a small
+    # state machine across multiple worker commands so the user can step
+    # the Z height up/down and test-drop the card before saving.
+    #
+    #   start    -> moves X to a destination bin, prompts for a card
+    #   pickup   -> probes down, grabs the card, lifts to ~120mm
+    #   step_z   -> nudges Z by ±1 / ±10mm within safe envelope
+    #   test_drop-> drops the card, waits, picks it back up to same Z
+    #   save     -> persists new Z_DROP_OFFSET, drops the card, lifts
+    #   cancel   -> drops the card if held, lifts; offset NOT changed
+    # ------------------------------------------------------------------
+
+    def _drop_tuner_emit_progress(self, status_msg=None):
+        """Emit a drop_tuner_progress event with the current state."""
+        import gcode_control
+        st = self._drop_tuner
+        if st is None:
+            return
+        payload = {
+            'phase': st.get('phase'),
+            'bin_number': st.get('bin_number'),
+            'target_x': st.get('target_x'),
+            'current_z': st.get('current_z'),
+            'current_offset': gcode_control.Z_DROP_OFFSET,
+        }
+        cz = st.get('current_z')
+        if cz is not None:
+            payload['pending_offset'] = gcode_control.Z_MAX - float(cz)
+        if status_msg:
+            payload['message'] = status_msg
+        self.emit('drop_tuner_progress', payload)
+
+    def _drop_tuner_pick_default_bin(self):
+        """Return the lowest-numbered destination bin (>0) or None."""
+        import gcode_control
+        bin_locs = gcode_control.get_bin_locations()
+        dests = [b for b in bin_locs if b is not None and b > 0]
+        if not dests:
+            return None
+        return min(dests)
+
+    def _cmd_drop_tuner_start(self, bin_number=None, **kwargs):
+        """Start the drop-height tuner: move X to destination bin, await card.
+
+        Idempotent — if a tuner session is already in progress it is
+        cancelled (carriage left wherever it is) and a fresh one starts.
+        """
+        import gcode_control
+        if not gcode_control.is_connected():
+            self.log("Drop tuner: not connected")
+            self.emit('drop_tuner_complete',
+                      {'success': False, 'error': 'not_connected'})
+            return
+        if self.state not in ('idle',):
+            self.log(f"Drop tuner: machine not idle (currently: {self.state})")
+            self.emit('drop_tuner_complete',
+                      {'success': False, 'error': f'busy ({self.state})'})
+            return
+
+        # Resolve target bin.
+        if bin_number is None:
+            bin_number = self._drop_tuner_pick_default_bin()
+        if bin_number is None or bin_number <= 0:
+            self.log("Drop tuner: no destination bin available — calibrate "
+                     "bins first")
+            self.emit('drop_tuner_complete',
+                      {'success': False, 'error': 'no_dest_bin'})
+            return
+        bin_locs = gcode_control.get_bin_locations()
+        if bin_number not in bin_locs:
+            self.log(f"Drop tuner: bin {bin_number} not in calibrated layout")
+            self.emit('drop_tuner_complete',
+                      {'success': False, 'error': 'bin_not_calibrated'})
+            return
+        target_x = float(bin_locs[bin_number])
+
+        self.log(f"=== DROP TUNER START === bin {bin_number} @ X={target_x}")
+        self._drop_tuner = {
+            'phase': 'awaiting_card',
+            'bin_number': bin_number,
+            'target_x': target_x,
+            'current_z': None,
+            'original_offset': gcode_control.Z_DROP_OFFSET,
+        }
+
+        # Move carriage to bin at clear height (no probe yet).
+        try:
+            gcode_control.move_x(target_x)
+            gcode_control.wait_for_completion()
+            motion_tracker.update_position(x=target_x,
+                                           z=gcode_control.Z_CLEAR_HEIGHT)
+            self.emit('motion_update', motion_tracker.get_state())
+        except Exception as e:
+            self.log(f"Drop tuner: move-to-bin failed: {e}")
+            self._drop_tuner = None
+            self.emit('drop_tuner_complete',
+                      {'success': False, 'error': f'move_failed: {e}'})
+            return
+
+        self._drop_tuner_emit_progress(
+            status_msg=f'At bin {bin_number}. Place a single card in the '
+                       f'bin and click "Pick up".')
+
+    def _cmd_drop_tuner_pickup(self, **kwargs):
+        """Probe down, grab the card, lift to ~100mm-from-top (Z=120)."""
+        import gcode_control
+        st = self._drop_tuner
+        if st is None or st.get('phase') != 'awaiting_card':
+            self.log("Drop tuner: pickup ignored (wrong phase)")
+            self.emit('drop_tuner_error',
+                      {'error': 'wrong_phase', 'expected': 'awaiting_card'})
+            return
+        target_x = float(st['target_x'])
+        # Probe down
+        try:
+            gcode_control._probe_with_cache(target_x)
+            # Vacuum on, wait for grip
+            gcode_control._send_and_wait("M106 P0 S255")
+            gcode_control._send_and_wait(
+                f"G4 P{gcode_control.VACUUM_ON_DELAY_MS}")
+            # Lift to "100mm from the top" — Z_MAX (220) minus 100 = 120mm.
+            tuning_start_z = float(gcode_control.Z_MAX - 100.0)
+            tuning_start_z = gcode_control.clamp_z(tuning_start_z)
+            gcode_control._send_and_wait(
+                f"G0 Z{tuning_start_z} F{gcode_control.Z_FEEDRATE}")
+            gcode_control._send_and_wait("M400")
+        except Exception as e:
+            self.log(f"Drop tuner: pickup failed: {e}")
+            self.emit('drop_tuner_complete',
+                      {'success': False, 'error': f'pickup_failed: {e}'})
+            self._drop_tuner = None
+            return
+
+        st['phase'] = 'tuning'
+        st['current_z'] = tuning_start_z
+        motion_tracker.set_carrying('drop_tuner_card')
+        motion_tracker.update_position(x=target_x, z=tuning_start_z)
+        self.emit('motion_update', motion_tracker.get_state())
+        self.log(f"Drop tuner: card picked up; tuning at Z={tuning_start_z}")
+        self._drop_tuner_emit_progress(
+            status_msg='Card grabbed. Use ±1mm / ±10mm buttons to find the '
+                       'right drop height, then click Save.')
+
+    def _cmd_drop_tuner_step_z(self, delta_mm=0.0, **kwargs):
+        """Nudge Z by delta_mm (positive = up/higher, negative = down/deeper)."""
+        import gcode_control
+        st = self._drop_tuner
+        if st is None or st.get('phase') != 'tuning':
+            self.log("Drop tuner: step ignored (wrong phase)")
+            self.emit('drop_tuner_error',
+                      {'error': 'wrong_phase', 'expected': 'tuning'})
+            return
+        try:
+            delta = float(delta_mm)
+        except (TypeError, ValueError):
+            self.emit('drop_tuner_error',
+                      {'error': 'bad_delta', 'value': delta_mm})
+            return
+        # Compute target Z and clamp into a safe sub-envelope.
+        # Lower bound: Z_CLEAR_HEIGHT - 80 lets the user drive ~80mm
+        # below normal travel height without crashing into a bin floor.
+        # Upper bound: Z_MAX - 5 keeps a safety margin from the top
+        # endstop (homing crash).
+        z_low = gcode_control.Z_CLEAR_HEIGHT - 80.0
+        z_high = gcode_control.Z_MAX - 5.0
+        new_z = float(st['current_z']) + delta
+        clamped_z = max(z_low, min(z_high, new_z))
+        if abs(clamped_z - new_z) > 0.001:
+            self.log(f"Drop tuner: clamped Z {new_z:.2f} -> {clamped_z:.2f} "
+                     f"(envelope [{z_low:.1f}, {z_high:.1f}])")
+        try:
+            gcode_control._send_and_wait(
+                f"G0 Z{clamped_z} F{gcode_control.Z_FEEDRATE}")
+            gcode_control._send_and_wait("M400")
+        except Exception as e:
+            self.log(f"Drop tuner: step failed: {e}")
+            self.emit('drop_tuner_error',
+                      {'error': 'step_failed', 'message': str(e)})
+            return
+        st['current_z'] = clamped_z
+        motion_tracker.update_position(z=clamped_z)
+        self.emit('motion_update', motion_tracker.get_state())
+        pending = gcode_control.Z_MAX - clamped_z
+        self._drop_tuner_emit_progress(
+            status_msg=f'Z = {clamped_z:.1f}mm (offset {pending:.1f}mm)')
+
+    def _cmd_drop_tuner_test_drop(self, **kwargs):
+        """Drop the card from current Z, wait, pick it back up to same Z."""
+        import gcode_control
+        st = self._drop_tuner
+        if st is None or st.get('phase') != 'tuning':
+            self.log("Drop tuner: test-drop ignored (wrong phase)")
+            self.emit('drop_tuner_error',
+                      {'error': 'wrong_phase', 'expected': 'tuning'})
+            return
+        original_z = float(st['current_z'])
+        target_x = float(st['target_x'])
+        try:
+            # Release card (vacuum off + pressure burst)
+            gcode_control._send_and_wait("M106 P0 S0")
+            gcode_control._send_and_wait("M106 P1 S255")
+            gcode_control._send_and_wait(
+                f"G4 P{gcode_control.PRESSURE_ON_MS}")
+            gcode_control._send_and_wait("M106 P1 S0")
+            motion_tracker.set_carrying(None)
+            self.emit('motion_update', motion_tracker.get_state())
+
+            # Let the card settle in the bin.
+            time.sleep(1.0)
+
+            # Re-pick: probe down to the card we just dropped, vacuum
+            # on, then lift back to the same Z so the user's stepping
+            # context is preserved.
+            gcode_control._probe_with_cache(target_x)
+            gcode_control._send_and_wait("M106 P0 S255")
+            gcode_control._send_and_wait(
+                f"G4 P{gcode_control.VACUUM_ON_DELAY_MS}")
+            gcode_control._send_and_wait(
+                f"G0 Z{original_z} F{gcode_control.Z_FEEDRATE}")
+            gcode_control._send_and_wait("M400")
+            motion_tracker.set_carrying('drop_tuner_card')
+            motion_tracker.update_position(x=target_x, z=original_z)
+            self.emit('motion_update', motion_tracker.get_state())
+        except Exception as e:
+            self.log(f"Drop tuner: test-drop sequence failed: {e}")
+            self.emit('drop_tuner_error',
+                      {'error': 'test_drop_failed', 'message': str(e)})
+            return
+        st['current_z'] = original_z
+        self._drop_tuner_emit_progress(
+            status_msg=f'Test drop complete. Adjust Z or Save.')
+
+    def _cmd_drop_tuner_save(self, **kwargs):
+        """Save current_z as the new Z_DROP_OFFSET; drop the card; lift."""
+        import gcode_control
+        st = self._drop_tuner
+        if st is None or st.get('phase') != 'tuning':
+            self.log("Drop tuner: save ignored (wrong phase)")
+            self.emit('drop_tuner_error',
+                      {'error': 'wrong_phase', 'expected': 'tuning'})
+            return
+        current_z = float(st['current_z'])
+        new_offset = gcode_control.Z_MAX - current_z
+        ok = gcode_control.set_drop_offset(new_offset)
+        if not ok:
+            self.log(f"Drop tuner: set_drop_offset({new_offset}) rejected")
+            self.emit('drop_tuner_error',
+                      {'error': 'invalid_offset', 'value': new_offset})
+            return
+        # Final drop at the now-saved height.
+        try:
+            gcode_control._send_and_wait("M106 P0 S0")
+            gcode_control._send_and_wait("M106 P1 S255")
+            gcode_control._send_and_wait(
+                f"G4 P{gcode_control.PRESSURE_ON_MS}")
+            gcode_control._send_and_wait("M106 P1 S0")
+            motion_tracker.set_carrying(None)
+            # Lift to clear height for safe future X moves.
+            gcode_control._send_and_wait(
+                f"G0 Z{gcode_control.Z_CLEAR_HEIGHT} "
+                f"F{gcode_control.Z_FEEDRATE}")
+            gcode_control._send_and_wait("M400")
+            motion_tracker.update_position(z=gcode_control.Z_CLEAR_HEIGHT)
+            self.emit('motion_update', motion_tracker.get_state())
+        except Exception as e:
+            # The offset is already saved at this point, so log and
+            # continue rather than reverting — the user can re-tune
+            # later if motion failed mid-finalize.
+            self.log(f"Drop tuner: post-save motion failed: {e}")
+        self.log(f"Drop tuner: saved Z_DROP_OFFSET = {new_offset:.2f}mm "
+                 f"(drop Z = {current_z:.2f}mm)")
+        self._drop_tuner = None
+        self.emit('drop_tuner_complete', {
+            'success': True,
+            'new_offset': new_offset,
+            'drop_z': current_z,
+        })
+
+    def _cmd_drop_tuner_cancel(self, **kwargs):
+        """Abort the tuner; drop the card if held, lift to clear height."""
+        import gcode_control
+        st = self._drop_tuner
+        if st is None:
+            self.log("Drop tuner: cancel ignored (no active session)")
+            self.emit('drop_tuner_complete',
+                      {'success': False, 'cancelled': True,
+                       'message': 'no_active_session'})
+            return
+        phase = st.get('phase')
+        try:
+            if phase == 'tuning':
+                # Drop the held card so we don't lift it back up to
+                # home with vacuum still on.
+                gcode_control._send_and_wait("M106 P0 S0")
+                gcode_control._send_and_wait("M106 P1 S255")
+                gcode_control._send_and_wait(
+                    f"G4 P{gcode_control.PRESSURE_ON_MS}")
+                gcode_control._send_and_wait("M106 P1 S0")
+                motion_tracker.set_carrying(None)
+            # Lift to clear height regardless of phase.
+            gcode_control._send_and_wait(
+                f"G0 Z{gcode_control.Z_CLEAR_HEIGHT} "
+                f"F{gcode_control.Z_FEEDRATE}")
+            gcode_control._send_and_wait("M400")
+            motion_tracker.update_position(z=gcode_control.Z_CLEAR_HEIGHT)
+            self.emit('motion_update', motion_tracker.get_state())
+        except Exception as e:
+            self.log(f"Drop tuner: cancel cleanup motion failed: {e}")
+        self.log("Drop tuner: cancelled — Z_DROP_OFFSET unchanged")
+        self._drop_tuner = None
+        self.emit('drop_tuner_complete',
+                  {'success': False, 'cancelled': True})
 
     def _cmd_configure_bins(self, bin_count=10, start_x=None, spacing=None, **kwargs):
         """Configure bin positions."""
