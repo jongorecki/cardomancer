@@ -36,9 +36,24 @@ SCAN_LOGS_DIR = os.path.join(SCRIPT_DIR, "scan_logs")
 
 # --- Excluded sets (promo/special sets to deprioritize) ---
 EXCLUDED_SETS = {
+    # Collector's / International / Foreign Black Border editions —
+    # gold or non-standard borders, essentially never in bulk sorts.
     "30a", "lea", "leb", "fbb", "ced", "cei", "4bb", "ptc", "sum",
-    "cmb1", "cmb2",  # Mystery Booster playtest cards — too visually similar to each other
-    "unk",           # Unknown Event — dummy placeholders (Common Curve Filler etc.)
+    # World Championship decks (wc97–wc04) — gold-bordered tournament
+    # facsimiles.  Their hashes collide with the regular printings they
+    # copy and will always produce wrong border/set metadata.
+    "wc97", "wc98", "wc99", "wc00", "wc01", "wc02", "wc03", "wc04",
+    # Mystery Booster playtest / The List reprints — cards look
+    # identical to original printings; matching to mb1/mb2 produces a
+    # wrong set code while the oracle text is the same.
+    "cmb1", "cmb2", "mb2",
+    # Un-sets (silver border) — Unglued, Unhinged, Unstable, Unsanctioned.
+    # Topsy Turvy (und/29, unh/47) is a specific false-positive magnet:
+    # its upside-down design hash-collides with any card scanned upside-down.
+    # Unfinity is intentionally NOT excluded — user has Unfinity cards.
+    "ugl", "unh", "ust", "und",
+    # Unknown Event — dummy placeholders (Common Curve Filler etc.)
+    "unk",
 }
 
 # --- Hardware / G-code ---
