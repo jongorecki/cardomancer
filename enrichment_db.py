@@ -62,8 +62,27 @@ def _create_tables(conn: sqlite3.Connection) -> None:
             parent TEXT,
             description TEXT,
             card_count_expected INTEGER,
-            source TEXT NOT NULL
+            source TEXT NOT NULL,
+            last_updated TEXT
         );
+
+        -- Typed relationship graph between otags.  Populated by
+        -- derive_otag_relations.derive_all().  Source 'derived' rows are
+        -- rebuilt atomically on each derivation run; 'manual' rows are
+        -- hand-curated and never overwritten by the derivation.
+        CREATE TABLE IF NOT EXISTS otag_relations (
+            src_otag      TEXT NOT NULL,
+            dst_otag      TEXT NOT NULL,
+            relation_type TEXT NOT NULL,
+            weight        REAL NOT NULL DEFAULT 1.0,
+            source        TEXT NOT NULL,
+            last_updated  TEXT NOT NULL,
+            PRIMARY KEY (src_otag, dst_otag, relation_type)
+        );
+        CREATE INDEX IF NOT EXISTS idx_otag_relations_dst
+            ON otag_relations(dst_otag, relation_type);
+        CREATE INDEX IF NOT EXISTS idx_otag_relations_type
+            ON otag_relations(relation_type, weight DESC);
 
         CREATE TABLE IF NOT EXISTS staples (
             oracle_id TEXT NOT NULL,
@@ -216,6 +235,35 @@ def _create_tables(conn: sqlite3.Connection) -> None:
         );
     """)
     conn.commit()
+    _migrate_existing_schema(conn)
+
+
+def _migrate_existing_schema(conn: sqlite3.Connection) -> None:
+    """Additive column migrations for existing databases.
+
+    Called after the CREATE IF NOT EXISTS block so that databases created
+    before a schema addition get the new columns without losing data.
+    Each ALTER TABLE is wrapped in a try/except — SQLite raises if the
+    column already exists, which is the expected case after the first run.
+    """
+    _add_column_if_missing(
+        conn, "tag_catalog", "last_updated", "TEXT"
+    )
+
+
+def _add_column_if_missing(conn: sqlite3.Connection, table: str,
+                            column: str, col_type: str) -> None:
+    """Add `column` to `table` if it does not already exist. Idempotent."""
+    existing = {
+        row[1]
+        for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+    }
+    if column not in existing:
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+            conn.commit()
+        except Exception:
+            pass  # Race condition on concurrent opens — harmless
 
 
 def backup_db(db_path: Optional[str] = None) -> Optional[str]:
