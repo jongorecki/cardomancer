@@ -44,12 +44,44 @@ STAGING_MARKER_ID = 49                      # ID 49 = staging platform
 DEFAULT_MAX_SWEEP_X = CONFIG_MAX_SWEEP_X   # Maximum X distance to sweep (mm)
 SWEEP_FEEDRATE = 3000           # Sweep speed (mm/min) ~50mm/s
 SWEEP_STEP_SIZE = 10.0          # X increment per detection frame (mm)
-# Tolerance for the refinement pass. 5px is ~0.15-0.25mm depending on
-# camera-to-bin distance, which is well below the mechanical tolerance
-# of the carriage so it's as tight as we can meaningfully aim for.
-FINE_CENTER_TOLERANCE = 5       # Pixels from frame center to accept as centered
-FINE_CENTER_STEP = 0.5          # mm to nudge during fine-centering (was 2.0)
-FINE_CENTER_MAX_ITERATIONS = 40 # Max attempts to center a marker
+# Refinement-pass tolerances — separate values for source vs destination
+# bins because off-center on the source bin propagates to every pickup
+# (and therefore every staging-platform placement and every drop), so
+# extra accuracy there is worth the extra refinement iterations.
+#
+# Pixel-to-mm scale on this rig is ~25-50 px/mm depending on camera focus.
+# 2px ≈ 0.04-0.08mm, 3px ≈ 0.06-0.12mm — both well within mechanical
+# repeatability and a meaningful tightening from the original 5px (~0.15-0.25mm).
+SOURCE_FINE_CENTER_TOLERANCE = 2  # Pixels — strict, since source error compounds
+DEST_FINE_CENTER_TOLERANCE = 3    # Pixels — slightly looser for dest bins
+# Legacy alias kept for back-compat with _fine_center_on_marker which is
+# only used by the in-sweep fallback path (rare).
+FINE_CENTER_TOLERANCE = DEST_FINE_CENTER_TOLERANCE
+FINE_CENTER_STEP = 0.5            # mm nudge during fine-centering (in-sweep)
+FINE_CENTER_MAX_ITERATIONS = 40
+
+# Per-bin-type refinement parameters (used by _refine_bin_positions):
+#   - probe_step_mm: baseline for the slope (px-per-mm) measurement.
+#     Wider baseline -> more pixel separation -> more robust slope.
+#   - samples: median window size for each pixel-offset reading.
+#     More samples -> lower variance from detector / vibration noise.
+#   - max_iterations: corrective moves to attempt before accepting the
+#     residual.  The original code did one correction; iterating until
+#     residual ≤ tolerance lets us get rid of the first-correction
+#     overshoot that was leaving 3-5px residual on source bins.
+SOURCE_REFINE_PARAMS = {
+    'tolerance_px':  SOURCE_FINE_CENTER_TOLERANCE,
+    'probe_step_mm': 6.0,
+    'samples':       9,
+    'max_iterations': 4,
+}
+DEST_REFINE_PARAMS = {
+    'tolerance_px':  DEST_FINE_CENTER_TOLERANCE,
+    'probe_step_mm': 3.0,
+    'samples':       5,
+    'max_iterations': 2,
+}
+STAGING_REFINE_PARAMS = DEST_REFINE_PARAMS  # treat staging like a dest
 
 # --- False-positive suppression ---
 #
@@ -1281,12 +1313,22 @@ class BinCalibrator:
              camera rotation and mounting; we don't assume it.
           6. Solve for zero crossing:
                 target_x = start_x + (-offset_0 / px_per_mm)
-          7. Drive to target_x. Verify with one final read. If residual
-             |offset| > FINE_CENTER_TOLERANCE, do one more correction.
+          7. Drive to target_x. Verify with a final read. If residual
+             |offset| still exceeds tolerance, ITERATE: re-measure offset,
+             solve a new correction off the same slope, drive again.
+             Bail when residual ≤ tolerance OR max_iterations exhausted.
 
-        This converges in 3 moves instead of 40 iterations, is robust
-        to any sign convention (rotated or unrotated camera), and
-        self-calibrates its own px-per-mm for each marker.
+        Per-bin-type tuning (SOURCE_REFINE_PARAMS / DEST_REFINE_PARAMS):
+          Source bins use a tighter pixel tolerance (2 vs 3), a wider
+          slope-probe baseline (6mm vs 3mm), more samples per offset
+          read (9 vs 5), and more refinement iterations (4 vs 2). Source
+          bin centering matters more because every pickup uses that X
+          and any error there compounds into staging placement and
+          downstream drops.
+
+        Self-calibrating + iterative converges in 3-7 moves with
+        robust accuracy at any sign convention (rotated or unrotated
+        camera).
 
         Runs after _filter_false_positives so we only refine markers
         that survived the bit-flip / ghost filter. Failures are
@@ -1297,8 +1339,7 @@ class BinCalibrator:
             return
 
         feedrate = 6000           # moderate — accuracy, not speed
-        PROBE_STEP_MM = 3.0        # baseline offset for slope measurement
-        MAX_CORRECTION_MM = 20.0   # safety cap on computed correction
+        MAX_CORRECTION_MM = 20.0   # safety cap on any computed correction
 
         # Sort by carriage X so we traverse bins in physical order,
         # minimising total travel distance.
@@ -1340,6 +1381,20 @@ class BinCalibrator:
             start_x = float(info.get('carriage_x_centered', 0.0))
             mtype = info.get('type', 'unknown')
 
+            # Pick per-bin-type tuning parameters. Source bins get the
+            # tightest tolerance + most samples + most iterations because
+            # error there propagates to every pickup.
+            if mtype == 'source':
+                params = SOURCE_REFINE_PARAMS
+            elif mtype == 'staging':
+                params = STAGING_REFINE_PARAMS
+            else:
+                params = DEST_REFINE_PARAMS
+            tolerance_px = params['tolerance_px']
+            probe_step_mm = params['probe_step_mm']
+            samples = params['samples']
+            max_iterations = params['max_iterations']
+
             # Step 1: drive to interpolated center
             pos_a = _drive_and_settle(start_x)
             if pos_a is None:
@@ -1347,7 +1402,7 @@ class BinCalibrator:
                 continue
 
             # Step 2: first pixel offset measurement
-            off_a = self._read_marker_offset(camera, mid, samples=5)
+            off_a = self._read_marker_offset(camera, mid, samples=samples)
             if off_a is None:
                 failed_count += 1
                 self.emit('log_message', {
@@ -1357,20 +1412,20 @@ class BinCalibrator:
                 })
                 continue
 
-            # Step 3: drive PROBE_STEP forward (don't go past sweep max)
-            probe_x = start_x + PROBE_STEP_MM
+            # Step 3: drive probe_step_mm forward (don't go past sweep max)
+            probe_x = start_x + probe_step_mm
             if probe_x > float(self.max_sweep_x) - 0.5:
-                probe_x = start_x - PROBE_STEP_MM  # fall back to -direction
-                effective_step = -PROBE_STEP_MM
+                probe_x = start_x - probe_step_mm  # fall back to -direction
+                effective_step = -probe_step_mm
             else:
-                effective_step = PROBE_STEP_MM
+                effective_step = probe_step_mm
             pos_b = _drive_and_settle(probe_x)
             if pos_b is None:
                 failed_count += 1
                 continue
 
             # Step 4: second pixel offset measurement
-            off_b = self._read_marker_offset(camera, mid, samples=5)
+            off_b = self._read_marker_offset(camera, mid, samples=samples)
             if off_b is None:
                 # Marker drifted out of view. Fall back to pos_a as best.
                 info['carriage_x_centered'] = float(pos_a)
@@ -1428,20 +1483,35 @@ class BinCalibrator:
                 failed_count += 1
                 continue
 
-            # Step 7: verification pass. One more offset read; if still
-            # off by more than tolerance, apply a single additional
-            # correction using the same slope.
-            residual = self._read_marker_offset(camera, mid, samples=5)
-            if residual is not None and abs(residual) > FINE_CENTER_TOLERANCE:
+            # Step 7: iterative verification. After each move, re-read
+            # the residual offset and apply another correction off the
+            # same slope until either residual ≤ tolerance OR we've
+            # used max_iterations corrective moves. The original code
+            # did exactly one corrective move regardless of outcome and
+            # accepted whatever residual was left, which is what was
+            # leaving 3-5px residual on tight cases (especially the
+            # source bin where camera-mounting parallax makes the
+            # first slope measurement slightly off).
+            residual = self._read_marker_offset(camera, mid, samples=samples)
+            iters_used = 0
+            while (residual is not None and abs(residual) > tolerance_px
+                   and iters_used < max_iterations):
                 extra_corr = -residual / slope
-                if abs(extra_corr) <= MAX_CORRECTION_MM:
-                    touched = _drive_and_settle(final_x + extra_corr)
-                    if touched is not None:
-                        final_x = touched
-                        residual2 = self._read_marker_offset(
-                            camera, mid, samples=5)
-                        if residual2 is not None:
-                            residual = residual2
+                if abs(extra_corr) > MAX_CORRECTION_MM:
+                    # Sanity bail — slope must be wrong, don't keep
+                    # extrapolating off it.
+                    break
+                touched = _drive_and_settle(final_x + extra_corr)
+                if touched is None:
+                    break
+                final_x = touched
+                next_residual = self._read_marker_offset(
+                    camera, mid, samples=samples)
+                if next_residual is None:
+                    # Lost the marker — keep last good `final_x`.
+                    break
+                residual = next_residual
+                iters_used += 1
 
             delta = final_x - start_x
             info['carriage_x_centered'] = float(final_x)
@@ -1451,20 +1521,23 @@ class BinCalibrator:
             info['refine_slope_px_per_mm'] = round(slope, 3)
             info['refine_residual_px'] = (round(residual, 1)
                                            if residual is not None else None)
+            info['refine_iterations'] = iters_used
+            info['refine_tolerance_px'] = tolerance_px
             refined_count += 1
 
-            self.emit('log_message', {
-                'message': (f'Refined marker {mid} ({mtype}): '
-                            f'X={final_x:.2f}mm '
-                            f'(\u0394{delta:+.2f}mm, '
-                            f'slope={slope:+.2f}px/mm, '
-                            f'resid={residual:+.1f}px'
-                            if residual is not None else
-                            f'Refined marker {mid} ({mtype}): '
-                            f'X={final_x:.2f}mm '
-                            f'(\u0394{delta:+.2f}mm, '
-                            f'slope={slope:+.2f}px/mm)'),
-            })
+            iter_tag = f', {iters_used} iter' if iters_used else ''
+            tol_tag = f', tol={tolerance_px}px'
+            if residual is not None:
+                msg = (f'Refined marker {mid} ({mtype}): '
+                       f'X={final_x:.2f}mm '
+                       f'(\u0394{delta:+.2f}mm, slope={slope:+.2f}px/mm, '
+                       f'resid={residual:+.1f}px{iter_tag}{tol_tag})')
+            else:
+                msg = (f'Refined marker {mid} ({mtype}): '
+                       f'X={final_x:.2f}mm '
+                       f'(\u0394{delta:+.2f}mm, slope={slope:+.2f}px/mm'
+                       f'{iter_tag}{tol_tag})')
+            self.emit('log_message', {'message': msg})
             self.emit('calibration_marker_refined', {
                 'marker_id': int(mid),
                 'bin_x': round(info['bin_x'], 2),
