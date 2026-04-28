@@ -5712,9 +5712,25 @@ socket.on('drop_tuner_complete', (data) => {
 socket.on('drop_tuner_error', (data) => {
     _dropTunerInFlight = false;
     _dropTunerSetButtonsDisabled(false);
-    if (data && data.error) {
-        addLog(`Drop tuner error: ${data.error}${data.message ? ' — ' + data.message : ''}`);
+    if (!data || !data.error) return;
+    if (data.error === 'at_limit') {
+        // Hit a Z bound — flash the status line so the user knows the
+        // step button click was acknowledged but ignored, instead of
+        // wondering why the carriage didn't move.
+        const limit = data.limit === 'lower' ? 'lower (bin floor)' : 'upper';
+        const envelope = (data.envelope_low !== undefined && data.envelope_high !== undefined)
+            ? ` [${Number(data.envelope_low).toFixed(1)}, ${Number(data.envelope_high).toFixed(1)}]`
+            : '';
+        const status = document.getElementById('drop-tuner-status');
+        if (status) {
+            status.textContent = `At ${limit} Z limit${envelope} — try the other direction.`;
+            status.classList.add('text-warning');
+            setTimeout(() => status.classList.remove('text-warning'), 2500);
+        }
+        addLog(`Drop tuner: at ${limit} Z limit (Z=${Number(data.current_z).toFixed(1)})`);
+        return;
     }
+    addLog(`Drop tuner error: ${data.error}${data.message ? ' — ' + data.message : ''}`);
 });
 
 // On page load, fetch current Z_DROP_OFFSET so the displayed value is accurate.

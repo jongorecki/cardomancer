@@ -759,6 +759,7 @@ class SortWorker:
             'bin_number': bin_number,
             'target_x': target_x,
             'current_z': None,
+            'probe_z': None,    # populated by pickup probe; bin-floor reference
             'original_offset': gcode_control.Z_DROP_OFFSET,
         }
 
@@ -790,9 +791,11 @@ class SortWorker:
                       {'error': 'wrong_phase', 'expected': 'awaiting_card'})
             return
         target_x = float(st['target_x'])
-        # Probe down
+        # Probe down — captures the card-top Z so step_z can clamp
+        # against the actual bin floor instead of a hardcoded value.
         try:
             gcode_control._probe_with_cache(target_x)
+            probe_z = gcode_control._get_current_z()
             # Vacuum on, wait for grip
             gcode_control._send_and_wait("M106 P0 S255")
             gcode_control._send_and_wait(
@@ -812,10 +815,13 @@ class SortWorker:
 
         st['phase'] = 'tuning'
         st['current_z'] = tuning_start_z
+        st['probe_z'] = probe_z
         motion_tracker.set_carrying('drop_tuner_card')
         motion_tracker.update_position(x=target_x, z=tuning_start_z)
         self.emit('motion_update', motion_tracker.get_state())
-        self.log(f"Drop tuner: card picked up; tuning at Z={tuning_start_z}")
+        self.log(
+            f"Drop tuner: card picked up at probe Z={probe_z}; "
+            f"tuning at Z={tuning_start_z}")
         self._drop_tuner_emit_progress(
             status_msg='Card grabbed. Use ±1mm / ±10mm buttons to find the '
                        'right drop height, then click Save.')
@@ -836,17 +842,42 @@ class SortWorker:
                       {'error': 'bad_delta', 'value': delta_mm})
             return
         # Compute target Z and clamp into a safe sub-envelope.
-        # Lower bound: Z_CLEAR_HEIGHT - 80 lets the user drive ~80mm
-        # below normal travel height without crashing into a bin floor.
+        # Lower bound: 5mm above the probed bin-floor / card-top so the
+        # carriage can't drive the suction head into the bin material
+        # if the user mashes -10mm. Falls back to Z=20 (well below
+        # any reasonable drop height) when no probe value is stored —
+        # this should never happen under normal flow (pickup runs a
+        # probe and stores it), but the fallback keeps the tool usable
+        # if state ever drifts.
         # Upper bound: Z_MAX - 5 keeps a safety margin from the top
         # endstop (homing crash).
-        z_low = gcode_control.Z_CLEAR_HEIGHT - 80.0
+        probe_z = st.get('probe_z')
+        if probe_z is not None:
+            z_low = float(probe_z) + 5.0
+        else:
+            z_low = 20.0
         z_high = gcode_control.Z_MAX - 5.0
-        new_z = float(st['current_z']) + delta
+        current_z = float(st['current_z'])
+        new_z = current_z + delta
         clamped_z = max(z_low, min(z_high, new_z))
         if abs(clamped_z - new_z) > 0.001:
             self.log(f"Drop tuner: clamped Z {new_z:.2f} -> {clamped_z:.2f} "
                      f"(envelope [{z_low:.1f}, {z_high:.1f}])")
+        # If the clamp fully cancels the step, surface a hint to the UI
+        # so the user gets feedback ("at lower limit") instead of seeing
+        # the carriage do nothing in silence.
+        if abs(clamped_z - current_z) < 0.001:
+            limit_hit = 'lower' if delta < 0 else 'upper'
+            self.log(f"Drop tuner: at {limit_hit} Z limit "
+                     f"({clamped_z:.1f}); step ignored")
+            self.emit('drop_tuner_error', {
+                'error': 'at_limit',
+                'limit': limit_hit,
+                'envelope_low': z_low,
+                'envelope_high': z_high,
+                'current_z': current_z,
+            })
+            return
         try:
             gcode_control._send_and_wait(
                 f"G0 Z{clamped_z} F{gcode_control.Z_FEEDRATE}")
