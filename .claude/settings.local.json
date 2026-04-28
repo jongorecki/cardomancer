@@ -131,7 +131,8 @@
       "Read(//c/Program Files/GitHub CLI/**)",
       "Read(//c/Users/Jon/AppData/Local/GitHubCLI/**)",
       "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" --version)",
-      "Bash(git config *)"
+      "Bash(git config *)",
+      "Bash(python *)"
     ]
   }
 }
