@@ -3046,7 +3046,13 @@ function _showCardPreview(event, imgUrl, side) {
     const y = event.clientY - 100;
     const maxY = window.innerHeight - 370;
     if (side === 'left') {
-        el.style.left = '8px';
+        const anchor = event.target.closest('.bin-section');
+        if (anchor) {
+            const rect = anchor.getBoundingClientRect();
+            el.style.left = Math.max(8, rect.left - 258) + 'px';
+        } else {
+            el.style.left = '8px';
+        }
     } else {
         el.style.left = (window.innerWidth - 270) + 'px';
     }
