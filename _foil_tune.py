@@ -1,4 +1,4 @@
-"""Re-fit foil_detect weights using session 51 foils + session 44 nonfoils.
+"""Re-fit foil_detect weights using session 51 foils + session 44 nonfoils + session 58 mixed verdicts.
 
 Session 51: 58 scans, all confirmed foil under new lighting (user-labeled).
 Session 44: 401 scans under SAME new lighting, user confirmed "same lighting".
@@ -12,6 +12,7 @@ Output:
   - Threshold sweep: precision/recall at several thresholds
   - Recommended (weights, threshold) pair
 """
+import csv
 import os
 import sqlite3
 
@@ -47,12 +48,66 @@ SESSION_44_RELABEL_AS_FOIL = {32, 105, 44, 23, 188, 25, 144, 52, 82, 1,
 # Round 2 verified-nonfoils: 22, 3, 90, 187, 20, 234, 46, 196, 4, 108, 189,
 #   83, 92, 217, 39, 49, 169, 15, 50, 51, 139, 54, 12 (and round 1: 2, 6, 14, 8, 133)
 
+# Session 58 (2026-04-24, 926-card mixed session) — per-scan verdicts from
+# the foil review page. Only the 131 user-reviewed borderline scans are used;
+# all were in the |conf| < 0.5 zone so they add signal exactly where the
+# model is weakest.
+SESSION_MIXED = 58
+SESSION_MIXED_DIR = r"D:\Card_Sorter\Scripts\scan_logs\session_20260424_132954\card_crops"
+SESSION_MIXED_VERDICTS = r"D:\Card_Sorter\Scripts\foil_verdicts.csv"
+
 # ---------------------------------------------------------------------------
 
 idx = {}
 for c_ in CARDS_DATA:
     key = (c_.get("set", "").lower(), c_.get("collector_number", ""))
     idx.setdefault(key, c_.get("id"))
+
+
+def collect_signals_per_scan(session_id: int, crop_dir: str,
+                             verdicts: dict) -> list:
+    """Run detect_foil only on scans listed in verdicts dict {scan_num: 0|1}."""
+    c = sqlite3.connect(r"D:\Card_Sorter\Scripts\collection.db")
+    cur = c.cursor()
+    cur.execute("""
+        SELECT scan_num, name, set_code, collector_number
+        FROM scan_history WHERE session_id = ? ORDER BY scan_num
+    """, (session_id,))
+    db_rows = {row[0]: row for row in cur.fetchall()}
+    c.close()
+
+    out = []
+    for scan_num, label in verdicts.items():
+        row = db_rows.get(scan_num)
+        if row is None:
+            continue
+        _, name, set_code, num = row
+        crop = os.path.join(crop_dir, f"card_{scan_num:04d}.jpg")
+        if not os.path.isfile(crop):
+            continue
+        img = cv2.imread(crop)
+        if img is None:
+            continue
+        card_id = idx.get(((set_code or "").lower(), num or ""))
+        r = detect_foil(img, card_id=card_id)
+        if r["reason"] != "ok":
+            continue
+        sig = r["signals"]
+        out.append({
+            "session": session_id,
+            "scan": scan_num,
+            "name": name,
+            "set_num": f"{set_code} #{num}",
+            "label": label,
+            "dbf": sig["delta_bright_frac"],
+            "dms": sig["delta_mean_s"],
+            "dhr": sig["delta_hue_range"],
+            "dnc": sig.get("delta_n_bright_clusters", 0.0),
+            "dss": sig.get("delta_std_s_bright", 0.0),
+            "dle": sig.get("delta_laplacian_energy", 0.0),
+            "current_conf": r["confidence"],
+        })
+    return out
 
 
 def collect_signals(session_id: int, crop_dir: str, label: int):
@@ -122,6 +177,19 @@ print(f"  {len(foil_s44)} foils + {len(nonfoil)} nonfoils from s44")
 
 # Merge s44 foils into the foil list so the training set reflects the fix
 foil = foil + foil_s44
+
+# Load session 58 per-scan verdicts
+print("Collecting session 58 signals (per-scan verdicts from foil review)...")
+with open(SESSION_MIXED_VERDICTS, newline="", encoding="utf-8") as _f:
+    _verdicts = {int(r["scan_num"]): (1 if r["verdict"] == "foil" else 0)
+                 for r in csv.DictReader(_f) if r["verdict"] != "skip"}
+s58 = collect_signals_per_scan(SESSION_MIXED, SESSION_MIXED_DIR, _verdicts)
+s58_foil    = [r for r in s58 if r["label"] == 1]
+s58_nonfoil = [r for r in s58 if r["label"] == 0]
+print(f"  {len(s58)} scorable samples: {len(s58_foil)} foils + {len(s58_nonfoil)} nonfoils")
+foil    = foil    + s58_foil
+nonfoil = nonfoil + s58_nonfoil
+
 print(f"Total training set: {len(foil)} foils + {len(nonfoil)} nonfoils")
 
 all_samples = foil + nonfoil

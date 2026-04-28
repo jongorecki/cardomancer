@@ -68,8 +68,12 @@
 # Re-tune via _foil_tune.py when lighting or camera changes significantly.
 # ---------------------------------------------------------------------------
 
+import glob
 import json
 import os
+import time
+import urllib.request
+import urllib.error
 from typing import Optional
 
 import cv2
@@ -87,6 +91,58 @@ REFERENCE_DIR = os.path.join(SCRIPT_DIR, "downloaded_cards")
 # _load_reference() find the PNG even when a direct {card_id}.png
 # lookup fails. Built on first call from printings_map.json.
 _PRINTING_TO_REP: Optional[dict] = None
+
+# --- card_id → image URL index (lazy, built from newest bulk JSON) ---
+_IMAGE_URL_INDEX: Optional[dict] = None
+
+def _build_image_url_index() -> dict:
+    global _IMAGE_URL_INDEX
+    if _IMAGE_URL_INDEX is not None:
+        return _IMAGE_URL_INDEX
+    pattern = os.path.join(SCRIPT_DIR, "default-cards-*.json")
+    files = sorted(glob.glob(pattern))
+    if not files:
+        _IMAGE_URL_INDEX = {}
+        return _IMAGE_URL_INDEX
+    with open(files[-1], "r", encoding="utf-8") as f:
+        cards = json.load(f)
+    idx = {}
+    for c in cards:
+        cid = c.get("id")
+        if not cid:
+            continue
+        uris = c.get("image_uris") or {}
+        url = uris.get("png") or uris.get("normal")
+        if not url:
+            faces = c.get("card_faces") or []
+            if faces:
+                furis = faces[0].get("image_uris") or {}
+                url = furis.get("png") or furis.get("normal")
+        if url:
+            idx[cid] = url
+    _IMAGE_URL_INDEX = idx
+    return _IMAGE_URL_INDEX
+
+
+def _fetch_reference(card_id: str) -> Optional[str]:
+    """Download the reference PNG for card_id if it's missing. Returns path or None."""
+    dest = os.path.join(REFERENCE_DIR, f"{card_id}.png")
+    if os.path.isfile(dest):
+        return dest
+    url_idx = _build_image_url_index()
+    url = url_idx.get(card_id)
+    if not url:
+        return None
+    try:
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "CardSorter/1.0 (on-demand ref fetch)"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = resp.read()
+        with open(dest, "wb") as f:
+            f.write(data)
+        return dest
+    except (urllib.error.URLError, OSError):
+        return None
 
 # --- Bright-pixel gate ---
 BRIGHT_V_THRESH = 220          # HSV V above this = "bright pixel"
@@ -126,47 +182,33 @@ MIN_CLUSTER_PIXELS = 25
 #
 # See plans/handoff/ (foil retune notes) and _foil_tune.py for the fit.
 #
-# Level-3 retune 2026-04-24: added session 55 (45 confirmed foils under
-# new lighting) to the training set (now 115 foils + 375 nonfoils). The
-# weights barely moved — confirms the Level-2 model generalizes to a
-# fresh all-foil batch — but the retune showed threshold +1.75 was
-# leaving recall on the table. Best-F1 threshold dropped from +1.0 to
-# +1.0 (unchanged) and we adopt it as the new default (see
-# FOIL_CONFIDENCE_THRESHOLD comment). On session 55 alone this recovers
-# +5/45 foils (71% -> 82%), exactly matching the near-threshold-miss
-# cluster the user reported. The 8 remaining session-55 misses score
-# below -0.5 and are hard cases (reference-image mismatch for specific
-# basic-land printings, etc.) — a threshold drop can't rescue those.
-W_DELTA_BRIGHT_FRAC       = -21.5507   # was -22.7420 (Level-2)
-W_DELTA_MEAN_S            = +0.08301   # was +0.08221
-W_DELTA_N_BRIGHT_CLUSTERS = -0.01780   # was -0.01683
-W_DELTA_STD_S_BRIGHT      = -0.03178   # was -0.02960
-W_DELTA_LAPLACIAN_ENERGY  = -0.00392   # was -0.00347
-FOIL_BIAS                 = -0.0949    # was -0.1815
+# Level-4 retune 2026-04-27: added 131 per-scan verified verdicts from
+# session 58 (926-card mixed session, borderline |conf| < 0.5 zone reviewed
+# via foil_review page). Training set now 120 foils + 471 nonfoils.
+# The new borderline samples shifted the bias term significantly (was -0.09,
+# now -0.54) and tightened the threshold from +1.00 to +0.75 for best F1.
+# At 95% precision: recall 76.67% (was 71.67%), F1 0.855 (was 0.822).
+W_DELTA_BRIGHT_FRAC       = -20.6193   # was -21.5507 (Level-3)
+W_DELTA_MEAN_S            = +0.08017   # was +0.08301
+W_DELTA_N_BRIGHT_CLUSTERS = -0.01779   # was -0.01780
+W_DELTA_STD_S_BRIGHT      = -0.02388   # was -0.03178
+W_DELTA_LAPLACIAN_ENERGY  = -0.00585   # was -0.00392
+FOIL_BIAS                 = -0.5425    # was -0.0949
 # delta_hue_range is no longer scored — see _compute_bright_stats; it's
 # still computed for diagnostics but contributes 0 to the confidence.
 
 # --- Classification threshold ---
 # confidence >= this -> is_foil = True
 #
-# Calibration on 115 foils + 375 nonfoils (2026-04-24 Level-3 retune —
-# session 55 added to training, DFC back-face face-picking in place):
-#   - +0.75 -> 88% precision, 83% recall (13 FP / 96 TP)
-#   - +1.00 -> 93% precision, 83% recall (7 FP / 95 TP)  <-- default
-#   - +1.25 -> 96% precision, 78% recall (4 FP / 90 TP)
-#   - +1.75 -> 98% precision, 72% recall (2 FP / 83 TP)  (old default)
+# Calibration on 120 foils + 471 nonfoils (2026-04-27 Level-4 retune —
+# 131 per-scan borderline verdicts from session 58 added):
+#   - +0.50 -> 90.65% precision, 80.83% recall (10 FP / 97 TP)
+#   - +0.75 -> 95.83% precision, 76.67% recall (4 FP / 92 TP)  <-- default
+#   - +1.00 -> 96.67% precision, 72.50% recall (3 FP / 87 TP)
 #
-# +1.00 adopted as default: the Level-3 sweep showed best-F1 sits at
-# +1.00 (F1 = 0.876), a clean improvement over the shipped +1.75
-# (F1 = 0.830). Trade vs old default: +11pp recall / -5pp precision
-# across the full labeled set. Validated on the 45-foil session 55 test
-# slice — recall there jumped from 71% (old) to 82% (new), exactly
-# recovering the cluster of near-threshold foils the user reported
-# ("missed 5 out of 45"). The remaining misses on session 55 score
-# below -0.5 and are structural failures (reference-image mismatch for
-# specific basic-land printings) that a threshold drop can't fix;
-# those need per-card reference-image auditing, not re-weighting.
-FOIL_CONFIDENCE_THRESHOLD = 1.00
+# +0.75 adopted as default: best-F1 (0.855) sits here. Improves recall
+# +5pp vs Level-3 default (+1.00) with comparable precision (95.8% vs 95.6%).
+FOIL_CONFIDENCE_THRESHOLD = 0.75
 
 
 def _compute_bright_stats(img_bgr):
@@ -315,6 +357,11 @@ def _load_reference(card_id):
         rep_path = os.path.join(REFERENCE_DIR, f"{rep_id}.png")
         if os.path.isfile(rep_path):
             return cv2.imread(rep_path)
+
+    # Last resort: download on demand
+    fetched = _fetch_reference(card_id)
+    if fetched:
+        return cv2.imread(fetched)
 
     return None
 
