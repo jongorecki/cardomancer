@@ -74,7 +74,7 @@ class ScanTracker:
             "scan_num", "timestamp", "name", "set", "all_sets",
             "collector_number", "colors", "cmc", "type_line", "rarity",
             "price_usd", "bin", "method", "hash_distance", "recognized",
-            "is_foil", "foil_confidence"
+            "is_foil", "foil_confidence", "frame", "border_color", "frame_effects"
         ])
 
         # --- SQLite collection database ---
@@ -96,7 +96,8 @@ class ScanTracker:
 
     def record_scan(self, card_info=None, bin_num=None, method=None,
                     hash_distance=None, card_data=None,
-                    is_foil=False, foil_confidence=None):
+                    is_foil=False, foil_confidence=None,
+                    frame='', border_color='', frame_effects=None):
         """
         Record a single card scan to session logs and collection DB.
 
@@ -149,9 +150,13 @@ class ScanTracker:
             "recognized": recognized,
             "is_foil": bool(is_foil),
             "foil_confidence": foil_confidence,
+            "frame": frame or '',
+            "border_color": border_color or '',
+            "frame_effects": frame_effects or [],
         }
         self.scans.append(scan_record)
 
+        fe = frame_effects or []
         # --- Write CSV row ---
         if self._csv_writer:
             self._csv_writer.writerow([
@@ -166,6 +171,9 @@ class ScanTracker:
                 recognized,
                 int(bool(is_foil)),
                 f"{foil_confidence:.3f}" if foil_confidence is not None else '',
+                frame or '',
+                border_color or '',
+                ';'.join(fe) if fe else '',
             ])
             self._csv_file.flush()
 
@@ -202,6 +210,9 @@ class ScanTracker:
                 hash_distance=hash_distance,
                 is_foil=is_foil,
                 foil_confidence=foil_confidence,
+                frame=frame,
+                border_color=border_color,
+                frame_effects=frame_effects,
             )
 
         # Print status

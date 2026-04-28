@@ -69,6 +69,9 @@ def _create_tables(conn):
             recognized INTEGER NOT NULL DEFAULT 0,
             is_foil INTEGER NOT NULL DEFAULT 0,
             foil_confidence REAL,
+            frame TEXT,
+            border_color TEXT,
+            frame_effects TEXT,
             FOREIGN KEY (session_id) REFERENCES sessions(id)
         );
 
@@ -207,6 +210,15 @@ def _create_tables(conn):
         conn.execute("ALTER TABLE inventory ADD COLUMN divider_id INTEGER")
         conn.commit()
 
+    # Migration: add frame/border_color/frame_effects columns if missing
+    try:
+        conn.execute("SELECT frame FROM scan_history LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE scan_history ADD COLUMN frame TEXT")
+        conn.execute("ALTER TABLE scan_history ADD COLUMN border_color TEXT")
+        conn.execute("ALTER TABLE scan_history ADD COLUMN frame_effects TEXT")
+        conn.commit()
+
     conn.commit()
 
 
@@ -249,7 +261,8 @@ def end_session(conn, session_id, total_scans=0, recognized=0, unrecognized=0):
 def record_scan(conn, session_id, scan_num,
                 card_info=None, card_data=None, bin_num=None,
                 method=None, hash_distance=None,
-                is_foil=False, foil_confidence=None):
+                is_foil=False, foil_confidence=None,
+                frame='', border_color='', frame_effects=None):
     """
     Record a scan to both scan_history and inventory.
 
@@ -306,18 +319,20 @@ def record_scan(conn, session_id, scan_num,
 
     is_foil_int = 1 if is_foil else 0
 
+    fe_str = ';'.join(frame_effects) if frame_effects else ''
+
     # --- 1. Always append to scan_history ---
     conn.execute(
         """INSERT INTO scan_history
            (session_id, scan_num, timestamp, name, set_code, collector_number,
             oracle_id, illustration_id, colors, cmc, type_line, rarity,
             price_usd, bin, method, hash_distance, recognized,
-            is_foil, foil_confidence)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            is_foil, foil_confidence, frame, border_color, frame_effects)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (session_id, scan_num, timestamp, name, set_code, collector_number,
          oracle_id, illustration_id, colors, cmc, type_line, rarity,
          price_usd, bin_num, method, hash_distance, int(recognized),
-         is_foil_int, foil_confidence)
+         is_foil_int, foil_confidence, frame or '', border_color or '', fe_str)
     )
 
     # --- 2. Update inventory (only for recognized cards) ---

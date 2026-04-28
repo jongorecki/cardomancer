@@ -1530,6 +1530,9 @@ class SortWorker:
                     card_data=card_data,
                     is_foil=id_result.get('is_foil', False),
                     foil_confidence=id_result.get('foil_confidence'),
+                    frame=card_info.get('Frame', ''),
+                    border_color=card_info.get('Border', ''),
+                    frame_effects=card_info.get('FrameEffects', []),
                 )
 
             self.emit('card_detected', {
