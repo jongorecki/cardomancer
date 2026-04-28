@@ -1234,6 +1234,37 @@ def api_integrations_moxfield_wishlist_paste():
     })
 
 
+@app.route('/api/translate/scryfall')
+def api_translate_scryfall():
+    """Translate our internal sort-config DSL into a Scryfall search query.
+
+    Drives the bin-query "view on Scryfall" link in the sort-config
+    builder and the Query Helper's "view on Scryfall" cross-link.
+
+    Query params:
+        q:  the DSL string (required)
+
+    Returns:
+        {"q":       "<scryfall query string>",
+         "url":     "https://scryfall.com/search?q=...",   // empty if q is empty
+         "dropped": ["<predicate>  — <reason>", ...]      // partial translations
+        }
+    """
+    from web_enrichment.scryfall_query_translator import to_scryfall_url
+    dsl = (request.args.get('q') or '').strip()
+    if not dsl:
+        return jsonify({'q': '', 'url': '', 'dropped': []})
+    url, dropped = to_scryfall_url(dsl)
+    # Reconstruct the bare query from the URL for callers that want it
+    # without the URL wrapping.
+    from urllib.parse import urlparse, parse_qs
+    bare_q = ''
+    if url:
+        parsed = urlparse(url)
+        bare_q = parse_qs(parsed.query).get('q', [''])[0]
+    return jsonify({'q': bare_q, 'url': url, 'dropped': dropped})
+
+
 @app.route('/api/integrations/moxfield/export-text')
 def api_integrations_moxfield_export_text():
     """Render current inventory as Moxfield plain-text for copy/paste into Moxfield.

@@ -1869,11 +1869,20 @@ function _renderSortConfigRow(binNum, query, isOverride, isFallback) {
     tr.innerHTML = `
         <td class="text-center">${binLabel}</td>
         <td>
-            <input type="text" class="form-control form-control-sm sc-query-input"
-                   value="${queryVal}"
-                   placeholder="${queryPlaceholder}"
-                   ${isFallback ? 'disabled' : ''}
-                   oninput="markSortConfigDirty(); _validateSortRow(this)">
+            <div class="input-group input-group-sm">
+                <input type="text" class="form-control form-control-sm sc-query-input"
+                       value="${queryVal}"
+                       placeholder="${queryPlaceholder}"
+                       ${isFallback ? 'disabled' : ''}
+                       oninput="markSortConfigDirty(); _validateSortRow(this)">
+                <button class="btn btn-outline-secondary btn-sm sc-scryfall-btn"
+                        type="button"
+                        ${isFallback ? 'disabled' : ''}
+                        onclick="_openBinQueryOnScryfall(this)"
+                        title="Preview matching cards on Scryfall (enrichment-only predicates dropped)">
+                    🔗
+                </button>
+            </div>
         </td>
         <td class="text-center">
             <input type="checkbox" class="form-check-input sc-override-cb"
@@ -1889,6 +1898,46 @@ function _renderSortConfigRow(binNum, query, isOverride, isFallback) {
         </td>
     `;
     return tr;
+}
+
+// Open this bin's query on Scryfall in a new tab. Translates our DSL ->
+// Scryfall syntax via /api/translate/scryfall; predicates that don't map
+// (staple:, salt:, buylist:, etc.) are dropped silently with a small alert
+// listing what was lost so the user knows the preview is approximate.
+async function _openBinQueryOnScryfall(btn) {
+    const tr = btn.closest('tr');
+    if (!tr) return;
+    const inp = tr.querySelector('.sc-query-input');
+    const dsl = (inp?.value || '').trim();
+    if (!dsl) {
+        alert('No query to preview — enter a bin query first.');
+        return;
+    }
+    try {
+        const resp = await fetch('/api/translate/scryfall?q=' + encodeURIComponent(dsl));
+        const data = await resp.json();
+        if (!data.url) {
+            alert('Nothing in this query translates to Scryfall.\n\n'
+                  + 'All predicates are enrichment-only or scan-time:\n  '
+                  + (data.dropped || []).join('\n  '));
+            return;
+        }
+        if ((data.dropped || []).length > 0) {
+            // Non-blocking heads-up: open the tab AND show what was dropped.
+            console.log('[scryfall] Dropped predicates:', data.dropped);
+            // Briefly flash a tooltip-style note on the button. Bootstrap
+            // tooltips would be nicer but a title-attribute swap is enough
+            // for a one-off feedback.
+            const oldTitle = btn.title;
+            btn.title = 'Approximate — dropped: '
+                + data.dropped.map(d => d.split('  —')[0]).join(', ');
+            setTimeout(() => { btn.title = oldTitle; }, 6000);
+        }
+        window.open(data.url, '_blank', 'noopener');
+    } catch (err) {
+        console.error('[scryfall] translate failed', err);
+        alert('Translation failed: ' + err.message);
+    }
 }
 
 function _rebuildSortConfigTable(parsed) {
