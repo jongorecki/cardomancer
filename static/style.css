@@ -982,3 +982,71 @@ tr.price-mythic { border-left: 3px solid var(--accent-red); }
 #tab-otag-explorer .otag-side-link:hover {
     color: #fbb144;
 }
+
+/* Outline mode — indented hierarchy browser */
+#otag-outline-container .otag-outline-header {
+    border-bottom: 1px solid #2a2d39;
+    padding-bottom: 8px;
+    margin-bottom: 12px;
+}
+#otag-outline-container .otag-outline-header h5 {
+    color: #fbb144;
+    margin-bottom: 2px;
+}
+#otag-outline-container .otag-outline-section {
+    margin-bottom: 16px;
+}
+#otag-outline-container .otag-outline-section h6 {
+    color: #7da9ff;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 6px;
+}
+#otag-outline-container .otag-outline-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 3px 6px;
+    border-radius: 4px;
+    transition: background-color 0.1s;
+}
+#otag-outline-container .otag-outline-row:hover {
+    background-color: rgba(125, 169, 255, 0.08);
+}
+#otag-outline-container .otag-outline-marker {
+    color: #6e7384;
+    font-size: 0.85em;
+    min-width: 16px;
+    flex-shrink: 0;
+}
+#otag-outline-container .otag-outline-name {
+    color: #e8e8ee;
+    cursor: pointer;
+    font-weight: 500;
+    flex-shrink: 0;
+}
+#otag-outline-container .otag-outline-name:hover {
+    color: #fbb144;
+}
+#otag-outline-container .otag-outline-row.otag-outline-focus {
+    background-color: rgba(251, 177, 68, 0.12);
+    border-left: 3px solid #fbb144;
+}
+#otag-outline-container .otag-outline-row.otag-outline-focus
+                       .otag-outline-name {
+    color: #fbb144;
+    font-weight: 600;
+    font-size: 1.05em;
+}
+#otag-outline-container .otag-outline-row.otag-outline-dim
+                       .otag-outline-name {
+    color: #b8bcc7;
+    font-weight: 400;
+}
+#otag-outline-container .otag-outline-count {
+    color: #6e7384;
+    font-size: 0.8em;
+    margin-left: auto;
+    flex-shrink: 0;
+}

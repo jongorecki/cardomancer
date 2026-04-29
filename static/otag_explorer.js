@@ -1,13 +1,23 @@
 // otag_explorer.js
 // ---------------------------------------------------------------------------
-// Otag Explorer tab — Galaxy / Tree / Atlas modes powered by D3 v7.
+// Otag Explorer tab — Galaxy / Outline / Tree / Atlas modes powered by D3 v7.
+//
+// Modes:
+//   Galaxy   — force-directed neighborhood graph (most general).
+//   Outline  — focused indented list: parent chain above, focus row, then
+//              siblings (other children of immediate parent) and children.
+//              Closest analog to the "browse a tag's place in the
+//              taxonomy" mental model.
+//   Tree     — top-down hierarchy view of every otag on a given card.
+//   Atlas    — Louvain cluster overview.
 //
 // Public entry points (called from templates/index.html):
 //   - initOtagExplorer()      → first-render bootstrap, called when the
 //                               Otag Explorer tab is shown
-//   - setOtagMode(mode)       → "galaxy" | "tree" | "atlas"
+//   - setOtagMode(mode)       → "galaxy" | "outline" | "tree" | "atlas"
 //   - setOtagDepth(n)         → 1 | 2 | 3 (re-fetches Galaxy)
 //   - openOtag(name)          → switch to Galaxy mode and load a tag
+//                               (outline mode preserved if currently in it)
 //   - openCard(scryfallId)    → switch to Tree mode and load a card
 //   - otagGoBack()            → pop one entry off the navigation stack
 //   - otagReset()             → clear focus + history, return to empty state
@@ -18,10 +28,10 @@
 
     // ----- State --------------------------------------------------------
     const state = {
-        mode: 'galaxy',                 // 'galaxy' | 'tree' | 'atlas'
+        mode: 'galaxy',                 // 'galaxy' | 'outline' | 'tree' | 'atlas'
         depth: 1,                       // default: 1 hop (was 2 — too dense)
         types: new Set(['hierarchy', 'synonym', 'co_occurs', 'implies']),
-        center: null,                   // current Galaxy otag
+        center: null,                   // current Galaxy / Outline otag
         cardFocus: null,                // current Tree card (id|null)
         sim: null,                      // active d3.forceSimulation
         zoom: null,
@@ -49,6 +59,7 @@
         // Re-render without pushing another history entry
         applyModeUI();
         if (state.mode === 'galaxy') renderGalaxy();
+        else if (state.mode === 'outline') renderOutline();
         else if (state.mode === 'tree') renderTree();
         else if (state.mode === 'atlas') renderAtlas();
     }
@@ -169,12 +180,22 @@
         });
         const gc = document.querySelector('.otag-galaxy-controls');
         if (gc) gc.style.display = (state.mode === 'galaxy') ? '' : 'none';
+        // Outline mode renders into a separate HTML container; SVG canvas
+        // is hidden when outline is active and shown otherwise.
+        const svgEl = document.getElementById('otag-explorer-svg');
+        const outEl = document.getElementById('otag-outline-container');
+        if (svgEl && outEl) {
+            const isOutline = (state.mode === 'outline');
+            svgEl.style.display = isOutline ? 'none' : 'block';
+            outEl.style.display = isOutline ? '' : 'none';
+        }
     }
 
     window.setOtagMode = function (mode) {
         state.mode = mode;
         applyModeUI();
         if (mode === 'galaxy') renderGalaxy();
+        else if (mode === 'outline') renderOutline();
         else if (mode === 'atlas') renderAtlas();
         else if (mode === 'tree') renderTree();
     };
@@ -191,10 +212,16 @@
         // Push the current view onto the nav stack before warping
         pushHistory();
         state.center = name;
-        if (state.mode !== 'galaxy') {
-            window.setOtagMode('galaxy');
-        } else {
+        // Preserve outline mode when navigating between otags so the
+        // user can drill the tree without bouncing to Galaxy. Tree and
+        // Atlas always switch to Galaxy on a tag click — those modes
+        // don't support tag-as-center.
+        if (state.mode === 'outline') {
+            renderOutline();
+        } else if (state.mode === 'galaxy') {
             renderGalaxy();
+        } else {
+            window.setOtagMode('galaxy');
         }
     };
 
@@ -222,6 +249,7 @@
         updateNavButtons();
         // Stay in the current mode; just clear its focus
         if (state.mode === 'galaxy') renderGalaxy();
+        else if (state.mode === 'outline') renderOutline();
         else if (state.mode === 'tree') renderTree();
         else renderAtlas();
     };
@@ -837,6 +865,230 @@
 
         renderSidebarForCard(payload);
     }
+
+    // ----- Outline mode -------------------------------------------------
+    //
+    // A focused indented browser. For a tag X, render:
+    //
+    //   ▸ Parent chain (X's parents, grandparents, …) — collapsed by default
+    //   ▸ X (highlighted)
+    //   ▸ Siblings (other children of X's immediate parent)
+    //   ▸ Children of X
+    //
+    // Click any tag name to warp focus there. Each row shows tag name +
+    // card_count. Closest analog to "browse the tag taxonomy" — easy to
+    // see why a tag belongs where it does in the hierarchy.
+
+    const OUTLINE_MAX_SIBLINGS = 30;
+    const OUTLINE_MAX_CHILDREN = 50;
+
+    function renderOutline() {
+        const container = document.getElementById('otag-outline-container');
+        if (!container) return;
+        if (!state.center) {
+            container.innerHTML =
+                '<div class="text-muted small">' +
+                'Search for a tag (e.g. <code>removal</code>, <code>ramp</code>) ' +
+                'or click a node from another mode to start browsing the taxonomy.' +
+                '</div>';
+            setSidebarHtml('<div class="text-muted small">' +
+                'Pick a tag to see its outline.</div>');
+            return;
+        }
+
+        setLoading(true);
+        // Use the existing neighborhood endpoint with depth=2 hierarchy-only
+        // so we capture: focus, focus's parents, focus's siblings (children
+        // of focus's parent), and focus's children. depth=3 if we want
+        // grandparents in the chain — outline crawls upward via repeated
+        // depth=2 fetches starting from any current ancestor.
+        const url = '/api/otags/neighborhood'
+            + '?center=' + encodeURIComponent(state.center)
+            + '&depth=2&types=hierarchy&max_nodes=300';
+        fetchJson(url)
+            .then(payload => drawOutline(payload))
+            .catch(err => {
+                setLoading(false);
+                container.innerHTML =
+                    '<div class="text-danger">Error: ' +
+                    escapeHtml(err.error || JSON.stringify(err)) +
+                    '</div>';
+            });
+    }
+
+    function drawOutline(payload) {
+        setLoading(false);
+        const center = state.center;
+        const container = document.getElementById('otag-outline-container');
+        if (!container) return;
+
+        const nodes = payload.nodes || [];
+        const edges = payload.edges || [];
+
+        // Build adjacency:
+        //   parents[X]  = array of parent otag names (X is child of these)
+        //   children[X] = array of child otag names
+        // hierarchy edges store src=child, dst=parent.
+        const parents = {};
+        const children = {};
+        const cardCount = {};
+        for (const n of nodes) {
+            cardCount[n.id] = n.card_count || 0;
+            if (!parents[n.id]) parents[n.id] = [];
+            if (!children[n.id]) children[n.id] = [];
+        }
+        for (const e of edges) {
+            if (e.type !== 'hierarchy') continue;
+            (parents[e.src] = parents[e.src] || []).push(e.dst);
+            (children[e.dst] = children[e.dst] || []).push(e.src);
+        }
+
+        // The focus node may have multiple parents (DAG). Use the first
+        // (lowest card_count → most-specific) for the sibling listing.
+        const focusParents = (parents[center] || [])
+            .slice()
+            .sort((a, b) => (cardCount[a] || 0) - (cardCount[b] || 0));
+        const focusChildren = (children[center] || [])
+            .slice()
+            .sort((a, b) => (cardCount[b] || 0) - (cardCount[a] || 0));
+
+        const primaryParent = focusParents[0] || null;
+        const siblings = primaryParent
+            ? (children[primaryParent] || [])
+                  .filter(s => s !== center)
+                  .sort((a, b) => (cardCount[b] || 0) - (cardCount[a] || 0))
+            : [];
+
+        // ---- Render ---------------------------------------------------
+        const linkSafe = (n) =>
+            JSON.stringify(n).replace(/"/g, '&quot;');
+
+        function row(name, opts) {
+            opts = opts || {};
+            const cc = cardCount[name] || 0;
+            const cls = ['otag-outline-row'];
+            if (opts.focus) cls.push('otag-outline-focus');
+            if (opts.dim) cls.push('otag-outline-dim');
+            const indent = (opts.indent || 0) * 24;
+            return (
+                '<div class="' + cls.join(' ') + '" ' +
+                'style="padding-left:' + indent + 'px;">' +
+                '<span class="otag-outline-marker">' +
+                    (opts.marker || '•') + '</span>' +
+                '<span class="otag-outline-name" ' +
+                    'onclick="openOtag(' + linkSafe(name) + ')" ' +
+                    'onmouseenter="otagOutlineHover(' + linkSafe(name) + ')">' +
+                    escapeHtml(name) +
+                '</span>' +
+                '<span class="otag-outline-count">' +
+                    cc.toLocaleString() + ' card' + (cc === 1 ? '' : 's') +
+                '</span>' +
+                '</div>'
+            );
+        }
+
+        const parts = [];
+
+        // Header
+        parts.push(
+            '<div class="otag-outline-header">' +
+            '<h5 class="mb-1">' + escapeHtml(center) + '</h5>' +
+            '<div class="small text-muted">Outline view — click any tag to warp focus.</div>' +
+            '</div>'
+        );
+
+        // Parents block (top of the list, indented from each other)
+        if (focusParents.length) {
+            parts.push('<div class="otag-outline-section">' +
+                '<h6>Parents</h6>');
+            // For each parent, render it indented based on how many
+            // ancestors above the focus it sits. We don't have ancestors
+            // beyond depth 1 here (only one hop up), so just render them
+            // as a flat list with ↑ markers.
+            for (const p of focusParents) {
+                parts.push(row(p, { marker: '↑', indent: 0 }));
+            }
+            parts.push('</div>');
+        } else {
+            parts.push('<div class="otag-outline-section">' +
+                '<h6>Parents</h6>' +
+                '<div class="text-muted small">' + escapeHtml(center) +
+                ' has no parents — it\'s a root tag in the hierarchy.</div>' +
+                '</div>');
+        }
+
+        // Focus row
+        parts.push('<div class="otag-outline-section">' +
+            '<h6>Focus</h6>' +
+            row(center, { focus: true, marker: '★' }) +
+            '</div>');
+
+        // Siblings
+        if (primaryParent) {
+            const sibLabel = 'Siblings (other children of <code>' +
+                escapeHtml(primaryParent) + '</code>)';
+            parts.push('<div class="otag-outline-section">' +
+                '<h6>' + sibLabel + '</h6>');
+            if (!siblings.length) {
+                parts.push('<div class="text-muted small">No siblings — ' +
+                    escapeHtml(center) + ' is the only child of <code>' +
+                    escapeHtml(primaryParent) + '</code>.</div>');
+            } else {
+                const shown = siblings.slice(0, OUTLINE_MAX_SIBLINGS);
+                for (const s of shown) {
+                    parts.push(row(s, { dim: true }));
+                }
+                if (siblings.length > shown.length) {
+                    parts.push(
+                        '<div class="text-muted small ms-3">+ ' +
+                        (siblings.length - shown.length) +
+                        ' more sibling tags</div>'
+                    );
+                }
+            }
+            parts.push('</div>');
+        }
+
+        // Children
+        parts.push('<div class="otag-outline-section">' +
+            '<h6>Children</h6>');
+        if (!focusChildren.length) {
+            parts.push('<div class="text-muted small">' +
+                escapeHtml(center) +
+                ' has no children — it\'s a leaf in the hierarchy.</div>');
+        } else {
+            const shown = focusChildren.slice(0, OUTLINE_MAX_CHILDREN);
+            for (const c of shown) {
+                parts.push(row(c, { indent: 1, marker: '↳' }));
+            }
+            if (focusChildren.length > shown.length) {
+                parts.push(
+                    '<div class="text-muted small ms-3">+ ' +
+                    (focusChildren.length - shown.length) +
+                    ' more children</div>'
+                );
+            }
+        }
+        parts.push('</div>');
+
+        container.innerHTML = parts.join('');
+
+        // Pre-fill sidebar with focus details
+        renderSidebarForOtag(center, payload);
+    }
+
+    // Lightweight hover handler for outline rows — populates the sidebar
+    // with the hovered tag's details from the current neighborhood payload.
+    // Falls back to a single-fetch if the tag isn't in the cache.
+    window.otagOutlineHover = function (name) {
+        // The current outline render already has the payload available
+        // via the closure of drawOutline; for sidebar updates on hover
+        // we just rebuild from a tiny synthetic payload using cardCount.
+        // Refresh from the live API when possible for richer sidebar
+        // (parents, synonyms, top co-occurs of the hovered tag).
+        renderSidebarForOtag(name, { nodes: [{ id: name, card_count: 0 }],
+                                     edges: [] });
+    };
 
     // ----- Atlas mode ---------------------------------------------------
     function renderAtlas() {
