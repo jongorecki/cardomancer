@@ -1,14 +1,16 @@
 // otag_explorer.js
 // ---------------------------------------------------------------------------
-// Otag Explorer tab — Galaxy / Radar / Atlas modes powered by D3 v7.
+// Otag Explorer tab — Galaxy / Tree / Atlas modes powered by D3 v7.
 //
 // Public entry points (called from templates/index.html):
 //   - initOtagExplorer()      → first-render bootstrap, called when the
 //                               Otag Explorer tab is shown
-//   - setOtagMode(mode)       → "galaxy" | "radar" | "atlas"
+//   - setOtagMode(mode)       → "galaxy" | "tree" | "atlas"
 //   - setOtagDepth(n)         → 1 | 2 | 3 (re-fetches Galaxy)
 //   - openOtag(name)          → switch to Galaxy mode and load a tag
-//   - openCard(scryfallId)    → switch to Radar mode and load a card
+//   - openCard(scryfallId)    → switch to Tree mode and load a card
+//   - otagGoBack()            → pop one entry off the navigation stack
+//   - otagReset()             → clear focus + history, return to empty state
 // ---------------------------------------------------------------------------
 
 (function () {
@@ -16,11 +18,11 @@
 
     // ----- State --------------------------------------------------------
     const state = {
-        mode: 'galaxy',                 // 'galaxy' | 'radar' | 'atlas'
-        depth: 2,
+        mode: 'galaxy',                 // 'galaxy' | 'tree' | 'atlas'
+        depth: 1,                       // default: 1 hop (was 2 — too dense)
         types: new Set(['hierarchy', 'synonym', 'co_occurs', 'implies']),
         center: null,                   // current Galaxy otag
-        cardFocus: null,                // current Radar card (id|null)
+        cardFocus: null,                // current Tree card (id|null)
         sim: null,                      // active d3.forceSimulation
         zoom: null,
         initialized: false,
@@ -31,7 +33,42 @@
         labelSel: null,
         // Cluster cache for cross-mode lookups
         clusters: null,
+        // Navigation: each warp pushes a snapshot {mode, center, cardFocus}
+        // onto history; otagGoBack() pops one off and restores it.
+        history: [],
     };
+
+    function snapshotState() {
+        return { mode: state.mode, center: state.center,
+                 cardFocus: state.cardFocus ? Object.assign({}, state.cardFocus) : null };
+    }
+    function restoreSnapshot(s) {
+        state.mode = s.mode;
+        state.center = s.center;
+        state.cardFocus = s.cardFocus;
+        // Re-render without pushing another history entry
+        applyModeUI();
+        if (state.mode === 'galaxy') renderGalaxy();
+        else if (state.mode === 'tree') renderTree();
+        else if (state.mode === 'atlas') renderAtlas();
+    }
+    function pushHistory() {
+        // Don't push duplicates of the same snapshot
+        const cur = snapshotState();
+        const last = state.history[state.history.length - 1];
+        if (last && last.mode === cur.mode && last.center === cur.center
+            && JSON.stringify(last.cardFocus) === JSON.stringify(cur.cardFocus)) {
+            return;
+        }
+        state.history.push(cur);
+        // Cap depth so the stack doesn't grow unbounded over a long session
+        if (state.history.length > 64) state.history.shift();
+        updateNavButtons();
+    }
+    function updateNavButtons() {
+        const back = document.getElementById('btn-otag-back');
+        if (back) back.disabled = state.history.length === 0;
+    }
 
     // ----- Utilities ----------------------------------------------------
     function svg() { return d3.select('#otag-explorer-svg'); }
@@ -118,22 +155,28 @@
             });
         });
 
+        // Initial nav button state (no history yet → Back disabled)
+        updateNavButtons();
+
         // First render
         if (state.mode === 'galaxy') renderGalaxy();
     };
 
     // ----- Mode + Depth controls ----------------------------------------
+    function applyModeUI() {
+        document.querySelectorAll('[data-otag-mode]').forEach(b => {
+            b.classList.toggle('active', b.dataset.otagMode === state.mode);
+        });
+        const gc = document.querySelector('.otag-galaxy-controls');
+        if (gc) gc.style.display = (state.mode === 'galaxy') ? '' : 'none';
+    }
+
     window.setOtagMode = function (mode) {
         state.mode = mode;
-        document.querySelectorAll('[data-otag-mode]').forEach(b => {
-            b.classList.toggle('active', b.dataset.otagMode === mode);
-        });
-        // Show/hide galaxy controls
-        const gc = document.querySelector('.otag-galaxy-controls');
-        if (gc) gc.style.display = (mode === 'galaxy') ? '' : 'none';
+        applyModeUI();
         if (mode === 'galaxy') renderGalaxy();
         else if (mode === 'atlas') renderAtlas();
-        else if (mode === 'radar') renderRadar();
+        else if (mode === 'tree') renderTree();
     };
 
     window.setOtagDepth = function (d) {
@@ -145,6 +188,8 @@
     };
 
     window.openOtag = function (name) {
+        // Push the current view onto the nav stack before warping
+        pushHistory();
         state.center = name;
         if (state.mode !== 'galaxy') {
             window.setOtagMode('galaxy');
@@ -153,13 +198,32 @@
         }
     };
 
-    window.openCard = function (scryfallId) {
-        state.cardFocus = { id: scryfallId };
-        if (state.mode !== 'radar') {
-            window.setOtagMode('radar');
+    window.openCard = function (scryfallId, meta) {
+        pushHistory();
+        state.cardFocus = Object.assign({ id: scryfallId }, meta || {});
+        if (state.mode !== 'tree') {
+            window.setOtagMode('tree');
         } else {
-            renderRadar();
+            renderTree();
         }
+    };
+
+    window.otagGoBack = function () {
+        const prev = state.history.pop();
+        updateNavButtons();
+        if (!prev) return;
+        restoreSnapshot(prev);
+    };
+
+    window.otagReset = function () {
+        state.history = [];
+        state.center = null;
+        state.cardFocus = null;
+        updateNavButtons();
+        // Stay in the current mode; just clear its focus
+        if (state.mode === 'galaxy') renderGalaxy();
+        else if (state.mode === 'tree') renderTree();
+        else renderAtlas();
     };
 
     // ----- Search -------------------------------------------------------
@@ -207,12 +271,11 @@
             row.addEventListener('mousedown', (e) => {
                 e.preventDefault(); // keep input from blurring before click
                 if (it.kind === 'card') {
-                    state.cardFocus = { id: it.scryfall_id, name: it.label,
-                                        set: it.set, cn: it.cn };
-                    window.setOtagMode('radar');
+                    window.openCard(it.scryfall_id, {
+                        name: it.label, set: it.set, cn: it.cn,
+                    });
                 } else {
-                    state.center = it.value;
-                    window.setOtagMode('galaxy');
+                    window.openOtag(it.value);
                 }
                 hideSearchDropdown();
                 const inp = document.getElementById('otag-search-input');
@@ -303,6 +366,17 @@
     }
 
     // ----- Galaxy mode --------------------------------------------------
+    // Default neighborhood density: depth=1, max_nodes=25. The earlier
+    // depth=2 / max_nodes=80 produced unreadable hairballs at this scale
+    // (e.g. depth 2 from `removal` returned 200+ nodes). Users can opt
+    // back into wider views via the depth slider.
+    const GALAXY_MAX_NODES = 25;
+    // Co_occurs edges with weight below this threshold are visually noise
+    // — they connect tags that share <15% of cards. Hidden by default to
+    // keep the layout legible; the relations are still in otag_relations
+    // for queries.
+    const GALAXY_MIN_COOCCURS_WEIGHT = 0.15;
+
     function renderGalaxy() {
         clearGraph();
         if (!state.center) {
@@ -311,7 +385,7 @@
         }
         setLoading(true);
         const types = Array.from(state.types).join(',');
-        const url = `/api/otags/neighborhood?center=${encodeURIComponent(state.center)}&depth=${state.depth}&types=${encodeURIComponent(types)}&max_nodes=80`;
+        const url = `/api/otags/neighborhood?center=${encodeURIComponent(state.center)}&depth=${state.depth}&types=${encodeURIComponent(types)}&max_nodes=${GALAXY_MAX_NODES}`;
         fetchJson(url)
             .then(payload => drawGalaxy(payload))
             .catch(err => {
@@ -378,9 +452,16 @@
 
         // d3 mutates node objects, so make a copy
         const nodes = payload.nodes.map(n => Object.assign({}, n));
-        const links = payload.edges.map(e => ({
-            source: e.src, target: e.dst, type: e.type, weight: e.weight,
-        }));
+        // Filter out weak co_occurs edges and any edges referencing a node
+        // we won't render (max_nodes pruning may have dropped some).
+        const visibleNodeIds = new Set(nodes.map(n => n.id));
+        const links = payload.edges
+            .filter(e => visibleNodeIds.has(e.src) && visibleNodeIds.has(e.dst))
+            .filter(e => e.type !== 'co_occurs'
+                || (e.weight || 0) >= GALAXY_MIN_COOCCURS_WEIGHT)
+            .map(e => ({
+                source: e.src, target: e.dst, type: e.type, weight: e.weight,
+            }));
 
         const g = root();
 
@@ -415,17 +496,27 @@
             .attr('class', 'otag-node')
             .style('cursor', 'pointer');
 
+        // Beefier center node so the focus is visually anchored. The
+        // center radius scales with card_count like neighbors, but with
+        // a generous floor so even small-card-count centers (rare) stand
+        // out from their satellites.
+        function nodeR(d) {
+            const base = nodeRadius(d.card_count);
+            return d.is_center ? Math.max(14, base + 6) : base;
+        }
         nodeSel.append('circle')
-            .attr('r', d => nodeRadius(d.card_count))
+            .attr('r', nodeR)
             .attr('fill', d => d.is_center ? '#fbb144' : '#7da9ff')
             .attr('stroke', d => d.is_center ? '#ffffff' : 'none')
-            .attr('stroke-width', d => d.is_center ? 2 : 0)
-            .attr('opacity', d => d.is_center ? 1 : (d.depth === 1 ? 0.9 : 0.6));
+            .attr('stroke-width', d => d.is_center ? 2.5 : 0)
+            .attr('opacity', d => d.is_center ? 1 : (d.depth === 1 ? 0.85 : 0.55));
 
         nodeSel.append('text')
-            .attr('x', d => nodeRadius(d.card_count) + 4)
+            .attr('x', d => nodeR(d) + 4)
             .attr('dy', 4)
-            .style('font-size', '11px')
+            .style('font-size', d => d.is_center ? '13px' : '11px')
+            .style('font-weight', d => d.is_center ? '600' : '400')
+            .style('fill', d => d.is_center ? '#ffffff' : '#e8e8ee')
             .text(d => d.label);
 
         // Hover: highlight edges, populate sidebar
@@ -444,25 +535,31 @@
         });
         nodeSel.on('click', (ev, d) => {
             if (!d.is_center) {
-                // Fade-out then warp
+                // Fade-out then warp. window.openOtag pushes history so
+                // the Back button can reverse the navigation.
                 g.transition().duration(250).style('opacity', 0).on('end', () => {
                     g.style('opacity', 1);
-                    state.center = d.id;
-                    renderGalaxy();
+                    window.openOtag(d.id);
                 });
             }
         });
 
-        // Forces
+        // Forces — tuned for legibility at depth=1, max_nodes=25.
+        //   - Link distance 110 (was 80) so labels have room.
+        //   - Collide radius wraps the label baseline: nodeR + ~70px for
+        //     the label width, breaking up label overlap without
+        //     d3-labeler.
+        //   - Stronger center node anchor via fx/fy below.
         const center = nodes.find(n => n.is_center);
         if (state.sim) state.sim.stop();
         state.sim = d3.forceSimulation(nodes)
-            .force('link', d3.forceLink(links).id(d => d.id).distance(80))
-            .force('charge', d3.forceManyBody().strength(-180))
-            .force('collide', d3.forceCollide().radius(d => nodeRadius(d.card_count) + 8))
+            .force('link', d3.forceLink(links).id(d => d.id).distance(110).strength(0.6))
+            .force('charge', d3.forceManyBody().strength(-260))
+            .force('collide', d3.forceCollide()
+                .radius(d => nodeR(d) + 28).strength(0.85))
             .force('center', d3.forceCenter(w / 2, h / 2))
-            .force('x', d3.forceX(w / 2).strength(0.05))
-            .force('y', d3.forceY(h / 2).strength(0.05))
+            .force('x', d3.forceX(w / 2).strength(0.04))
+            .force('y', d3.forceY(h / 2).strength(0.04))
             .alphaDecay(0.03)
             .on('tick', () => {
                 edgeSel
@@ -483,11 +580,28 @@
         renderSidebarForOtag(state.center, payload);
     }
 
-    // ----- Radar mode ---------------------------------------------------
-    function renderRadar() {
+    // ----- Tree mode (replaces former concentric Radar) ----------------
+    //
+    // Top-down hierarchy view of every otag applied to a card. For each
+    // root tag the card belongs to, we render a tree subgraph using
+    // d3.tree(), with the card thumbnail in the upper-left.
+    //
+    // Why tree-not-radial: the data is purely hierarchical (each otag has
+    // an ancestor chain), and a top-down tree reads vastly more cleanly
+    // than concentric rings — links are unambiguous, labels don't overlap,
+    // and parent/child relationships are visually obvious.
+
+    function renderTree() {
         clearGraph();
         if (!state.cardFocus) {
             setSidebarHtml('<div class="text-muted small">Search for a card to start.</div>');
+            // Splash text on canvas
+            const { w, h } = dims();
+            const g = root();
+            g.append('text').attr('x', w / 2).attr('y', h / 2)
+                .attr('text-anchor', 'middle')
+                .style('font-size', '14px').style('fill', '#7da9ff')
+                .text('Search for a card to see its otag tree.');
             return;
         }
         setLoading(true);
@@ -500,47 +614,116 @@
             if (cf.cn) url += '&cn=' + encodeURIComponent(cf.cn);
         } else { setLoading(false); return; }
         fetchJson(url)
-            .then(payload => drawRadar(payload))
+            .then(payload => drawTree(payload))
             .catch(err => {
                 setLoading(false);
                 setSidebarHtml(`<div class="text-danger">${escapeHtml(err.error || 'Error')}</div>`);
             });
     }
 
-    function drawRadar(payload) {
-        setLoading(false);
-        const { w, h } = dims();
-        const cx = w / 2, cy = h / 2;
-        const g = root();
+    // Build d3.hierarchy roots from the by-card payload.
+    //
+    // Each otag has an `ancestors` chain (closest parent first, root last).
+    // We invert each chain and assemble into a forest of trees keyed by
+    // the deepest ancestor (root). Otags with empty ancestors are roots
+    // themselves; a card may have multiple roots.
+    function buildTreeRoots(otags) {
+        // Map each otag to a node object
+        const nodeByName = new Map();
+        for (const o of otags) {
+            nodeByName.set(o.otag, {
+                name: o.otag,
+                card_count: o.card_count || 0,
+                children: [],
+                applied: true,    // is this otag actually on the card?
+            });
+        }
+        // Build chain from root → leaf for each otag and stitch into nodes
+        const allRoots = new Set();
+        for (const o of otags) {
+            const chain = [...(o.ancestors || [])].reverse();
+            chain.push(o.otag);
+            // Ensure intermediate ancestors have nodes too — they may not
+            // be on the card directly, but they're in the lineage.
+            for (let i = 0; i < chain.length; i++) {
+                if (!nodeByName.has(chain[i])) {
+                    nodeByName.set(chain[i], {
+                        name: chain[i], card_count: 0,
+                        children: [], applied: false,
+                    });
+                }
+            }
+            // Stitch parent → child
+            for (let i = 0; i < chain.length - 1; i++) {
+                const parent = nodeByName.get(chain[i]);
+                const child = nodeByName.get(chain[i + 1]);
+                if (!parent.children.includes(child)) parent.children.push(child);
+            }
+            allRoots.add(chain[0]);
+        }
+        // Roots = nodes that nothing else has as a child
+        const childSet = new Set();
+        for (const node of nodeByName.values()) {
+            for (const c of node.children) childSet.add(c.name);
+        }
+        const roots = [];
+        for (const name of allRoots) {
+            if (!childSet.has(name)) roots.push(nodeByName.get(name));
+        }
+        // If a tag had no ancestors AND nothing else points at it, also a root
+        for (const o of otags) {
+            if (!(o.ancestors && o.ancestors.length) && !childSet.has(o.otag)) {
+                const n = nodeByName.get(o.otag);
+                if (!roots.includes(n)) roots.push(n);
+            }
+        }
+        return roots;
+    }
 
-        // Card image clip + circle
+    function drawTree(payload) {
+        setLoading(false);
         const card = payload.card || {};
         const otags = payload.otags || [];
+        const { w, h } = dims();
+        const g = root();
 
-        const defs = svg().select('defs');
-        defs.selectAll('#radar-clip').remove();
-        defs.append('clipPath').attr('id', 'radar-clip')
-            .append('circle').attr('cx', cx).attr('cy', cy).attr('r', 70);
-
+        // Card thumbnail block in the upper-left
+        const THUMB_W = 100, THUMB_H = 140;
+        const cardBlock = g.append('g').attr('class', 'tree-card-block')
+            .attr('transform', `translate(20, 20)`);
         if (card.image_url) {
-            g.append('image')
+            cardBlock.append('image')
                 .attr('href', card.image_url)
-                .attr('x', cx - 70).attr('y', cy - 95)
-                .attr('width', 140).attr('height', 190)
-                .attr('clip-path', 'url(#radar-clip)');
+                .attr('x', 0).attr('y', 0)
+                .attr('width', THUMB_W).attr('height', THUMB_H)
+                .attr('rx', 6);
+        } else {
+            cardBlock.append('rect')
+                .attr('width', THUMB_W).attr('height', THUMB_H)
+                .attr('fill', '#1e2330').attr('rx', 6);
         }
-        g.append('circle').attr('cx', cx).attr('cy', cy).attr('r', 70)
-            .attr('fill', 'none').attr('stroke', '#fbb144').attr('stroke-width', 2);
+        cardBlock.append('text')
+            .attr('x', THUMB_W + 12).attr('y', 18)
+            .style('font-size', '14px').style('fill', '#ffffff').style('font-weight', 600)
+            .text(card.name || '');
+        cardBlock.append('text')
+            .attr('x', THUMB_W + 12).attr('y', 36)
+            .style('font-size', '11px').style('fill', '#7da9ff')
+            .text(`${(card.set || '').toUpperCase()} #${card.cn || ''}`);
+        cardBlock.append('text')
+            .attr('x', THUMB_W + 12).attr('y', 54)
+            .style('font-size', '11px').style('fill', '#9aa0ad')
+            .text(`${otags.length} otag${otags.length === 1 ? '' : 's'} applied`);
 
         if (!otags.length) {
-            g.append('text').attr('x', cx).attr('y', cy + 130)
+            g.append('text').attr('x', w / 2).attr('y', h / 2)
                 .attr('text-anchor', 'middle')
-                .style('font-size', '14px')
-                .text('No Tagger data for this printing');
+                .style('font-size', '14px').style('fill', '#e8e8ee')
+                .text('No Tagger data for this printing.');
             const slug = (card.set || '') + '/' + (card.cn || '');
             g.append('a').attr('href', `https://tagger.scryfall.com/card/${slug}`)
                 .attr('target', '_blank')
-              .append('text').attr('x', cx).attr('y', cy + 152)
+              .append('text').attr('x', w / 2).attr('y', h / 2 + 24)
                 .attr('text-anchor', 'middle')
                 .style('font-size', '12px').style('fill', '#7da9ff')
                 .text('Open in Scryfall Tagger →');
@@ -548,60 +731,109 @@
             return;
         }
 
-        // Layout: angularly distribute by stable hash, radius by depth
-        const positions = otags.map(o => {
-            const depth = (o.ancestors || []).length;
-            const r = 90 + depth * 60;
-            const angle = (hashStr(o.otag) % 360) * Math.PI / 180;
-            return Object.assign({}, o, {
-                x: cx + Math.cos(angle) * r,
-                y: cy + Math.sin(angle) * r,
-                r,
+        // Build forest from ancestor chains
+        const rootsData = buildTreeRoots(otags);
+
+        // Top of the tree starts below the card block
+        const TREE_TOP_Y = THUMB_H + 60;
+        const TREE_LEFT = 20;
+        const TREE_RIGHT_PAD = 40;
+        const NODE_DY = 28;       // vertical separation between tree levels
+        const NODE_DX_MIN = 110;  // horizontal separation between siblings
+        const treeWidth = Math.max(300, w - TREE_LEFT - TREE_RIGHT_PAD);
+
+        // Lay out each root tree side-by-side
+        let xCursor = TREE_LEFT;
+        const allRendered = [];
+        for (const rd of rootsData) {
+            const root = d3.hierarchy(rd);
+            const depth = (function maxDepth(n) {
+                if (!n.children || !n.children.length) return 0;
+                return 1 + Math.max(...n.children.map(maxDepth));
+            })(root);
+
+            // Width for this subtree: enough room for its leaves
+            const leafCount = root.leaves().length;
+            const subWidth = Math.max(NODE_DX_MIN, leafCount * NODE_DX_MIN);
+            const subHeight = (depth + 1) * (NODE_DY + 18);
+
+            const layout = d3.tree().size([subWidth, subHeight]);
+            layout(root);
+
+            const subG = g.append('g').attr('class', 'tree-subgraph')
+                .attr('transform', `translate(${xCursor}, ${TREE_TOP_Y})`);
+
+            // Links
+            subG.append('g').attr('class', 'tree-links').selectAll('path')
+                .data(root.links()).join('path')
+                .attr('d', d3.linkVertical()
+                    .x(d => d.x)
+                    .y(d => d.y))
+                .attr('fill', 'none')
+                .attr('stroke', '#7da9ff').attr('stroke-opacity', 0.5)
+                .attr('stroke-width', 1.5);
+
+            // Nodes
+            const nodeSel = subG.append('g').attr('class', 'tree-nodes')
+                .selectAll('g.tree-node').data(root.descendants()).join('g')
+                .attr('class', 'tree-node')
+                .attr('transform', d => `translate(${d.x},${d.y})`)
+                .style('cursor', 'pointer');
+
+            nodeSel.append('circle')
+                .attr('r', d => d.data.applied ? 6 : 4)
+                .attr('fill', d => d.data.applied ? '#fbb144' : '#7da9ff')
+                .attr('stroke', '#0c0d10').attr('stroke-width', 1.5)
+                .attr('opacity', d => d.data.applied ? 1.0 : 0.7);
+
+            nodeSel.append('text')
+                .attr('x', 0).attr('y', -10)
+                .attr('text-anchor', 'middle')
+                .style('font-size', '11px')
+                .style('fill', d => d.data.applied ? '#ffffff' : '#9aa0ad')
+                .text(d => d.data.name);
+
+            // Card-count subtitle
+            nodeSel.append('text')
+                .attr('x', 0).attr('y', 18)
+                .attr('text-anchor', 'middle')
+                .style('font-size', '9px').style('fill', '#6e7384')
+                .text(d => d.data.card_count
+                    ? d.data.card_count.toLocaleString() : '');
+
+            nodeSel.on('mouseenter', function (ev, d) {
+                d3.select(this).select('circle')
+                    .attr('stroke', '#fbb144').attr('stroke-width', 2);
+                renderSidebarForOtag(d.data.name, {
+                    nodes: [{ id: d.data.name, card_count: d.data.card_count }],
+                    edges: [],
+                });
             });
-        });
+            nodeSel.on('mouseleave', function () {
+                d3.select(this).select('circle')
+                    .attr('stroke', '#0c0d10').attr('stroke-width', 1.5);
+            });
+            nodeSel.on('click', (ev, d) => window.openOtag(d.data.name));
 
-        // Background concentric rings
-        const rings = Array.from(new Set(positions.map(p => p.r))).sort((a, b) => a - b);
-        g.insert('g', ':first-child').attr('class', 'rings').selectAll('circle')
-            .data(rings).join('circle')
-            .attr('cx', cx).attr('cy', cy).attr('r', d => d)
-            .attr('fill', 'none').attr('stroke', '#2a2d39')
-            .attr('stroke-dasharray', '2,3');
-
-        // Edges: connect tags whose ancestor list contains another tag in the set.
-        const idx = new Map(positions.map(p => [p.otag, p]));
-        const links = [];
-        for (const p of positions) {
-            for (const a of (p.ancestors || [])) {
-                const target = idx.get(a);
-                if (target) links.push({ source: p, target });
-            }
+            allRendered.push({ subG, subWidth });
+            xCursor += subWidth + 40;
         }
-        g.append('g').selectAll('line').data(links).join('line')
-            .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
-            .attr('x2', d => d.target.x).attr('y2', d => d.target.y)
-            .attr('stroke', '#ffffff').attr('stroke-opacity', 0.4);
 
-        const nodeSel = g.append('g').selectAll('g.radar-node').data(positions)
-            .join('g').attr('class', 'radar-node')
-            .attr('transform', d => `translate(${d.x},${d.y})`)
-            .style('cursor', 'pointer');
-
-        nodeSel.append('circle')
-            .attr('r', d => Math.max(6, Math.min(10, nodeRadius(d.card_count))))
-            .attr('fill', '#7da9ff').attr('opacity', 0.8);
-        nodeSel.append('text')
-            .attr('x', 10).attr('dy', 4)
-            .style('font-size', '11px').text(d => d.otag);
-
-        nodeSel.on('click', (ev, d) => window.openOtag(d.otag));
-        nodeSel.on('mouseenter', (ev, d) => {
-            // Build a lightweight payload so the sidebar render works
-            renderSidebarForOtag(d.otag, {
-                nodes: [{ id: d.otag, card_count: d.card_count }],
-                edges: [],
+        // If forest is wider than the canvas, rely on d3.zoom (already wired)
+        // for panning; otherwise center it horizontally.
+        const totalWidth = xCursor - TREE_LEFT;
+        if (totalWidth < w - TREE_LEFT - TREE_RIGHT_PAD) {
+            const offset = (w - TREE_LEFT - TREE_RIGHT_PAD - totalWidth) / 2;
+            allRendered.forEach((r, i) => {
+                const cur = r.subG.attr('transform');
+                // re-apply translate with offset
+                const m = /translate\(([^,]+),\s*([^)]+)\)/.exec(cur);
+                if (m) {
+                    r.subG.attr('transform',
+                        `translate(${parseFloat(m[1]) + offset}, ${m[2]})`);
+                }
             });
-        });
+        }
 
         renderSidebarForCard(payload);
     }
