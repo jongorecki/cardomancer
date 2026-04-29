@@ -51,6 +51,7 @@ _foil_signal_audit.py
 _noref_check.py
 _foil_candidates_review.py
 _foil_candidates_review_r2.py
+_otag_smoke.py
 
 # Large data files (user regenerates locally)
 downloaded_cards/
