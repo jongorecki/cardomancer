@@ -249,6 +249,12 @@ def _migrate_existing_schema(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(
         conn, "tag_catalog", "last_updated", "TEXT"
     )
+    # cluster_id: integer Louvain community assigned over the co_occurs
+    # graph by web_enrichment.compute_otag_clusters. Populated lazily via
+    # the CLI / Atlas-mode endpoint; NULL until first computation.
+    _add_column_if_missing(
+        conn, "tag_catalog", "cluster_id", "INTEGER"
+    )
 
 
 def _add_column_if_missing(conn: sqlite3.Connection, table: str,
