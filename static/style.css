@@ -926,3 +926,59 @@ tr.price-mythic { border-left: 3px solid var(--accent-red); }
     color: var(--accent-green);
     border-color: var(--accent-green);
 }
+
+/* ----------------------------------------------------------------------
+ * Otag Explorer
+ * ---------------------------------------------------------------------- */
+#tab-otag-explorer .otag-search-dropdown {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    right: 0;
+    z-index: 1050;
+    max-height: 320px;
+    overflow-y: auto;
+    background: #1c1f29;
+    border: 1px solid #333;
+    border-radius: 4px;
+    color: #e8e8ee;
+    font-size: 0.85rem;
+}
+#tab-otag-explorer .otag-search-dropdown .otag-search-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    cursor: pointer;
+    border-bottom: 1px solid #2a2d39;
+}
+#tab-otag-explorer .otag-search-dropdown .otag-search-row:hover,
+#tab-otag-explorer .otag-search-dropdown .otag-search-row.active {
+    background: #2c3142;
+}
+#tab-otag-explorer .otag-search-dropdown .badge-card  { background:#7da9ff; color:#000; }
+#tab-otag-explorer .otag-search-dropdown .badge-otag  { background:#fbb144; color:#000; }
+#tab-otag-explorer #otag-explorer-svg text {
+    fill: #e8e8ee;
+    font-family: system-ui, sans-serif;
+    pointer-events: none;
+    user-select: none;
+}
+#tab-otag-explorer .otag-side-section {
+    margin-bottom: 8px;
+    border-bottom: 1px solid #2a2d39;
+    padding-bottom: 8px;
+}
+#tab-otag-explorer .otag-side-section h6 {
+    color: #fbb144;
+    margin-bottom: 4px;
+    font-size: 0.85rem;
+}
+#tab-otag-explorer .otag-side-link {
+    color: #7da9ff;
+    cursor: pointer;
+    text-decoration: underline dotted;
+}
+#tab-otag-explorer .otag-side-link:hover {
+    color: #fbb144;
+}

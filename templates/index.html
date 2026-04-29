@@ -37,6 +37,7 @@
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-calibration">Calibration</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-collection">Collection</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-session-review" onclick="loadDetectionReviewCounts()">Session Review <span class="badge bg-warning ms-1" id="detection-review-total-badge" style="display:none">0</span></a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-otag-explorer" onclick="initOtagExplorer()">&#9783; Otag Explorer</a></li>
             <!-- Motion Preview and Database are not top-level tabs. To
                  re-enable Motion Preview, restore this line:
                  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-motion">Motion Preview</a></li>
@@ -1584,6 +1585,116 @@
             </div><!-- /#tab-session-review -->
 
             <!-- ============================================================ -->
+            <!-- OTAG EXPLORER TAB (Galaxy / Radar / Atlas)                   -->
+            <!-- ============================================================ -->
+            <div class="tab-pane fade" id="tab-otag-explorer">
+                <div class="otag-explorer-topbar d-flex flex-wrap align-items-center gap-2 mb-2">
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Mode">
+                        <button type="button" class="btn btn-outline-primary active"
+                                data-otag-mode="galaxy"
+                                onclick="setOtagMode('galaxy')">Galaxy</button>
+                        <button type="button" class="btn btn-outline-primary"
+                                data-otag-mode="radar"
+                                onclick="setOtagMode('radar')">Radar</button>
+                        <button type="button" class="btn btn-outline-primary"
+                                data-otag-mode="atlas"
+                                onclick="setOtagMode('atlas')">Atlas</button>
+                    </div>
+
+                    <div class="otag-galaxy-controls d-flex align-items-center gap-2">
+                        <span class="small text-muted">Depth:</span>
+                        <div class="btn-group btn-group-sm">
+                            <button type="button" class="btn btn-outline-secondary"
+                                    data-otag-depth="1"
+                                    onclick="setOtagDepth(1)">1</button>
+                            <button type="button" class="btn btn-outline-secondary active"
+                                    data-otag-depth="2"
+                                    onclick="setOtagDepth(2)">2</button>
+                            <button type="button" class="btn btn-outline-secondary"
+                                    data-otag-depth="3"
+                                    onclick="setOtagDepth(3)">3</button>
+                        </div>
+                        <span class="small text-muted ms-2">Edges:</span>
+                        <label class="form-check form-check-inline mb-0 small">
+                            <input type="checkbox" class="form-check-input otag-type-toggle"
+                                   data-otag-type="hierarchy" checked> hierarchy
+                        </label>
+                        <label class="form-check form-check-inline mb-0 small">
+                            <input type="checkbox" class="form-check-input otag-type-toggle"
+                                   data-otag-type="synonym" checked> synonym
+                        </label>
+                        <label class="form-check form-check-inline mb-0 small">
+                            <input type="checkbox" class="form-check-input otag-type-toggle"
+                                   data-otag-type="co_occurs" checked> co_occurs
+                        </label>
+                        <label class="form-check form-check-inline mb-0 small">
+                            <input type="checkbox" class="form-check-input otag-type-toggle"
+                                   data-otag-type="implies" checked> implies
+                        </label>
+                        <label class="form-check form-check-inline mb-0 small text-warning"
+                               title="Warning: very dense graph">
+                            <input type="checkbox" class="form-check-input otag-type-toggle"
+                                   data-otag-type="related"> related
+                        </label>
+                        <label class="form-check form-check-inline mb-0 small text-warning"
+                               title="Warning: ~2.9M edges, will be slow">
+                            <input type="checkbox" class="form-check-input otag-type-toggle"
+                                   data-otag-type="sibling_disjoint"> sibling_disjoint
+                        </label>
+                    </div>
+
+                    <div class="ms-auto position-relative" style="min-width:280px">
+                        <input type="text" class="form-control form-control-sm"
+                               id="otag-search-input"
+                               placeholder="Search cards or otags..."
+                               autocomplete="off">
+                        <div id="otag-search-dropdown" class="otag-search-dropdown"
+                             style="display:none"></div>
+                    </div>
+                </div>
+
+                <div class="row g-2">
+                    <div class="col-9">
+                        <div id="otag-explorer-canvas"
+                             style="background:#0c0d10; border-radius:6px;
+                                    height:75vh; position:relative;
+                                    overflow:hidden;">
+                            <svg id="otag-explorer-svg"
+                                 style="width:100%; height:100%; display:block;">
+                                <defs>
+                                    <radialGradient id="otag-bg-grad" cx="50%" cy="50%" r="60%">
+                                        <stop offset="0%" stop-color="#1a1d28" stop-opacity="1"/>
+                                        <stop offset="100%" stop-color="#0c0d10" stop-opacity="1"/>
+                                    </radialGradient>
+                                </defs>
+                                <rect x="0" y="0" width="100%" height="100%"
+                                      fill="url(#otag-bg-grad)"/>
+                                <g id="otag-zoom-root"></g>
+                            </svg>
+                            <div id="otag-explorer-loading"
+                                 style="position:absolute; top:50%; left:50%;
+                                        transform:translate(-50%,-50%);
+                                        color:#7da9ff; display:none;">
+                                Loading…
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-3">
+                        <div id="otag-explorer-side"
+                             style="background:#15171f; color:#e8e8ee;
+                                    border-radius:6px; padding:12px;
+                                    height:75vh; overflow-y:auto;
+                                    font-size:0.875rem;">
+                            <div class="text-muted small" id="otag-side-empty">
+                                Hover or click a node for details.
+                            </div>
+                            <div id="otag-side-content"></div>
+                        </div>
+                    </div>
+                </div>
+            </div><!-- /#tab-otag-explorer -->
+
+            <!-- ============================================================ -->
             <!-- CALIBRATION WIZARD MODAL (Phase 4 item 4.22)                 -->
             <!-- Orchestrates existing calibration endpoints in a 7-step flow -->
             <!-- so a single "Start" click on a new session does a card pick  -->
@@ -1712,7 +1823,9 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
     <script src="/static/app.js"></script>
     <script src="/static/calibration_wizard.js"></script>
+    <script src="/static/otag_explorer.js"></script>
 </body>
 </html>
