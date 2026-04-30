@@ -1062,3 +1062,9 @@ tr.price-mythic { border-left: 3px solid var(--accent-red); }
     font-style: normal;
     font-weight: 500;
 }
+#otag-outline-container .otag-outline-description {
+    color: #c4c8d3;
+    font-size: 0.82em;
+    line-height: 1.45;
+    margin: -1px 0 6px 0;
+}

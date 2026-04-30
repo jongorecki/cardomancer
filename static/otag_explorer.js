@@ -974,6 +974,15 @@
         const linkSafe = (n) =>
             JSON.stringify(n).replace(/"/g, '&quot;');
 
+        // Build a quick lookup of descriptions from the neighborhood
+        // payload — populated by the Tagger description scrape; NULL for
+        // tags that haven't been scraped yet, in which case the row falls
+        // back to its "e.g. CardA, CardB" example line.
+        const descByTag = {};
+        for (const n of nodes) {
+            descByTag[n.id] = n.description || null;
+        }
+
         function row(name, opts) {
             opts = opts || {};
             const cc = cardCount[name] || 0;
@@ -981,13 +990,23 @@
             if (opts.focus) cls.push('otag-outline-focus');
             if (opts.dim) cls.push('otag-outline-dim');
             const indent = (opts.indent || 0) * 24;
-            // Example cards line — "e.g. CardA, CardB, CardC". Skipped
-            // when examples aren't available (rare; covers ~200 catalogue
-            // tags with no card matches).
+            // Description (preferred) or example-cards fallback. The
+            // description comes from tag_catalog.description, populated
+            // by web_enrichment.scrape_tagger_descriptions. Until a scrape
+            // has been run for that tag we show example cards instead so
+            // the row is always informative.
+            const desc = descByTag[name];
             const exs = (exMap[name] || []);
-            let exHtml = '';
-            if (exs.length) {
-                exHtml = (
+            let detailHtml = '';
+            if (desc) {
+                detailHtml = (
+                    '<div class="otag-outline-description" ' +
+                    'style="padding-left:' + (indent + 22) + 'px;">' +
+                    escapeHtml(desc) +
+                    '</div>'
+                );
+            } else if (exs.length) {
+                detailHtml = (
                     '<div class="otag-outline-examples" ' +
                     'style="padding-left:' + (indent + 22) + 'px;">' +
                     '<span class="otag-outline-eg-label">e.g.</span> ' +
@@ -1008,7 +1027,7 @@
                 '<span class="otag-outline-count">' +
                     cc.toLocaleString() + ' card' + (cc === 1 ? '' : 's') +
                 '</span>' +
-                '</div>' + exHtml
+                '</div>' + detailHtml
             );
         }
 

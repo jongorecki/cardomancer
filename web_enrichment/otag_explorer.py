@@ -293,12 +293,27 @@ def build_neighborhood(
             "weight": float(r["weight"]) if r["weight"] is not None else 1.0,
         })
 
+    # Batch-fetch descriptions for every visited node in one query.
+    # Most descriptions will be NULL until the Tagger description scrape
+    # has run; that's fine — clients fall back to example cards.
+    descriptions: dict[str, Optional[str]] = {}
+    if visited:
+        marks = ",".join("?" * len(visited))
+        d_cur = conn.execute(
+            f"SELECT tag_name, description FROM tag_catalog "
+            f"WHERE tag_name IN ({marks})",
+            visited,
+        )
+        for r in d_cur.fetchall():
+            descriptions[r["tag_name"]] = r["description"] or None
+
     nodes = []
     for n in visited:
         nodes.append({
             "id": n,
             "label": n,
             "card_count": _otag_card_count(conn, n),
+            "description": descriptions.get(n),
             "depth": depths[n],
             "is_center": n == center,
         })
