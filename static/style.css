@@ -1050,3 +1050,15 @@ tr.price-mythic { border-left: 3px solid var(--accent-red); }
     margin-left: auto;
     flex-shrink: 0;
 }
+#otag-outline-container .otag-outline-examples {
+    color: #9aa0ad;
+    font-size: 0.78em;
+    font-style: italic;
+    margin: -1px 0 6px 0;
+    line-height: 1.4;
+}
+#otag-outline-container .otag-outline-eg-label {
+    color: #6e7384;
+    font-style: normal;
+    font-weight: 500;
+}

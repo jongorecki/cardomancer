@@ -897,16 +897,26 @@
         }
 
         setLoading(true);
-        // Use the existing neighborhood endpoint with depth=2 hierarchy-only
-        // so we capture: focus, focus's parents, focus's siblings (children
-        // of focus's parent), and focus's children. depth=3 if we want
-        // grandparents in the chain — outline crawls upward via repeated
-        // depth=2 fetches starting from any current ancestor.
         const url = '/api/otags/neighborhood'
             + '?center=' + encodeURIComponent(state.center)
             + '&depth=2&types=hierarchy&max_nodes=300';
+        // Fetch the neighborhood first so we know which tags are visible,
+        // THEN fetch examples for just those tags. Two round-trips but
+        // each one is fast and the second only fires when the first
+        // succeeds.
         fetchJson(url)
-            .then(payload => drawOutline(payload))
+            .then(payload => {
+                const visibleTags = (payload.nodes || []).map(n => n.id);
+                if (!visibleTags.length) {
+                    drawOutline(payload, {});
+                    return;
+                }
+                const exUrl = '/api/otags/examples?n=3&otags=' +
+                    encodeURIComponent(visibleTags.join(','));
+                fetchJson(exUrl)
+                    .then(examples => drawOutline(payload, examples))
+                    .catch(() => drawOutline(payload, {}));
+            })
             .catch(err => {
                 setLoading(false);
                 container.innerHTML =
@@ -916,11 +926,12 @@
             });
     }
 
-    function drawOutline(payload) {
+    function drawOutline(payload, examplesByTag) {
         setLoading(false);
         const center = state.center;
         const container = document.getElementById('otag-outline-container');
         if (!container) return;
+        const exMap = examplesByTag || {};
 
         const nodes = payload.nodes || [];
         const edges = payload.edges || [];
@@ -970,6 +981,20 @@
             if (opts.focus) cls.push('otag-outline-focus');
             if (opts.dim) cls.push('otag-outline-dim');
             const indent = (opts.indent || 0) * 24;
+            // Example cards line — "e.g. CardA, CardB, CardC". Skipped
+            // when examples aren't available (rare; covers ~200 catalogue
+            // tags with no card matches).
+            const exs = (exMap[name] || []);
+            let exHtml = '';
+            if (exs.length) {
+                exHtml = (
+                    '<div class="otag-outline-examples" ' +
+                    'style="padding-left:' + (indent + 22) + 'px;">' +
+                    '<span class="otag-outline-eg-label">e.g.</span> ' +
+                    exs.map(e => escapeHtml(e.name)).join(', ') +
+                    '</div>'
+                );
+            }
             return (
                 '<div class="' + cls.join(' ') + '" ' +
                 'style="padding-left:' + indent + 'px;">' +
@@ -983,7 +1008,7 @@
                 '<span class="otag-outline-count">' +
                     cc.toLocaleString() + ' card' + (cc === 1 ? '' : 's') +
                 '</span>' +
-                '</div>'
+                '</div>' + exHtml
             );
         }
 

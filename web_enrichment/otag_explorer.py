@@ -2,11 +2,12 @@
 # ---------------------------------------------------------------------------
 # Pure helpers powering the Otag Explorer tab (templates/index.html).
 #
-# Three modes — Galaxy, Radar, Atlas — share four backend endpoints:
+# Modes — Galaxy, Outline, Tree, Atlas — share five backend endpoints:
 #   /api/otags/search          → autocomplete for cards or otags
-#   /api/otags/neighborhood    → BFS subgraph around an otag (Galaxy)
-#   /api/otags/by-card         → otags + hierarchy ancestors for a card (Radar)
+#   /api/otags/neighborhood    → BFS subgraph around an otag (Galaxy / Outline)
+#   /api/otags/by-card         → otags + hierarchy ancestors for a card (Tree)
 #   /api/otags/clusters        → precomputed Louvain clusters (Atlas)
+#   /api/otags/examples        → example cards for one or more otags (Outline)
 #
 # The web_server.py routes are thin wrappers around the helpers below so we
 # can unit-test the logic without spinning up Flask. Each helper accepts an
@@ -511,3 +512,129 @@ def get_clusters(conn: sqlite3.Connection, max_clusters: int = 20) -> dict:
             tag_to_cluster[r["tag_name"]] = cid
 
     return {"clusters": clusters_out, "tag_to_cluster": tag_to_cluster}
+
+
+# ---------------------------------------------------------------------------
+# /api/otags/examples
+# ---------------------------------------------------------------------------
+#
+# Why we need this:
+#   The Scryfall Tagger docs page lists tag names with no inline
+#   descriptions. Per-tag pages on tagger.scryfall.com are auth-walled
+#   (CSRF token required). The most useful "what does this otag mean"
+#   signal we CAN expose without scraping is a few popular cards that
+#   carry the tag — operators can read those names and instantly see
+#   the meaning ("oh, wrath-of-god is the wrath family — Wrath of God,
+#   Damnation, Toxic Deluge").
+#
+# Selection: cards joined from the local Scryfall data (cards.CARDS_DATA)
+# by oracle_id, filtered to English paper printings, sorted by
+# edhrec_rank ascending so the most-recognisable cards come first.
+
+# Lazy module-level oracle_id index. Built on first call so we don't
+# pay the construction cost at import time. Rebuilt if cards.reload_card_data
+# bumps the underlying CARDS_DATA reference.
+_oracle_to_cards_index: Optional[dict] = None
+_oracle_index_built_for: Optional[int] = None  # id() of the cards_data list
+
+
+def _build_oracle_to_cards_index(cards_data: list) -> dict:
+    """oracle_id -> [card_dict, ...] sorted by edhrec_rank asc.
+
+    Filters to English paper printings — non-paper / non-English entries
+    are unhelpful as examples.
+    """
+    idx: dict[str, list] = {}
+    for c in cards_data:
+        oid = c.get("oracle_id")
+        if not oid:
+            continue
+        if c.get("lang") != "en":
+            continue
+        if "paper" not in (c.get("games") or []):
+            continue
+        idx.setdefault(oid, []).append(c)
+    for oid, lst in idx.items():
+        lst.sort(key=lambda c: (c.get("edhrec_rank") or 9_999_999,
+                                 c.get("released_at") or ""))
+    return idx
+
+
+def _oracle_index(cards_data: list) -> dict:
+    global _oracle_to_cards_index, _oracle_index_built_for
+    cur_id = id(cards_data)
+    if (_oracle_to_cards_index is None
+            or _oracle_index_built_for != cur_id):
+        _oracle_to_cards_index = _build_oracle_to_cards_index(cards_data)
+        _oracle_index_built_for = cur_id
+    return _oracle_to_cards_index
+
+
+def get_examples_for_otags(
+    enrichment_conn: sqlite3.Connection,
+    cards_data: list,
+    otags: Iterable[str],
+    n: int = 3,
+) -> dict[str, list[dict]]:
+    """For each otag, return the top-N most-popular example cards.
+
+    Output:
+        {otag: [{"name": str, "set": str, "cn": str,
+                 "scryfall_id": str, "oracle_id": str}, ...], ...}
+
+    Empty list when no English paper printing exists for any oracle_id
+    in that otag (rare; happens for a handful of catalogue entries that
+    didn't return cards from the search API).
+
+    Performance: per-otag cost is O(distinct_oracle_ids_for_that_otag);
+    the global oracle_id -> cards index is built once and cached.
+    """
+    if n <= 0 or not otags:
+        return {}
+
+    otag_list = list(dict.fromkeys(otags))  # dedupe, preserve order
+    if not otag_list:
+        return {}
+
+    placeholders = ",".join("?" for _ in otag_list)
+    rows = enrichment_conn.execute(
+        f"""SELECT tag_name, oracle_id FROM tags
+             WHERE tag_name IN ({placeholders})""",
+        otag_list,
+    ).fetchall()
+
+    by_tag: dict[str, list[str]] = {t: [] for t in otag_list}
+    for r in rows:
+        tag = r[0] if isinstance(r, tuple) else r["tag_name"]
+        oid = r[1] if isinstance(r, tuple) else r["oracle_id"]
+        by_tag.setdefault(tag, []).append(oid)
+
+    idx = _oracle_index(cards_data)
+    out: dict[str, list[dict]] = {}
+    for tag, oids in by_tag.items():
+        seen_names: set[str] = set()
+        candidates: list[dict] = []
+        for oid in oids:
+            cards_for_oid = idx.get(oid)
+            if not cards_for_oid:
+                continue
+            best = cards_for_oid[0]  # best by edhrec_rank
+            nm = best.get("name") or ""
+            if nm in seen_names:
+                continue
+            seen_names.add(nm)
+            candidates.append(best)
+        # Sort across-tag: lowest edhrec_rank first (most popular)
+        candidates.sort(key=lambda c: (c.get("edhrec_rank") or 9_999_999))
+        out[tag] = [
+            {
+                "name": c.get("name"),
+                "set": c.get("set"),
+                "cn": c.get("collector_number"),
+                "scryfall_id": c.get("id"),
+                "oracle_id": c.get("oracle_id"),
+                "edhrec_rank": c.get("edhrec_rank"),
+            }
+            for c in candidates[:n]
+        ]
+    return out

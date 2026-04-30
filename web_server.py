@@ -4500,6 +4500,44 @@ def api_otags_clusters():
     return jsonify(result)
 
 
+@app.route('/api/otags/examples')
+def api_otags_examples():
+    """Return top-N example cards per otag for the Outline view.
+
+    Query params:
+        otags  (required, comma-separated list of otag slugs)
+        n      (optional, default 3, max 10)
+
+    Response:
+        {"<otag>": [{"name", "set", "cn", "scryfall_id", "oracle_id",
+                     "edhrec_rank"}, ...], ...}
+    """
+    raw = (request.args.get('otags') or '').strip()
+    if not raw:
+        return jsonify({})
+    otags = [s.strip() for s in raw.split(',') if s.strip()]
+    if not otags:
+        return jsonify({})
+    # Cap input list — outline view shouldn't be asking for more than ~80
+    # at once and a runaway request shouldn't take the server down.
+    if len(otags) > 200:
+        otags = otags[:200]
+    try:
+        n = int(request.args.get('n', 3))
+    except (TypeError, ValueError):
+        n = 3
+    n = max(1, min(10, n))
+    import cards as _cards
+    conn = _otag_conn()
+    try:
+        out = _otag_explorer.get_examples_for_otags(
+            conn, _cards.CARDS_DATA, otags, n=n
+        )
+    finally:
+        conn.close()
+    return jsonify(out)
+
+
 # =========================================================================
 # Moxfield integrations (Phase 3 item 3.15)
 # =========================================================================
