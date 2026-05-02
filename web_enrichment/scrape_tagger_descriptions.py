@@ -18,38 +18,54 @@ real browser via Playwright to:
 
 ## One-time install on the host machine
 
-    pip install playwright python-dotenv
+    pip install playwright
     playwright install chromium
 
 (Playwright pulls a ~150MB Chromium binary the first time it runs.)
 
-## Credentials
+## Authentication (Scryfall is passwordless — magic-link only)
 
-Set in a .env file at the project root (already gitignored):
+Scryfall's sign-in flow emails a one-time link rather than accepting a
+password, which we can't automate end-to-end. Instead we do a
+one-shot interactive login that PERSISTS the session, then reuse it
+for all subsequent headless runs.
 
-    SCRYFALL_EMAIL=your-scryfall-email@example.com
-    SCRYFALL_PASSWORD=your-scryfall-password
+    python -m web_enrichment.scrape_tagger_descriptions --auth
 
-The script never logs the password and never persists it to disk
-beyond what python-dotenv normally reads.
+This pops a visible Chromium window. Type your email on the Scryfall
+login page, then check your inbox, click the magic link, get redirected
+back to a logged-in page in the SAME browser window. Then come back to
+the terminal and press Enter. The script writes
+tmp/scryfall_storage_state.json containing the cookies + local storage
+that mark you as signed in. Future --inspect / --probe-graphql / --run
+calls load that state and run headless.
+
+Sessions last weeks-to-months on Scryfall. When yours expires the
+scraper will fail to find logged-in markers; just re-run --auth.
+
+The storage-state file contains your session cookie. Treat it like a
+password — it lives in tmp/ which is gitignored, but don't share it.
 
 ## Usage
 
-Three modes:
+Four modes:
+
+  python -m web_enrichment.scrape_tagger_descriptions --auth
+        One-time interactive sign-in. See "Authentication" above.
 
   python -m web_enrichment.scrape_tagger_descriptions --inspect <slug>
-        Logs in, navigates to a single tag, and dumps both a rendered
-        screenshot (tmp/tagger_inspect_<slug>.png) and the post-render
-        HTML (tmp/tagger_inspect_<slug>.html). Use this once on a known
-        tag (e.g. `removal`) to figure out the right CSS selector for
-        the description. Edit DESCRIPTION_SELECTORS at the top of this
-        file with what you find.
+        Loads the saved session, navigates to a single tag, and dumps
+        both a rendered screenshot (tmp/tagger_inspect_<slug>.png) and
+        the post-render HTML (tmp/tagger_inspect_<slug>.html). Use this
+        once on a known tag (e.g. `removal`) to figure out the right
+        CSS selector for the description. Edit DESCRIPTION_SELECTORS at
+        the top of this file with what you find.
 
   python -m web_enrichment.scrape_tagger_descriptions --probe-graphql <slug>
-        Logs in, opens the tag page, and snoops on the network requests
-        the SPA fires. Prints the GraphQL operation name, query, and
-        variables so you can decide whether to use direct GraphQL replay
-        (fastest) instead of DOM scraping.
+        Loads the saved session, opens the tag page, and snoops on the
+        network requests the SPA fires. Prints the GraphQL operation
+        name, query, and variables so you can decide whether to use
+        direct GraphQL replay (fastest) instead of DOM scraping.
 
   python -m web_enrichment.scrape_tagger_descriptions --run [--limit N] [--rate 1.5]
         Iterates tag_catalog rows where description IS NULL or empty
@@ -104,6 +120,11 @@ LOGIN_URL = "https://scryfall.com/users/sign_in"
 TAGGER_BASE = "https://tagger.scryfall.com"
 TAG_URL_FMT = TAGGER_BASE + "/?tag={slug}"
 
+# Persisted login state lives here. Created by --auth, consumed by
+# every other mode. Treat as sensitive (contains your session cookie);
+# tmp/ is already gitignored.
+STORAGE_STATE_PATH = TMP_DIR / "scryfall_storage_state.json"
+
 # Selectors used by --inspect / --run. Update via --inspect if Tagger
 # changes their markup. Tried in order; the first one that returns
 # non-empty text wins.
@@ -120,12 +141,11 @@ DESCRIPTION_SELECTORS = [
     'article > header p',
 ]
 
-# Login form selectors on scryfall.com/users/sign_in. The form is plain
-# server-rendered HTML with Rails/Devise field names. If Scryfall ever
-# moves to a JS-rendered login, update these.
-LOGIN_EMAIL_SELECTOR = 'input#user_email'
-LOGIN_PASSWORD_SELECTOR = 'input#user_password'
-LOGIN_SUBMIT_SELECTOR = 'button[type="submit"], input[type="submit"]'
+# Selector that should be visible after the user has completed the
+# magic-link sign-in flow. We use this to confirm the auth round trip
+# succeeded before saving storage state. The "Sign Out" link in the
+# page header is the most reliable marker on Scryfall.
+SIGNED_IN_MARKER = 'a[href*="sign_out"]'
 
 
 # --- Playwright import + helpful error --------------------------------------
@@ -137,22 +157,23 @@ def _require_playwright():
     except ImportError:
         sys.stderr.write(
             "\nplaywright is not installed. Install with:\n"
-            "    pip install playwright python-dotenv\n"
+            "    pip install playwright\n"
             "    playwright install chromium\n\n"
         )
         return False
 
 
-def _load_credentials() -> tuple[Optional[str], Optional[str]]:
-    """Load Scryfall credentials from .env or the environment."""
-    try:
-        from dotenv import load_dotenv
-        load_dotenv(SCRIPT_DIR / ".env")
-    except ImportError:
-        pass  # plain env vars still work
-    email = os.getenv("SCRYFALL_EMAIL")
-    password = os.getenv("SCRYFALL_PASSWORD")
-    return email, password
+def _have_storage_state() -> bool:
+    """True if --auth has been run and produced a usable storage state."""
+    return STORAGE_STATE_PATH.is_file() and STORAGE_STATE_PATH.stat().st_size > 0
+
+
+def _no_storage_state_msg() -> str:
+    return (
+        "No saved sign-in session at " + str(STORAGE_STATE_PATH) + ".\n"
+        "Run this first to sign in once:\n"
+        "    python -m web_enrichment.scrape_tagger_descriptions --auth\n"
+    )
 
 
 # --- DB layer ---------------------------------------------------------------
@@ -202,35 +223,22 @@ def _now_iso() -> str:
 
 # --- Browser session helpers ------------------------------------------------
 
-def _login(page, email: str, password: str) -> bool:
-    """Log into Scryfall in the given page. Returns True on success."""
-    logger.info("Logging into Scryfall as %s …", email)
-    page.goto(LOGIN_URL, wait_until="domcontentloaded")
-    try:
-        page.fill(LOGIN_EMAIL_SELECTOR, email)
-        page.fill(LOGIN_PASSWORD_SELECTOR, password)
-    except Exception as exc:
-        logger.error("Login form selectors failed: %s", exc)
-        logger.error("If Scryfall changed their login UI, update "
-                     "LOGIN_EMAIL_SELECTOR / LOGIN_PASSWORD_SELECTOR / "
-                     "LOGIN_SUBMIT_SELECTOR at the top of this file.")
-        return False
+def _new_authed_context(playwright_, headless: bool = True):
+    """Return a Playwright (browser, context) pair loaded with the saved
+    sign-in storage state. Caller is responsible for browser.close()."""
+    if not _have_storage_state():
+        raise FileNotFoundError(_no_storage_state_msg())
+    browser = playwright_.chromium.launch(headless=headless)
+    context = browser.new_context(storage_state=str(STORAGE_STATE_PATH))
+    return browser, context
 
-    # Submit and wait for navigation to complete
-    page.click(LOGIN_SUBMIT_SELECTOR)
+
+def _verify_authed(page) -> bool:
+    """After loading any Scryfall page, check whether we're signed in."""
     try:
-        page.wait_for_load_state("networkidle", timeout=15000)
+        return page.locator(SIGNED_IN_MARKER).count() > 0
     except Exception:
-        pass
-
-    # Heuristic success check: signed-in pages usually expose a /users/sign_out link.
-    if page.locator('a[href*="sign_out"]').count() > 0:
-        logger.info("Login OK")
-        return True
-
-    logger.error("Login appears to have failed (no sign_out link visible). "
-                 "Check email/password.")
-    return False
+        return False
 
 
 def _scrape_description_from_dom(page, slug: str,
@@ -256,13 +264,71 @@ def _scrape_description_from_dom(page, slug: str,
 
 # --- Modes -------------------------------------------------------------------
 
+def cmd_auth() -> int:
+    """One-time interactive sign-in via the magic-link flow.
+
+    Pops a NON-headless Chromium so the user can drive the email-link
+    sign-in manually. After they're signed in, they press Enter in the
+    terminal and we save the resulting cookies + localStorage to
+    STORAGE_STATE_PATH for headless reuse.
+    """
+    if not _require_playwright():
+        return 1
+    from playwright.sync_api import sync_playwright
+
+    print()
+    print("Opening a Chromium window for Scryfall sign-in.")
+    print("Steps:")
+    print("  1. Type your email on the Scryfall sign-in page that opens.")
+    print("  2. Submit it. Check your email for the magic link.")
+    print("  3. Click the link in your email. Make sure the redirect")
+    print("     opens IN THIS SAME Chromium window (or copy the link's")
+    print("     URL and paste it into the address bar of the browser")
+    print("     window opened below).")
+    print("  4. When you see your Scryfall account header (Sign Out link"
+          " visible), come back here and press Enter.")
+    print()
+
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=False)
+        context = browser.new_context()
+        page = context.new_page()
+        page.goto(LOGIN_URL, wait_until="domcontentloaded")
+
+        try:
+            input("Press Enter once you're signed in (or Ctrl-C to abort)... ")
+        except KeyboardInterrupt:
+            print("\nAborted.")
+            browser.close()
+            return 1
+
+        # Verify we're actually signed in before saving
+        if not _verify_authed(page):
+            # Try fetching a known-public page to refresh state and check there
+            try:
+                page.goto("https://scryfall.com/account",
+                          wait_until="domcontentloaded")
+            except Exception:
+                pass
+        if not _verify_authed(page):
+            print("\nCouldn't see a Sign Out link on this page — sign-in may "
+                  "not have completed. Storage state not saved.")
+            browser.close()
+            return 2
+
+        STORAGE_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        context.storage_state(path=str(STORAGE_STATE_PATH))
+        print(f"\nSaved sign-in state to {STORAGE_STATE_PATH}")
+        print("This file contains your session cookies. Keep it private.")
+        browser.close()
+    return 0
+
+
 def cmd_inspect(slug: str) -> int:
     if not _require_playwright():
         return 1
-    email, password = _load_credentials()
-    if not (email and password):
-        sys.stderr.write(
-            "SCRYFALL_EMAIL / SCRYFALL_PASSWORD not found in .env or env.\n")
+    if not _have_storage_state():
+        sys.stderr.write(_no_storage_state_msg())
         return 1
     from playwright.sync_api import sync_playwright
 
@@ -270,12 +336,8 @@ def cmd_inspect(slug: str) -> int:
     out_png = TMP_DIR / f"tagger_inspect_{slug}.png"
 
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=True)
-        context = browser.new_context()
+        browser, context = _new_authed_context(pw, headless=True)
         page = context.new_page()
-        if not _login(page, email, password):
-            browser.close()
-            return 1
         page.goto(TAG_URL_FMT.format(slug=slug),
                   wait_until="domcontentloaded")
         page.wait_for_timeout(4000)  # let SPA settle
@@ -307,10 +369,8 @@ def cmd_inspect(slug: str) -> int:
 def cmd_probe_graphql(slug: str) -> int:
     if not _require_playwright():
         return 1
-    email, password = _load_credentials()
-    if not (email and password):
-        sys.stderr.write(
-            "SCRYFALL_EMAIL / SCRYFALL_PASSWORD not found in .env or env.\n")
+    if not _have_storage_state():
+        sys.stderr.write(_no_storage_state_msg())
         return 1
     from playwright.sync_api import sync_playwright
 
@@ -329,13 +389,9 @@ def cmd_probe_graphql(slug: str) -> int:
             })
 
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=True)
-        context = browser.new_context()
+        browser, context = _new_authed_context(pw, headless=True)
         page = context.new_page()
         page.on("request", on_request)
-        if not _login(page, email, password):
-            browser.close()
-            return 1
         page.goto(TAG_URL_FMT.format(slug=slug),
                   wait_until="domcontentloaded")
         page.wait_for_timeout(5000)
@@ -362,12 +418,10 @@ def cmd_probe_graphql(slug: str) -> int:
 def cmd_run(rate_seconds: float, limit: Optional[int]) -> int:
     if not _require_playwright():
         return 1
-    rate_seconds = max(1.0, float(rate_seconds))  # politeness floor
-    email, password = _load_credentials()
-    if not (email and password):
-        sys.stderr.write(
-            "SCRYFALL_EMAIL / SCRYFALL_PASSWORD not found in .env or env.\n")
+    if not _have_storage_state():
+        sys.stderr.write(_no_storage_state_msg())
         return 1
+    rate_seconds = max(1.0, float(rate_seconds))  # politeness floor
     from playwright.sync_api import sync_playwright
 
     conn = get_conn()
@@ -386,10 +440,16 @@ def cmd_run(rate_seconds: float, limit: Optional[int]) -> int:
     started_at = time.time()
 
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=True)
-        context = browser.new_context()
+        browser, context = _new_authed_context(pw, headless=True)
         page = context.new_page()
-        if not _login(page, email, password):
+        # Quick sanity check: hit one Scryfall page and verify we're authed.
+        # If the saved storage state expired, fail fast with a clear message
+        # rather than silently scraping logged-out pages (which would still
+        # succeed at HTTP-200 but return no description).
+        page.goto(TAGGER_BASE, wait_until="domcontentloaded")
+        if not _verify_authed(page):
+            print("Saved sign-in session appears expired or invalid. "
+                  "Re-run with --auth.")
             browser.close()
             return 1
 
@@ -440,6 +500,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         description="Scrape Scryfall Tagger oracle-tag descriptions via Playwright."
     )
     sub = parser.add_subparsers(dest="cmd")
+    sub.add_parser("auth",
+        help="One-time interactive sign-in (Scryfall is passwordless via "
+             "magic link). Persists session to tmp/scryfall_storage_state.json.")
     p_ins = sub.add_parser("inspect",
         help="Dump rendered HTML + screenshot for one tag (CSS-selector discovery).")
     p_ins.add_argument("slug")
@@ -454,6 +517,8 @@ def main(argv: Optional[list[str]] = None) -> int:
                        help="Cap number of tags processed (default: all pending)")
     args = parser.parse_args(argv)
 
+    if args.cmd == "auth":
+        return cmd_auth()
     if args.cmd == "inspect":
         return cmd_inspect(args.slug)
     if args.cmd == "probe-graphql":
