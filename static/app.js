@@ -3264,37 +3264,6 @@ async function importCollectionCSV(input) {
     input.value = '';
 }
 
-async function generateTestCollection() {
-    const count = parseInt(document.getElementById('test-collection-count').value) || 50;
-    const statusEl = document.getElementById('import-status');
-    statusEl.style.display = 'block';
-    statusEl.className = 'small mt-1 text-info';
-    statusEl.textContent = `Generating ${count} test cards...`;
-
-    try {
-        const resp = await fetch('/api/collection/generate-test', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ count }),
-        });
-        const data = await resp.json();
-        if (!resp.ok) {
-            statusEl.className = 'small mt-1 text-danger';
-            statusEl.textContent = data.error || 'Generation failed';
-            return;
-        }
-        statusEl.className = 'small mt-1 text-success';
-        statusEl.textContent = `Added ${data.added} random cards to collection`;
-        loadCollectionStats();
-        loadInventory();
-        loadBoxList();
-        addLog(`Test collection: ${data.added} random cards generated`);
-    } catch (e) {
-        statusEl.className = 'small mt-1 text-danger';
-        statusEl.textContent = 'Generation failed — ensure Scryfall data is loaded';
-    }
-}
-
 // ---- Bulk selection ----
 
 function toggleSelectAll(master) {

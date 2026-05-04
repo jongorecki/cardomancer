@@ -287,6 +287,89 @@ class TestCollectionDB(unittest.TestCase):
             content = f.read()
         self.assertIn("Forest", content)
 
+    def test_card_info_price_fallback_when_scryfall_prices_null(self):
+        # Regression: `or 0` used to coerce missing Scryfall prices to 0.0,
+        # defeating the card_info['Price'] fallback at the bottom of record_scan.
+        sid = collection_db.start_session(self.conn)
+        info = {"Name": "Tarmogoyf", "Set": "fut", "Colors": ["G"],
+                "CMC": 2.0, "Price": "$45.00"}
+        data = {"collector_number": "153", "oracle_id": "goyf-oid",
+                "prices": {"usd": None, "usd_foil": None}}
+        collection_db.record_scan(self.conn, sid, 1, card_info=info,
+                                  card_data=data, bin_num=1)
+        row = self.conn.execute(
+            "SELECT price_usd FROM inventory WHERE name=?",
+            ("Tarmogoyf",)
+        ).fetchone()
+        self.assertAlmostEqual(row['price_usd'], 45.00, places=2)
+
+    def test_reset_collection_clears_all_tables(self):
+        # Regression: reset_collection used to leave wishlist, moxfield_*,
+        # and detection_reviews populated.
+        sid = collection_db.start_session(self.conn)
+        info = {"Name": "Forest", "Set": "m21", "Colors": [], "CMC": 0.0}
+        collection_db.record_scan(self.conn, sid, 1, card_info=info,
+                                  card_data={}, bin_num=1)
+        self.conn.execute(
+            "INSERT INTO wishlist (name, added_date) VALUES (?, ?)",
+            ("Black Lotus", "2026-01-01")
+        )
+        self.conn.execute(
+            """INSERT INTO moxfield_wishlists
+                   (source_key, username, last_synced, card_count)
+               VALUES (?, ?, ?, ?)""",
+            ("user/deck1", "tester", "2026-01-01", 0)
+        )
+        wid = self.conn.execute(
+            "SELECT id FROM moxfield_wishlists WHERE source_key=?",
+            ("user/deck1",)
+        ).fetchone()['id']
+        self.conn.execute(
+            """INSERT INTO moxfield_wishlist_cards
+                   (wishlist_id, oracle_id, name)
+               VALUES (?, ?, ?)""",
+            (wid, "oid-2", "Mox Ruby")
+        )
+        scan_id = self.conn.execute(
+            "SELECT id FROM scan_history LIMIT 1"
+        ).fetchone()['id']
+        self.conn.execute(
+            """INSERT INTO detection_reviews (scan_id, variable, detected_value)
+               VALUES (?, ?, ?)""",
+            (scan_id, "foil", None)
+        )
+        self.conn.commit()
+
+        collection_db.reset_collection(self.conn)
+
+        for table in ("inventory", "scan_history", "sessions", "boxes",
+                      "dividers", "wishlist", "moxfield_wishlists",
+                      "moxfield_wishlist_cards", "detection_reviews"):
+            count = self.conn.execute(
+                f"SELECT COUNT(*) AS n FROM {table}"
+            ).fetchone()['n']
+            self.assertEqual(count, 0, f"{table} not cleared by reset_collection")
+
+    def test_seed_detection_reviews_idempotent(self):
+        # Regression-cum-perf: seed used SELECT-then-INSERT; now uses
+        # INSERT OR IGNORE relying on UNIQUE(scan_id, variable). Re-running
+        # must not duplicate, and the returned count must reflect new rows only.
+        sid = collection_db.start_session(self.conn)
+        info = {"Name": "Forest", "Set": "m21", "Colors": [], "CMC": 0.0}
+        collection_db.record_scan(self.conn, sid, 1, card_info=info,
+                                  card_data={}, bin_num=1)
+
+        first = collection_db.seed_detection_reviews_from_scans(self.conn)
+        self.assertGreater(first, 0)
+
+        second = collection_db.seed_detection_reviews_from_scans(self.conn)
+        self.assertEqual(second, 0)
+
+        total = self.conn.execute(
+            "SELECT COUNT(*) AS n FROM detection_reviews"
+        ).fetchone()['n']
+        self.assertEqual(total, first)
+
 
 class TestGetCullCandidates(unittest.TestCase):
     """Tests for get_cull_candidates() cross-DB query."""

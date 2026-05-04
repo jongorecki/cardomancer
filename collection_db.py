@@ -18,6 +18,11 @@ from datetime import datetime
 
 from config import SCRIPT_DIR
 
+try:
+    import card_lookup as _card_lookup
+except Exception:
+    _card_lookup = None
+
 DB_PATH = os.path.join(SCRIPT_DIR, "collection.db")
 
 
@@ -297,7 +302,7 @@ def record_scan(conn, session_id, scan_num,
         prices = card_data.get('prices', {})
         if prices:
             try:
-                price_usd = float(prices.get('usd') or prices.get('usd_foil') or 0)
+                price_usd = float(prices.get('usd') or prices.get('usd_foil'))
             except (ValueError, TypeError):
                 price_usd = None
 
@@ -619,7 +624,7 @@ def resolve_unrecognized_scan(conn, scan_id, card_info, card_data=None):
         prices = card_data.get('prices', {})
         if prices:
             try:
-                price_usd = float(prices.get('usd') or prices.get('usd_foil') or 0)
+                price_usd = float(prices.get('usd') or prices.get('usd_foil'))
             except (ValueError, TypeError):
                 pass
 
@@ -783,67 +788,6 @@ def import_inventory_csv(conn, csv_text):
     print(f"[collection] CSV import: {imported} new, {updated} updated, "
           f"{skipped} skipped")
     return imported, updated, skipped
-
-
-def generate_test_collection(conn, count=50):
-    """
-    Generate a test collection by pulling random cards from the Scryfall
-    bulk data. Returns the number of cards added.
-    """
-    import random
-    try:
-        from cards import CARDS_DATA
-    except ImportError:
-        return 0
-
-    if not CARDS_DATA:
-        return 0
-
-    # Filter to paper cards with English names
-    eligible = [c for c in CARDS_DATA
-                if c.get('lang') == 'en'
-                and 'paper' in c.get('games', [])
-                and c.get('name')]
-
-    if not eligible:
-        return 0
-
-    sample = random.sample(eligible, min(count, len(eligible)))
-    now = datetime.now().isoformat()
-    added = 0
-
-    for card in sample:
-        name = card.get('name', '')
-        set_code = card.get('set', '')
-        collector_number = card.get('collector_number', '')
-        quantity = random.choices([1, 2, 3, 4], weights=[50, 30, 15, 5])[0]
-
-        prices = card.get('prices', {})
-        try:
-            price_usd = float(prices.get('usd') or prices.get('usd_foil') or 0)
-        except (ValueError, TypeError):
-            price_usd = None
-
-        colors = ''.join(card.get('colors', []))
-        cmc = card.get('cmc')
-        type_line = card.get('type_line', '')
-        rarity = card.get('rarity', '')
-
-        conn.execute(
-            """INSERT INTO inventory
-               (name, set_code, collector_number, oracle_id,
-                illustration_id, colors, cmc, type_line, rarity,
-                price_usd, quantity, first_scanned, last_scanned)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (name, set_code, collector_number, card.get('oracle_id'),
-             card.get('illustration_id'), colors, cmc, type_line, rarity,
-             price_usd, quantity, now, now)
-        )
-        added += 1
-
-    conn.commit()
-    print(f"[collection] Generated test collection: {added} cards")
-    return added
 
 
 # ---------------------------------------------------------------------------
@@ -1168,16 +1112,15 @@ def _resolve_card_data(row):
     """Try to look up a full Scryfall card dict for an inventory row,
     falling back to the projected minimal dict on failure.
     """
-    # Prefer the loaded bulk data via card_lookup when available.
-    try:
-        import card_lookup
-        set_code = row.get('set_code') or ''
-        collector_number = row.get('collector_number') or ''
-        full = card_lookup.lookup_by_set_collector(set_code, collector_number)
-        if full:
-            return full
-    except Exception:
-        pass
+    if _card_lookup is not None:
+        try:
+            set_code = row.get('set_code') or ''
+            collector_number = row.get('collector_number') or ''
+            full = _card_lookup.lookup_by_set_collector(set_code, collector_number)
+            if full:
+                return full
+        except Exception:
+            pass
     return _inventory_row_to_card_data(row)
 
 
@@ -1373,11 +1316,15 @@ def delete_session(conn, session_id):
 def reset_collection(conn):
     """Delete all data from all tables."""
     conn.executescript("""
+        DELETE FROM detection_reviews;
         DELETE FROM scan_history;
         DELETE FROM sessions;
         DELETE FROM inventory;
         DELETE FROM dividers;
         DELETE FROM boxes;
+        DELETE FROM wishlist;
+        DELETE FROM moxfield_wishlist_cards;
+        DELETE FROM moxfield_wishlists;
     """)
     conn.commit()
 
@@ -1680,20 +1627,13 @@ def seed_detection_reviews_from_scans(conn, variables=None,
                 detected = set_code
             # foil + border: no detector output stored → leave NULL so these
             # cases bubble to the top of the queue.
-            existing = conn.execute(
-                "SELECT id FROM detection_reviews "
-                "WHERE scan_id=? AND variable=?",
-                (scan_id, variable)
-            ).fetchone()
-            if existing:
-                continue
-            conn.execute(
-                """INSERT INTO detection_reviews
+            cur = conn.execute(
+                """INSERT OR IGNORE INTO detection_reviews
                    (scan_id, variable, detected_value, confidence)
                    VALUES (?, ?, ?, NULL)""",
                 (scan_id, variable, detected)
             )
-            inserted += 1
+            inserted += cur.rowcount
     conn.commit()
     return inserted
 

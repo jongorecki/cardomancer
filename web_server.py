@@ -2485,22 +2485,6 @@ def api_collection_cull_candidates_export():
         conn.close()
 
 
-@app.route('/api/collection/generate-test', methods=['POST'])
-def api_collection_generate_test():
-    import collection_db
-    count = request.json.get('count', 50) if request.is_json else 50
-    count = min(int(count), 500)  # Cap at 500
-    conn = collection_db.get_connection()
-    try:
-        added = collection_db.generate_test_collection(conn, count)
-        if added == 0:
-            return jsonify({'error': 'No card data available. '
-                          'Load Scryfall bulk data first.'}), 400
-        return jsonify({'added': added})
-    finally:
-        conn.close()
-
-
 # =========================================================================
 # Review Queue API — card crop images, diagnostics, lookup
 # =========================================================================
