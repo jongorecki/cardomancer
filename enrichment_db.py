@@ -318,45 +318,41 @@ def record_sync_attempt(conn: sqlite3.Connection, source: str,
                         version_hash: Optional[str] = None) -> None:
     """Record a refresh attempt in sync_metadata. Called by every
     EnrichmentSource.refresh() on completion (success or failure)."""
+    # Collapse the prior SELECT-then-INSERT/UPDATE into one atomic
+    # INSERT … ON CONFLICT DO UPDATE (sync_metadata.source is PRIMARY KEY).
+    # Two statements are needed because the success path clears the error
+    # and refreshes version_hash, while the failure path must NOT touch
+    # last_success or version_hash on existing rows.
     ts = datetime.utcnow().isoformat(timespec="seconds")
-    existing = conn.execute(
-        "SELECT source FROM sync_metadata WHERE source = ?", (source,)
-    ).fetchone()
-
-    if existing is None:
+    if success:
         conn.execute(
             """INSERT INTO sync_metadata
-               (source, last_success, last_attempt, version_hash,
-                error, coverage_pct)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (source,
-             ts if success else None,
-             ts,
-             version_hash,
-             error if not success else None,
-             coverage_pct),
+                   (source, last_success, last_attempt,
+                    version_hash, error, coverage_pct)
+               VALUES (?, ?, ?, ?, NULL, ?)
+               ON CONFLICT(source) DO UPDATE SET
+                   last_success = excluded.last_success,
+                   last_attempt = excluded.last_attempt,
+                   version_hash = COALESCE(excluded.version_hash,
+                                           sync_metadata.version_hash),
+                   error        = NULL,
+                   coverage_pct = COALESCE(excluded.coverage_pct,
+                                           sync_metadata.coverage_pct)""",
+            (source, ts, ts, version_hash, coverage_pct),
         )
     else:
-        if success:
-            conn.execute(
-                """UPDATE sync_metadata
-                   SET last_success = ?,
-                       last_attempt = ?,
-                       version_hash = COALESCE(?, version_hash),
-                       error = NULL,
-                       coverage_pct = COALESCE(?, coverage_pct)
-                   WHERE source = ?""",
-                (ts, ts, version_hash, coverage_pct, source),
-            )
-        else:
-            conn.execute(
-                """UPDATE sync_metadata
-                   SET last_attempt = ?,
-                       error = ?,
-                       coverage_pct = COALESCE(?, coverage_pct)
-                   WHERE source = ?""",
-                (ts, error, coverage_pct, source),
-            )
+        conn.execute(
+            """INSERT INTO sync_metadata
+                   (source, last_success, last_attempt,
+                    version_hash, error, coverage_pct)
+               VALUES (?, NULL, ?, ?, ?, ?)
+               ON CONFLICT(source) DO UPDATE SET
+                   last_attempt = excluded.last_attempt,
+                   error        = excluded.error,
+                   coverage_pct = COALESCE(excluded.coverage_pct,
+                                           sync_metadata.coverage_pct)""",
+            (source, ts, version_hash, error, coverage_pct),
+        )
     conn.commit()
 
 

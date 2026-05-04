@@ -1683,7 +1683,7 @@ def api_collection_inventory():
             'total': total,
             'page': page,
             'per_page': per_page,
-            'pages': (total + per_page - 1) // per_page,
+            'pages': (total + per_page - 1) // per_page if per_page else 0,
         })
     finally:
         conn.close()
@@ -1704,7 +1704,15 @@ def api_collection_inventory():
 # ---------------------------------------------------------------------------
 
 def _inventory_row_to_card_data(row):
-    """Build a Scryfall-card-like dict from an inventory row."""
+    """Build a Scryfall-card-like dict from an inventory row.
+
+    Uses only the inventory-stored fields so filters like usd<X and
+    t:creature reflect the user's collection state at scan time, not
+    live Scryfall prices/types. oracle_text and color_identity are left
+    minimal here — _enrich_card_data_for_query backfills them from
+    card_lookup so o:/ci: queries work without changing price/type
+    semantics.
+    """
     colors_raw = row.get('colors') or ''
     if ',' in colors_raw:
         colors = [c.strip() for c in colors_raw.split(',') if c.strip()]
@@ -1726,40 +1734,94 @@ def _inventory_row_to_card_data(row):
     }
 
 
-def _fetch_enrichment_for_oracle(enr_conn, oracle_id):
-    """Pull per-card enrichment dict for query_parser evaluate_query."""
-    if not oracle_id:
-        return {}
+def _enrich_card_data_for_query(card_data, row):
+    """Pull oracle_text + color_identity from card_lookup so o:/ci:
+    query tokens match correctly. No-op if card_lookup isn't loaded or
+    the (set, collector_number) pair isn't in its index — the caller
+    keeps the inventory-derived defaults in that case."""
     try:
-        tiers = {
-            r[0] for r in enr_conn.execute(
-                "SELECT tier FROM staples WHERE oracle_id=?",
-                (oracle_id,),
-            ).fetchall()
-        }
-        salt_row = enr_conn.execute(
-            "SELECT salt FROM salt_scores WHERE oracle_id=?",
-            (oracle_id,),
-        ).fetchone()
-        combo_row = enr_conn.execute(
-            "SELECT 1 FROM combo_membership WHERE oracle_id=? LIMIT 1",
-            (oracle_id,),
-        ).fetchone()
-        buylist_row = enr_conn.execute(
-            "SELECT price_usd FROM buylists "
-            "WHERE oracle_id=? AND vendor='ck' LIMIT 1",
-            (oracle_id,),
-        ).fetchone()
-        return {
-            "staple_universal":  "universal"  in tiers,
-            "staple_cedh":       "cedh"       in tiers,
-            "staple_archetype":  "archetype"  in tiers,
-            "salt":              salt_row[0] if salt_row else None,
-            "in_combo":          combo_row is not None,
-            "buylist_ck_price":  buylist_row[0] if buylist_row else None,
-        }
+        import card_lookup
     except Exception:
+        return
+    set_code = row.get('set_code') or ''
+    collector_number = row.get('collector_number') or ''
+    if not set_code or not collector_number:
+        return
+    try:
+        full = card_lookup.lookup_by_set_collector(set_code, collector_number)
+    except Exception:
+        return
+    if not full:
+        return
+    oracle_text = full.get('oracle_text')
+    if oracle_text:
+        card_data['oracle_text'] = oracle_text
+    color_identity = full.get('color_identity')
+    if color_identity:
+        card_data['color_identity'] = list(color_identity)
+
+
+def _bulk_fetch_enrichment(enr_conn, oracle_ids):
+    """Bulk version of _fetch_enrichment_for_oracle. Replaces N*4 SELECTs
+    (one set per oracle_id) with 4 SELECTs per 500-id batch, using IN
+    clauses. Returns {oracle_id: enrichment_dict}.
+
+    On any batch failure, logs and continues with the next batch — same
+    swallow-and-continue contract as the per-oracle version.
+    """
+    if not oracle_ids:
         return {}
+    result = {}
+    chunk_size = 500
+    for i in range(0, len(oracle_ids), chunk_size):
+        chunk = oracle_ids[i:i + chunk_size]
+        placeholders = ','.join(['?'] * len(chunk))
+        try:
+            staple_rows = enr_conn.execute(
+                f"SELECT oracle_id, tier FROM staples WHERE oracle_id IN ({placeholders})",
+                chunk,
+            ).fetchall()
+            salt_rows = enr_conn.execute(
+                f"SELECT oracle_id, salt FROM salt_scores WHERE oracle_id IN ({placeholders})",
+                chunk,
+            ).fetchall()
+            combo_rows = enr_conn.execute(
+                f"SELECT oracle_id FROM combo_membership WHERE oracle_id IN ({placeholders})",
+                chunk,
+            ).fetchall()
+            buylist_rows = enr_conn.execute(
+                f"SELECT oracle_id, price_usd FROM buylists "
+                f"WHERE vendor='ck' AND oracle_id IN ({placeholders})",
+                chunk,
+            ).fetchall()
+        except Exception as e:
+            print(f"[_bulk_fetch_enrichment] batch failed: {e}")
+            continue
+
+        for oid in chunk:
+            result[oid] = {
+                'staple_universal': False,
+                'staple_cedh': False,
+                'staple_archetype': False,
+                'salt': None,
+                'in_combo': False,
+                'buylist_ck_price': None,
+            }
+        for row in staple_rows:
+            tier = row['tier']
+            if tier == 'universal':
+                result[row['oracle_id']]['staple_universal'] = True
+            elif tier == 'cedh':
+                result[row['oracle_id']]['staple_cedh'] = True
+            elif tier == 'archetype':
+                result[row['oracle_id']]['staple_archetype'] = True
+        for row in salt_rows:
+            result[row['oracle_id']]['salt'] = row['salt']
+        for row in combo_rows:
+            result[row['oracle_id']]['in_combo'] = True
+        for row in buylist_rows:
+            result[row['oracle_id']]['buylist_ck_price'] = row['price_usd']
+    return result
 
 
 @app.route('/api/collection/filter')
@@ -1812,20 +1874,33 @@ def api_collection_filter():
                 print(f"[collection/filter] enrichment.db unavailable: {exc}")
                 enr_conn = None
 
-            enr_cache = {}
+            # Bulk-fetch enrichment for every oracle_id in the result set
+            # in 4 batched IN-clause SELECTs instead of 4 SELECTs per row
+            # (the prior shape was N+1 across distinct oracle_ids — fine
+            # for tiny collections, slow once an inventory has thousands).
+            if enr_conn is not None:
+                unique_oracles = list({
+                    row.get('oracle_id') for row in rows if row.get('oracle_id')
+                })
+                enr_cache = _bulk_fetch_enrichment(enr_conn, unique_oracles)
+            else:
+                enr_cache = {}
+
             filtered = []
             parse_error = None
             for row in rows:
+                # Build the card-data dict from the inventory row (keeps
+                # the user's stored price/type — filtering against live
+                # Scryfall would silently change semantics for usd<X /
+                # t:creature). Then enrich with oracle_text and a real
+                # color_identity from card_lookup when available so o:
+                # and ci: query tokens behave correctly (without the
+                # enrichment, oracle_text='' meant o: matched nothing
+                # and color_identity=colors was wrong for hybrid/devoid).
                 card_data = _inventory_row_to_card_data(row)
+                _enrich_card_data_for_query(card_data, row)
                 oracle_id = row.get('oracle_id')
-                if oracle_id and enr_conn is not None:
-                    if oracle_id not in enr_cache:
-                        enr_cache[oracle_id] = _fetch_enrichment_for_oracle(
-                            enr_conn, oracle_id
-                        )
-                    enrichment_data = enr_cache[oracle_id]
-                else:
-                    enrichment_data = {}
+                enrichment_data = enr_cache.get(oracle_id, {}) if oracle_id else {}
 
                 try:
                     try:
@@ -2675,126 +2750,6 @@ def _scryfallImageUrl(set_code, collector_number):
     return (f"https://api.scryfall.com/cards/"
             f"{set_code}/{collector_number}"
             f"?format=image&version=normal")
-
-
-@app.route('/api/review/diagnostics')
-def api_review_diagnostics():
-    """
-    Compute detailed per-channel hash distances between a card crop
-    (from a scan) and a specific card ID from the hash DB.
-
-    Query params:
-      - session_start_time: ISO timestamp of the session
-      - scan_num: scan number within the session
-      - card_id: Scryfall card UUID to compare against
-
-    Returns per-layout, per-hash-type, per-channel distances so we can
-    see exactly where detection broke down.
-    """
-    from datetime import datetime as dt_cls
-    start_time = request.args.get('session_start_time', '')
-    scan_num = request.args.get('scan_num', 0, type=int)
-    card_id = request.args.get('card_id', '')
-
-    if not start_time or not scan_num or not card_id:
-        return jsonify({'error': 'session_start_time, scan_num, and card_id required'}), 400
-
-    # DEPRECATED: This endpoint used the old v2 hashing module (CLAHE,
-    # 256-bit, layout-specific regions). The v3 system in card_identify.py
-    # does not support per-layout diagnostics. Return a clear message.
-    return jsonify({
-        'error': 'Hash diagnostics not available — v3 detection system '
-                 'does not use per-layout hash comparisons',
-    }), 501
-
-    # --- Legacy code below (unreachable) ---
-    # Locate the card crop image
-    try:
-        dt_val = dt_cls.fromisoformat(start_time)
-        dir_name = f"session_{dt_val.strftime('%Y%m%d_%H%M%S')}"
-    except Exception:
-        return jsonify({'error': 'Invalid session_start_time'}), 400
-
-    crop_path = os.path.join(
-        SCAN_LOGS_DIR, dir_name, "card_crops", f"card_{scan_num:04d}.jpg")
-    if not os.path.exists(crop_path):
-        return jsonify({'error': 'Card crop not found'}), 404
-
-    import cv2
-    import numpy as np
-    from PIL import Image
-    import imagehash
-    from hashing import (crop_art_region, _apply_clahe_pil, HASH_DB,
-                         _hash_art_for_search)
-    from config import ART_REGION
-
-    card_img = cv2.imread(crop_path)
-    if card_img is None:
-        return jsonify({'error': 'Could not read crop image'}), 500
-
-    # Get the target card's stored hashes
-    target_entry = HASH_DB.get(card_id)
-    if target_entry is None:
-        return jsonify({'error': f'Card ID {card_id} not in hash DB'}), 404
-
-    result = {
-        'card_id': card_id,
-        'scan_num': scan_num,
-        'layouts': {},
-    }
-
-    # Diagnostics require v2 DB format with per-hash-type keys
-    if 'p_r' not in target_entry:
-        return jsonify({'error': 'Diagnostics require v2 hash DB'}), 400
-
-    # For each layout, crop the art region, compute hashes, and compare
-    for layout in ('normal', 'saga', 'class', 'battle'):
-        art_pil = crop_art_region(card_img, layout=layout)
-        query = _hash_art_for_search(art_pil, hash_size=16)
-        # query is (r_ph, g_ph, b_ph, r_dh, g_dh, b_dh)
-
-        # Compare against the target card's stored hashes
-        target_layout = target_entry.get('layout', 'normal')
-        if target_layout == 'case':
-            target_layout = 'class'
-
-        try:
-            t_pr = imagehash.hex_to_hash(target_entry['p_r'])
-            t_pg = imagehash.hex_to_hash(target_entry['p_g'])
-            t_pb = imagehash.hex_to_hash(target_entry['p_b'])
-            t_dr = imagehash.hex_to_hash(target_entry['d_r'])
-            t_dg = imagehash.hex_to_hash(target_entry['d_g'])
-            t_db = imagehash.hex_to_hash(target_entry['d_b'])
-            t_wr = imagehash.hex_to_hash(target_entry['w_r'])
-            t_wg = imagehash.hex_to_hash(target_entry['w_g'])
-            t_wb = imagehash.hex_to_hash(target_entry['w_b'])
-        except (KeyError, ValueError) as e:
-            result['layouts'][layout] = {'error': str(e)}
-            continue
-
-        r_ph, g_ph, b_ph, r_dh, g_dh, b_dh = query
-
-        layout_result = {
-            'target_layout': target_layout,
-            'phash': {
-                'r': int(r_ph - t_pr),
-                'g': int(g_ph - t_pg),
-                'b': int(b_ph - t_pb),
-                'avg': round(((r_ph - t_pr) + (g_ph - t_pg) + (b_ph - t_pb)) / 3.0, 2),
-            },
-            'dhash': {
-                'r': int(r_dh - t_dr),
-                'g': int(g_dh - t_dg),
-                'b': int(b_dh - t_db),
-                'avg': round(((r_dh - t_dr) + (g_dh - t_dg) + (b_dh - t_db)) / 3.0, 2),
-            },
-            'combined_avg': round(
-                (((r_ph - t_pr) + (g_ph - t_pg) + (b_ph - t_pb)) / 3.0 +
-                 ((r_dh - t_dr) + (g_dh - t_dg) + (b_dh - t_db)) / 3.0) / 2.0, 2),
-        }
-        result['layouts'][layout] = layout_result
-
-    return jsonify(result)
 
 
 @app.route('/api/review/lookup')

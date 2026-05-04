@@ -751,6 +751,19 @@ def clear_probe_cache():
     _probe_z_cache.clear()
 
 
+def invalidate_probe_cache_for_x(x_position):
+    """Drop the cached probe height for one X position.
+
+    Use this when the user may have physically added cards to the bin at
+    that X (e.g. after a pause/resume cycle) — the cached top-of-stack Z
+    is now lower than the actual top, so a fast approach would crash the
+    head into the new cards. Forcing a full-travel probe makes the next
+    pick safe and re-establishes a correct cached height for subsequent
+    fast picks.
+    """
+    _probe_z_cache.pop(x_position, None)
+
+
 # =========================================================================
 # Startup / homing
 # =========================================================================

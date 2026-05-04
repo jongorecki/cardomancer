@@ -2736,10 +2736,54 @@ class SortWorker:
             self.log("Session paused — add more cards and resume when ready")
 
     def _cmd_resume(self, **kwargs):
-        """Resume the sorting session."""
-        if self.state == 'paused':
-            self.state = 'sorting'
-            self.log("Session resumed")
+        """Resume the sorting session.
+
+        Pause is most often used to refill the source bin, so the cached
+        probe height for the source X is unreliable on resume — the new
+        top of the stack may be well above the old cached height, and a
+        fast approach there would crash the head into the new cards.
+        Invalidate it so the next pick does a full-travel probe; the
+        successful probe re-populates the cache and subsequent picks
+        return to fast-approach.
+
+        Also kick the continuous-sort loop back into motion. The loop
+        re-enqueues itself only at the end of each detect_and_sort
+        cycle, gated on (continuous_sorting and state=='sorting'). If
+        pause flipped state to 'paused' between cycles, the loop dies
+        even though continuous_sorting stayed True. On resume we
+        re-arm it by enqueuing one fresh cycle.
+        """
+        if self.state != 'paused':
+            return
+        self.state = 'sorting'
+        self.log("Session resumed")
+
+        # Invalidate cached probe heights for every configured source bin.
+        # In single-source mode, fall back to the global source_x from
+        # gcode_control. Destination-bin caches are left alone — drops
+        # don't risk a head crash the way picks do.
+        try:
+            import gcode_control
+            bin_locs = gcode_control.get_bin_locations()
+            source_xs = []
+            if self.source_bins:
+                for s in self.source_bins:
+                    x = s.get('x')
+                    if x is not None:
+                        source_xs.append(float(x))
+            if not source_xs:
+                source_xs.append(bin_locs.get(0, gcode_control.X_SOURCE_BIN))
+            for x in source_xs:
+                gcode_control.invalidate_probe_cache_for_x(x)
+            self.log(f"Resume: will full-probe source bin(s) on next pick "
+                     f"(X={source_xs}) in case cards were added")
+        except Exception as e:
+            self.log(f"Warning: could not invalidate source probe cache: {e}")
+
+        # Re-arm continuous sort if it was active before pause.
+        if self.continuous_sorting:
+            from web_camera import camera as cam
+            self.enqueue('detect_and_sort', camera=cam)
 
     def _cmd_stop_session(self, **kwargs):
         """Stop the current sorting session.
