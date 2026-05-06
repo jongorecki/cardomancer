@@ -64,9 +64,9 @@
 body {
     background-color: var(--bg-page);
     color: var(--text-primary);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-    font-size: 14px;
-    line-height: 1.5;
+    font-family: var(--font-sans);
+    font-size: var(--font-size-sm);
+    line-height: var(--line-height-normal);
 }
 
 /* =========================================================================
@@ -93,8 +93,8 @@ body {
 .card {
     background-color: var(--bg-card);
     border: 1px solid var(--border-card);
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
 }
 
 .card-header {
@@ -340,7 +340,7 @@ body {
     font-weight: 500;
     font-size: 0.78em;
     padding: 0.35em 0.65em;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
 }
 
 .badge.bg-secondary {
@@ -435,7 +435,7 @@ body {
 
 .bin-header {
     padding: 4px 6px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     transition: background 0.15s;
 }
 
@@ -592,12 +592,12 @@ hr {
 
 ::-webkit-scrollbar-track {
     background: var(--bg-page);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
 }
 
 ::-webkit-scrollbar-thumb {
     background: #454a55;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
 }
 
 /* =========================================================================
@@ -904,7 +904,7 @@ tr.price-mythic { border-left: 3px solid var(--accent-red); }
  * ========================================================================= */
 .wizard-step-pill {
     padding: 4px 10px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     border: 1px solid var(--border-subtle);
     color: var(--text-secondary);
     background: var(--bg-surface);
@@ -940,7 +940,7 @@ tr.price-mythic { border-left: 3px solid var(--accent-red); }
     overflow-y: auto;
     background: #1c1f29;
     border: 1px solid #333;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     color: #e8e8ee;
     font-size: 0.85rem;
 }
@@ -1008,7 +1008,7 @@ tr.price-mythic { border-left: 3px solid var(--accent-red); }
     align-items: baseline;
     gap: 8px;
     padding: 3px 6px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     transition: background-color 0.1s;
 }
 #otag-outline-container .otag-outline-row:hover {
