@@ -1,0 +1,462 @@
+            <!-- ============================================================ -->
+            <!-- SORT SESSION TAB -->
+            <!-- ============================================================ -->
+            <div class="tab-pane fade" id="tab-session">
+                <!-- Unified Sort Configuration card (feature/sort-override) -->
+                <div class="row mb-2">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center"
+                                 style="cursor:pointer;"
+                                 data-bs-toggle="collapse"
+                                 data-bs-target="#sort-config-collapse">
+                                <span>
+                                    Sort Configuration
+                                    <span id="sort-config-dirty-badge" class="badge bg-warning text-dark ms-2"
+                                          style="display:none;">modified</span>
+                                </span>
+                                <small class="text-muted" id="sort-config-collapse-hint">click to show/hide</small>
+                            </div>
+                            <div id="sort-config-collapse" class="collapse show">
+                                <div class="card-body">
+
+                                    <!-- Preset toolbar -->
+                                    <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                                        <label class="form-label mb-0"><strong>Preset</strong></label>
+                                        <select class="form-select form-select-sm"
+                                                id="sort-preset-select"
+                                                style="width:auto; min-width:220px;"
+                                                onchange="onSortPresetSelect()"></select>
+                                        <button class="btn btn-sm btn-outline-secondary"
+                                                id="btn-sort-config-new"
+                                                onclick="newSortConfig()">
+                                            New
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-primary"
+                                                id="btn-sort-config-save"
+                                                onclick="saveSortConfig()"
+                                                title="Save changes back to this preset file">
+                                            Save
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-success"
+                                                id="btn-sort-config-save-as"
+                                                onclick="saveSortConfigAs()">
+                                            Save As&hellip;
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-secondary"
+                                                id="btn-sort-config-duplicate"
+                                                onclick="duplicateSortConfig()"
+                                                title="Copy this preset to a new file">
+                                            Duplicate
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-info"
+                                                id="btn-sort-config-edit-text"
+                                                data-bs-toggle="collapse"
+                                                data-bs-target="#sort-config-text-editor"
+                                                onclick="onEditAsTextClicked()"
+                                                title="Edit the raw preset text">
+                                            Edit as text
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-danger"
+                                                id="btn-sort-config-delete"
+                                                onclick="deleteSortConfig()"
+                                                style="display:none;"
+                                                title="Delete this user preset file">
+                                            Delete
+                                        </button>
+                                    </div>
+
+                                    <!-- Description line -->
+                                    <p class="text-muted small mb-2" id="sort-config-description"></p>
+
+                                    <!-- bins / fallback / limit row -->
+                                    <div class="row g-2 mb-2">
+                                        <div class="col-auto">
+                                            <label class="form-label">Bins</label>
+                                            <input type="number" class="form-control form-control-sm"
+                                                   id="sc-bin-count" value="10" min="1" max="20"
+                                                   style="width:75px;"
+                                                   onchange="onSortConfigBinCountChange()">
+                                        </div>
+                                        <div class="col-auto">
+                                            <label class="form-label">Fallback bin</label>
+                                            <input type="number" class="form-control form-control-sm"
+                                                   id="sc-fallback" value="10" min="1"
+                                                   style="width:75px;"
+                                                   onchange="markSortConfigDirty()">
+                                        </div>
+                                        <div class="col-auto">
+                                            <label class="form-label">Bin limit</label>
+                                            <input type="number" class="form-control form-control-sm"
+                                                   id="sc-bin-limit" placeholder="unlimited" min="1"
+                                                   style="width:110px;"
+                                                   onchange="markSortConfigDirty()">
+                                        </div>
+                                    </div>
+
+                                    <!-- Bin table -->
+                                    <div class="table-responsive">
+                                        <table class="table table-sm table-borderless align-middle mb-0"
+                                               id="sort-config-table">
+                                            <thead>
+                                                <tr>
+                                                    <th style="width:3.5rem;">Bin</th>
+                                                    <th>Query</th>
+                                                    <th style="width:6.5rem;" class="text-center">Override</th>
+                                                    <th style="width:3rem;"></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="sort-config-tbody">
+                                                <tr><td colspan="4" class="text-muted">Loading&hellip;</td></tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    <div class="mt-2">
+                                        <button class="btn btn-sm btn-outline-secondary"
+                                                onclick="addSortConfigBin()">
+                                            + Add bin
+                                        </button>
+                                    </div>
+
+                                    <!-- Raw text editor (collapsible).
+                                         Opens via "Edit as text" above. On
+                                         blur we re-parse the textarea into
+                                         the bin table so the two views stay
+                                         in sync; Save uses whichever view
+                                         was edited last. -->
+                                    <div class="collapse mt-3" id="sort-config-text-editor">
+                                        <label class="form-label small mb-1">
+                                            Raw preset content
+                                            <span class="text-muted">
+                                                &mdash; saved verbatim when you hit Save.
+                                            </span>
+                                        </label>
+                                        <textarea id="sort-config-text-area"
+                                                  class="form-control form-control-sm font-monospace"
+                                                  rows="10"
+                                                  style="font-size:0.8rem;"
+                                                  oninput="markSortConfigDirty()"
+                                                  onblur="_syncTextAreaToTable()"></textarea>
+                                        <div class="form-text small text-muted">
+                                            Lines: <code>bins: N</code>,
+                                            <code>fallback: N</code>,
+                                            <code>limit: N</code>,
+                                            <code>overrides: 3,5</code>,
+                                            <code>binN: &lt;query&gt;</code>.
+                                            A leading <code># comment</code> becomes the description.
+                                        </div>
+                                    </div>
+
+                                    <!-- Sort Configuration help (collapsible) -->
+                                    <div class="mt-3">
+                                        <a class="small text-muted text-decoration-none"
+                                           data-bs-toggle="collapse"
+                                           href="#sort-config-help"
+                                           role="button">
+                                            &#9658; How to use the sort window
+                                        </a>
+                                        <div class="collapse" id="sort-config-help">
+                                            <div class="mt-2 p-2 rounded small sort-query-ref-box">
+                                                <p class="mb-1 fw-semibold">Presets</p>
+                                                <ul class="mb-2 ps-3" style="font-size:0.8rem">
+                                                    <li><strong>Select</strong> a preset from the dropdown to load its bin rules. Every preset &mdash; built-in and user-created alike &mdash; lives under <code>sort_configs/*.txt</code>. Built-ins are read-only; use <em>Duplicate</em> or <em>Save As&hellip;</em> to edit them.</li>
+                                                    <li><strong>New</strong> starts a blank preset. <strong>Save</strong> writes back to the current user preset file. <strong>Save As&hellip;</strong> writes to a new filename you pick. <strong>Duplicate</strong> copies the current preset to a new filename and loads it. <strong>Delete</strong> removes a user preset.</li>
+                                                    <li><strong>Edit as text</strong> opens a raw-text editor below the bin table. Useful for pasting a preset from someone else, or for editing comments/descriptions the structured table doesn't surface. Clicking outside the textarea re-parses it back into the table; Save persists whichever view was active.</li>
+                                                    <li>The <span class="badge bg-warning text-dark" style="font-size:0.65rem">modified</span> badge next to the header means you have unsaved edits.</li>
+                                                </ul>
+
+                                                <p class="mb-1 fw-semibold">Bin rules</p>
+                                                <ul class="mb-2 ps-3" style="font-size:0.8rem">
+                                                    <li><strong>Bins</strong> sets how many physical bin rows to show. <strong>Fallback bin</strong> is where cards go when no rule matches. <strong>Bin limit</strong> caps cards per bin (blank = unlimited).</li>
+                                                    <li>Each row is evaluated top-down: the first matching rule wins, unless the <strong>Override</strong> column is checked.</li>
+                                                    <li><strong>Override</strong> bins are checked <em>before</em> all non-override bins. Use for high-priority routes like <code>buylist:ck&gt;=1</code> or <code>cull:true</code> that should bypass a color/rarity sort.</li>
+                                                </ul>
+
+                                                <p class="mb-1 fw-semibold">Query syntax</p>
+                                                <p class="mb-2 text-muted" style="font-size:0.8rem">
+                                                    Queries borrow most of Scryfall's syntax. For the full reference see
+                                                    <a href="https://scryfall.com/docs/syntax" target="_blank" rel="noopener">scryfall.com/docs/syntax</a>.
+                                                    Card Sorter supports the basic fields below plus local enrichment tokens not available on Scryfall.
+                                                </p>
+
+                                                <p class="mb-1 fw-semibold">Basic fields</p>
+                                                <table class="table table-sm table-borderless mb-2" style="font-size:0.8rem">
+                                                    <tbody>
+                                                        <tr><td class="text-nowrap pe-3"><code>c:r</code></td><td>Color &mdash; W U B R G or C (colorless). Combine: <code>c:wr</code></td></tr>
+                                                        <tr><td class="text-nowrap pe-3"><code>t:creature</code></td><td>Type line contains word. Also: <code>t:land</code>, <code>t:artifact</code>, <code>t:instant</code></td></tr>
+                                                        <tr><td class="text-nowrap pe-3"><code>cmc&lt;=3</code></td><td>Mana value. Operators: <code>&lt; &lt;= = &gt;= &gt;</code></td></tr>
+                                                        <tr><td class="text-nowrap pe-3"><code>usd&lt;1.00</code></td><td>TCGPlayer price in USD</td></tr>
+                                                        <tr><td class="text-nowrap pe-3"><code>r:mythic</code></td><td>Rarity &mdash; common uncommon rare mythic</td></tr>
+                                                        <tr><td class="text-nowrap pe-3"><code>otag:removal</code></td><td>Scryfall function tag. Fetched from API on load.</td></tr>
+                                                    </tbody>
+                                                </table>
+
+                                                <p class="mb-1 fw-semibold">Enrichment fields <span class="badge bg-info text-dark ms-1" style="font-size:0.7rem">requires enrichment refresh</span></p>
+                                                <table class="table table-sm table-borderless mb-2" style="font-size:0.8rem">
+                                                    <tbody>
+                                                        <tr><td class="text-nowrap pe-3"><code>staple:universal</code></td><td>In top EDHREC inclusion lists (appears in &gt;5% of decks)</td></tr>
+                                                        <tr><td class="text-nowrap pe-3"><code>staple:cedh</code></td><td>Appears in &gt;15% of top-16 cEDH tournament decks</td></tr>
+                                                        <tr><td class="text-nowrap pe-3"><code>staple:archetype</code></td><td>Top card in &ge;3 EDHREC archetypes (color, theme, or top-commander pages)</td></tr>
+                                                        <tr><td class="text-nowrap pe-3"><code>staple:any</code></td><td>Any staple tier (universal, cedh, or archetype)</td></tr>
+                                                        <tr><td class="text-nowrap pe-3"><code>salt&gt;2</code></td><td>EDHREC salt score above threshold. Range &asymp; 0&ndash;4.</td></tr>
+                                                        <tr><td class="text-nowrap pe-3"><code>combo:true</code></td><td>Appears in a Commander Spellbook combo</td></tr>
+                                                        <tr><td class="text-nowrap pe-3"><code>buylist:ck</code></td><td>Card is on CardKingdom's buylist (any price &gt; 0)</td></tr>
+                                                        <tr><td class="text-nowrap pe-3"><code>buylist:ck&gt;=1.00</code></td><td>CK buylist price &ge; $1. Operators: <code>&lt; &lt;= = &gt;= &gt;</code></td></tr>
+                                                        <tr><td class="text-nowrap pe-3"><code>cull:true</code></td><td>Dead-weight flag: vanilla/french-vanilla AND no staple tier AND no CK buylist entry. Route these to a cull bin.</td></tr>
+                                                        <tr><td class="text-nowrap pe-3"><code>cull:false</code></td><td>Negation of <code>cull:true</code> &mdash; card has some value (has text, is a staple, or is on a buylist).</td></tr>
+                                                    </tbody>
+                                                </table>
+
+                                                <p class="mb-1 fw-semibold">Moxfield integration <span class="badge bg-secondary ms-1" style="font-size:0.7rem">deck/wishlist must be imported first</span></p>
+                                                <table class="table table-sm table-borderless mb-2" style="font-size:0.8rem">
+                                                    <tbody>
+                                                        <tr><td class="text-nowrap pe-3"><code>deck:&lt;id&gt;</code></td><td>Card is in the imported Moxfield deck (any printing). Basic lands always excluded.</td></tr>
+                                                        <tr><td class="text-nowrap pe-3"><code>deck:&lt;id&gt;!exact</code></td><td>Card matches the deck by exact printing (set + collector number).</td></tr>
+                                                        <tr><td class="text-nowrap pe-3"><code>wishlist:&lt;user&gt;</code></td><td>Card is in <code>&lt;user&gt;</code>'s imported Moxfield wishlist (any printing). Basic lands excluded.</td></tr>
+                                                        <tr><td class="text-nowrap pe-3"><code>wishlist:&lt;user&gt;!exact</code></td><td>Wishlist match by exact printing (set + collector number).</td></tr>
+                                                    </tbody>
+                                                </table>
+                                                <div class="text-muted mb-2" style="font-size:0.75rem">
+                                                    Import a deck via <code>POST /api/integrations/moxfield/deck/import</code>
+                                                    or a wishlist via <code>POST /api/integrations/moxfield/wishlist/import</code>
+                                                    before using these tokens. Private wishlists return 401.
+                                                </div>
+
+                                                <p class="mb-1 fw-semibold">Logic &amp; grouping</p>
+                                                <div class="text-muted mb-2" style="font-size:0.8rem">
+                                                    Space = AND &nbsp;|&nbsp; <code>OR</code> &nbsp;|&nbsp; <code>-</code> = NOT &nbsp;|&nbsp; <code>(&hellip;)</code> = group
+                                                </div>
+
+                                                <p class="mb-1 fw-semibold">Examples</p>
+                                                <ul class="mb-0 ps-3 text-muted" style="font-size:0.8rem">
+                                                    <li><code>-staple:any usd&lt;1.00</code> &mdash; cheap non-staples (junk pile)</li>
+                                                    <li><code>staple:cedh OR combo:true</code> &mdash; high-value targets</li>
+                                                    <li><code>(c:w OR c:u) t:creature cmc&lt;=3</code> &mdash; cheap Azorius creatures</li>
+                                                    <li><code>cull:true</code> &mdash; vanilla cards with no buylist value (pair with Override bin)</li>
+                                                    <li><code>buylist:ck&gt;=1.00</code> &mdash; cards CK will pay $1+ for (pair with Override bin)</li>
+                                                </ul>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-5">
+                        <!-- Camera feed with overlay -->
+                        <div class="card">
+                            <div class="card-header">Camera Feed</div>
+                            <div class="card-body p-1">
+                                <!--
+                                  Portrait-oriented camera box. The
+                                  camera manager rotates every frame
+                                  90° clockwise, so the MJPEG stream
+                                  is 720x1280 (portrait). We use a
+                                  flex-centered fixed-height container
+                                  with object-fit:contain so the frame
+                                  always displays at its native 9:16
+                                  aspect ratio instead of being
+                                  squished into a square by width:100%
+                                  + max-height clamping.
+                                -->
+                                <div class="camera-overlay-container"
+                                     style="position:relative; width:100%;
+                                            height:520px; background:#111;
+                                            display:flex; align-items:center;
+                                            justify-content:center;
+                                            overflow:hidden;">
+                                    <img id="session-camera-feed" src=""
+                                         style="max-width:100%; max-height:100%;
+                                                width:auto; height:100%;
+                                                object-fit:contain; display:block;">
+                                    <canvas id="camera-overlay-canvas"
+                                            style="position:absolute; top:0; left:0;
+                                                   width:100%; height:100%;
+                                                   pointer-events:none;"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Controls -->
+                        <div class="card mt-2">
+                            <div class="card-body">
+                                <input type="text" class="form-control form-control-sm mb-2" id="session-notes" placeholder="Session notes (e.g. 'Sorting Commander deck', 'Bulk commons box 3')">
+                                <!-- Optional destination plan (where sorted output will live).
+                                     Fill in now, or leave blank and record per-bin later. -->
+                                <div class="row g-2 mb-2">
+                                    <div class="col-sm-6">
+                                        <label class="form-label small mb-0">Destination box (optional)</label>
+                                        <select class="form-select form-select-sm"
+                                                id="storage-box-select">
+                                            <option value="">-- not set --</option>
+                                            <option value="box-a">Box A — bulk commons</option>
+                                            <option value="box-b">Box B — bulk uncommons</option>
+                                            <option value="box-c">Box C — rares / foils</option>
+                                            <option value="box-d">Box D — overflow</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-sm-6">
+                                        <label class="form-label small mb-0">Starting divider (optional)</label>
+                                        <input type="number"
+                                               id="storage-divider-input"
+                                               class="form-control form-control-sm"
+                                               min="1" max="200" step="1"
+                                               placeholder="e.g. 1">
+                                    </div>
+                                </div>
+                                <!-- Re-sort mode: only show a source-box picker when the user
+                                     is explicitly re-sorting an already-scanned box. -->
+                                <div class="form-check form-check-inline mb-2">
+                                    <input class="form-check-input" type="checkbox"
+                                           id="resort-mode-toggle"
+                                           onchange="onResortToggle()">
+                                    <label class="form-check-label small"
+                                           for="resort-mode-toggle">
+                                        Re-sorting an existing box
+                                    </label>
+                                </div>
+                                <div id="resort-source-row" class="row g-2 mb-2" style="display:none;">
+                                    <div class="col-sm-6">
+                                        <label class="form-label small mb-0">Source box</label>
+                                        <select class="form-select form-select-sm" id="resort-source-select">
+                                            <option value="">-- choose source box --</option>
+                                            <option value="box-a">Box A — bulk commons</option>
+                                            <option value="box-b">Box B — bulk uncommons</option>
+                                            <option value="box-c">Box C — rares / foils</option>
+                                            <option value="box-d">Box D — overflow</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <!-- Active sort preset (mirrors Sort Configuration tab).
+                                     Changing this selector immediately updates the
+                                     Sort Configuration tab's table so Start Session
+                                     sends the right config_lines. -->
+                                <div class="row g-2 mb-2 align-items-end">
+                                    <div class="col-sm-8">
+                                        <label class="form-label small mb-0"
+                                               for="dashboard-sort-preset-select">
+                                            Sort preset
+                                        </label>
+                                        <select class="form-select form-select-sm"
+                                                id="dashboard-sort-preset-select"
+                                                onchange="onDashboardSortPresetSelect()">
+                                            <option value="">-- loading --</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-sm-4 text-end">
+                                        <span class="small text-muted"
+                                              id="dashboard-sort-preset-hint">
+                                            Applied on Start Session
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="d-flex gap-2 flex-wrap">
+                                    <button id="btn-start-session" class="btn btn-success" onclick="startSession()">Start Session</button>
+                                    <button id="btn-detect" class="btn btn-primary btn-lg" onclick="apiPost('/api/session/detect')" disabled>Detect & Sort</button>
+                                    <button id="btn-continuous" class="btn btn-outline-primary" onclick="toggleContinuousSort()" disabled title="Auto-detect loop">&#9654; Continuous</button>
+                                    <button id="btn-undo" class="btn btn-outline-warning" onclick="undoLastSort()" disabled title="Undo last sort">&#8630; Undo</button>
+                                    <button id="btn-pause" class="btn btn-warning" onclick="apiPost('/api/session/pause')" disabled>Pause</button>
+                                    <button id="btn-resume" class="btn btn-info" onclick="apiPost('/api/session/resume')" style="display:none;">Resume</button>
+                                    <button id="btn-stop-session" class="btn btn-danger" onclick="apiPost('/api/session/stop')" disabled>Stop Session</button>
+                                </div>
+                                <!-- Continuous sort delay + Wishlist bin -->
+                                <div class="d-flex gap-2 flex-wrap mt-2 align-items-center">
+                                    <div class="input-group input-group-sm" style="max-width:180px;">
+                                        <span class="input-group-text">Delay</span>
+                                        <input type="number" id="continuous-delay" class="form-control" value="0.1" min="0" max="10" step="0.1" title="Seconds between auto-detect cycles">
+                                        <span class="input-group-text">s</span>
+                                    </div>
+                                    <div class="input-group input-group-sm" style="max-width:200px;">
+                                        <span class="input-group-text">Wishlist Bin</span>
+                                        <input type="number" id="wishlist-bin-input" class="form-control" placeholder="None" min="1" max="10" title="Bin for wishlist matches (leave empty to disable)">
+                                        <button class="btn btn-outline-secondary" onclick="setWishlistBin()">Set</button>
+                                    </div>
+                                    <!-- Priority bin (Phase 4.21): Moxfield wishlist -> priority bin. -->
+                                    <div class="input-group input-group-sm" style="max-width:320px;"
+                                         title="Cards in the selected Moxfield wishlist are routed to the priority bin (overrides all other sort rules).">
+                                        <span class="input-group-text">Priority Bin</span>
+                                        <input type="number" id="priority-bin-input" class="form-control" placeholder="None" min="1" max="10">
+                                        <select id="priority-wishlist-select" class="form-select" title="Moxfield wishlist source">
+                                            <option value="">— wishlist —</option>
+                                        </select>
+                                        <button class="btn btn-outline-warning" onclick="setPriorityBin()">Set</button>
+                                        <button class="btn btn-outline-secondary" type="button"
+                                                data-bs-toggle="modal" data-bs-target="#moxfield-text-modal"
+                                                title="Paste a Moxfield decklist to add / replace a wishlist source, or copy your inventory out as Moxfield text.">
+                                            Import/Export…
+                                        </button>
+                                    </div>
+                                    <div class="input-group input-group-sm" style="max-width:220px;">
+                                        <span class="input-group-text">Re-home every</span>
+                                        <input type="number" id="rehome-interval" class="form-control" value="100" min="10" max="1000" step="10">
+                                        <button class="btn btn-outline-secondary" onclick="setRehomeInterval()">Set</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Suction head status -->
+                        <div class="card mt-2">
+                            <div class="card-header">Suction Head</div>
+                            <div class="card-body">
+                                <h5 id="suction-status" class="text-center">EMPTY</h5>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <!-- Last card -->
+                        <div class="card">
+                            <div class="card-header">Last Card Detected</div>
+                            <div class="card-body" id="last-card-info">
+                                <p class="text-muted">No card detected yet</p>
+                            </div>
+                        </div>
+                        <!-- Live card info overlay (Phase 4 item 4.19) -->
+                        <div class="card mt-2" id="card-overlay-card">
+                            <div class="card-header">Card Info</div>
+                            <div class="card-body p-2" id="card-overlay-panel">
+                                <p class="text-muted small mb-0">Waiting for next card&hellip;</p>
+                            </div>
+                        </div>
+                        <!-- Session stats -->
+                        <div class="card mt-2">
+                            <div class="card-header">Session Stats</div>
+                            <div class="card-body" id="session-stats-panel">
+                                <p class="text-muted">No active session</p>
+                            </div>
+                        </div>
+                        <!-- Stack estimate -->
+                        <div class="card mt-2">
+                            <div class="card-header">Stack Estimate</div>
+                            <div class="card-body" id="stack-estimate-panel">
+                                <p class="text-muted">No data</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <!-- Bin contents with expandable card lists -->
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                Bin Contents
+                                <button class="btn btn-outline-secondary btn-sm py-0 px-1" onclick="toggleAllBinDetails()" title="Expand/collapse all">&#9776;</button>
+                            </div>
+                            <div class="card-body p-2" id="session-bin-contents" style="max-height:600px; overflow-y:auto;">
+                                <p class="text-muted small">No active session</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Activity log -->
+                <div class="row mt-2">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">Activity Log</div>
+                            <div class="card-body p-2">
+                                <div id="activity-log" class="activity-log"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>

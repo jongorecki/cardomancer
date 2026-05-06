@@ -1,0 +1,20 @@
+<body>
+    <!-- Top bar with E-Stop -->
+    <nav class="navbar navbar-dark bg-dark px-3">
+        <span class="navbar-brand mb-0 h1">MTG Card Sorter</span>
+        <div class="d-flex align-items-center gap-3">
+            <button class="btn btn-sm btn-outline-secondary" onclick="toggleTheme()" id="theme-toggle" title="Toggle light/dark theme">&#9788;</button>
+            <span id="connection-badge" class="badge bg-secondary">Disconnected</span>
+            <span id="state-badge" class="badge bg-secondary">--</span>
+            <span id="camera-badge" class="badge bg-secondary" title="Camera health — click for details" style="cursor:pointer;" onclick="showCameraDetails()">&#128247; --</span>
+            <button id="btn-estop" class="btn btn-danger btn-estop" onclick="emergencyStop()">
+                EMERGENCY STOP
+            </button>
+            <button id="btn-reset-estop" class="btn btn-warning ms-2"
+                    onclick="resetAfterEstop()"
+                    style="display:none;"
+                    title="Clear Marlin halt (M999) and re-home after an emergency stop">
+                &#8634; Reset &amp; Re-home
+            </button>
+        </div>
+    </nav>

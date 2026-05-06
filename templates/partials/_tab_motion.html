@@ -1,0 +1,57 @@
+            <!-- ============================================================ -->
+            <!-- MOTION PREVIEW TAB -->
+            <!-- ============================================================ -->
+            <div class="tab-pane fade" id="tab-motion">
+                <div class="row">
+                    <div class="col-md-8">
+                        <div class="card">
+                            <div class="card-header">Machine Motion Preview</div>
+                            <div class="card-body">
+                                <canvas id="motion-canvas" width="800" height="300" class="w-100" style="border:1px solid #333; background:#1a1a2e;"></canvas>
+                                <div class="mt-2 d-flex align-items-center justify-content-between">
+                                    <div class="small text-muted">
+                                        <span class="me-3"><span style="color:#0f0;">&#9679;</span> Suction head</span>
+                                        <span class="me-3"><span style="color:#0af;">&#9679;</span> Carrying</span>
+                                        <span class="me-3"><span style="color:#ff0;">&#9675;</span> Destination</span>
+                                        <span class="me-3"><span style="color:#6af;">&#9644;</span> Source</span>
+                                        <span class="me-3"><span style="color:#777;">&#9644;</span> Staging</span>
+                                        <span class="me-3"><span style="color:#f80;">&#9632;</span> Camera</span>
+                                        <span><span style="color:#555;">&#9644;</span> Bins</span>
+                                    </div>
+                                    <div class="btn-group btn-group-sm" role="group">
+                                        <button class="btn btn-outline-secondary active" id="btn-speed-1x" onclick="setMotionSpeed(1)">1x</button>
+                                        <button class="btn btn-outline-secondary" id="btn-speed-2x" onclick="setMotionSpeed(2)">2x</button>
+                                        <button class="btn btn-outline-secondary" id="btn-speed-5x" onclick="setMotionSpeed(5)">5x</button>
+                                        <button class="btn btn-outline-secondary" id="btn-speed-10x" onclick="setMotionSpeed(10)">10x</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card">
+                            <div class="card-header">Test Run (Simulation)</div>
+                            <div class="card-body">
+                                <p class="small text-muted">Simulate sorting random cards without hardware. Uses the sort mode configured on the Sort Session tab.</p>
+                                <div class="mb-2">
+                                    <label class="form-label">Number of Cards</label>
+                                    <input type="number" class="form-control form-control-sm" id="sim-card-count" value="10" min="1" max="1000">
+                                </div>
+                                <div class="mb-2">
+                                    <span class="form-label">Sort Mode:</span>
+                                    <strong id="sim-mode-display">Color</strong>
+                                </div>
+                                <button class="btn btn-primary btn-sm" onclick="startSimulation()">Run Simulation</button>
+                                <button class="btn btn-secondary btn-sm" onclick="apiPost('/api/sim/stop')">Stop</button>
+                                <div id="sim-progress" class="mt-2 small"></div>
+                            </div>
+                        </div>
+                        <div class="card mt-2">
+                            <div class="card-header">Simulation Results</div>
+                            <div class="card-body p-2" id="sim-results" style="max-height:300px; overflow-y:auto;">
+                                <p class="text-muted small">No results yet</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>

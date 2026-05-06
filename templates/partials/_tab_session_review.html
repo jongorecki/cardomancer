@@ -1,0 +1,50 @@
+            <!-- ============================================================ -->
+            <!-- SESSION REVIEW TAB (per-attribute detection review queues) -->
+            <!-- ============================================================ -->
+            <div class="tab-pane fade" id="tab-session-review">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <ul class="nav nav-pills" id="detection-review-subnav" role="tablist">
+                        <li class="nav-item">
+                            <a class="nav-link active" data-review-variable="foil" href="#"
+                               onclick="return selectDetectionReview('foil')">
+                                Foil <span class="badge bg-warning ms-1" id="detection-badge-foil">0</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" data-review-variable="border" href="#"
+                               onclick="return selectDetectionReview('border')">
+                                Border <span class="badge bg-warning ms-1" id="detection-badge-border">0</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" data-review-variable="set_symbol" href="#"
+                               onclick="return selectDetectionReview('set_symbol')">
+                                Set Symbol <span class="badge bg-warning ms-1" id="detection-badge-set_symbol">0</span>
+                            </a>
+                        </li>
+                    </ul>
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="form-check form-switch mb-0">
+                            <input class="form-check-input" type="checkbox" id="detection-show-reviewed"
+                                   onchange="loadDetectionReviewQueue()">
+                            <label class="form-check-label small" for="detection-show-reviewed">Show reviewed</label>
+                        </div>
+                        <button class="btn btn-outline-secondary btn-sm py-0"
+                                onclick="seedDetectionReviews()"
+                                title="Scan session history and add any new scans to the queues">
+                            Refresh Queue
+                        </button>
+                    </div>
+                </div>
+                <p class="text-muted small">
+                    Queue items are ordered by ascending detector confidence —
+                    items the detector was least sure about (or didn't score at
+                    all) surface first. Correct / Wrong labels are saved so
+                    future detector tuning can use them as ground truth.
+                </p>
+                <div id="detection-review-body">
+                    <p class="text-muted text-center py-4" id="detection-review-empty">
+                        Nothing to review in this queue.
+                    </p>
+                </div>
+            </div><!-- /#tab-session-review -->

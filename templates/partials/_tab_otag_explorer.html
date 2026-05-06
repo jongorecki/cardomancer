@@ -1,0 +1,128 @@
+            <!-- ============================================================ -->
+            <!-- OTAG EXPLORER TAB (Galaxy / Tree / Atlas)                    -->
+            <!-- ============================================================ -->
+            <div class="tab-pane fade" id="tab-otag-explorer">
+                <div class="otag-explorer-topbar d-flex flex-wrap align-items-center gap-2 mb-2">
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Mode">
+                        <button type="button" class="btn btn-outline-primary active"
+                                data-otag-mode="galaxy"
+                                onclick="setOtagMode('galaxy')">Galaxy</button>
+                        <button type="button" class="btn btn-outline-primary"
+                                data-otag-mode="outline"
+                                onclick="setOtagMode('outline')">Outline</button>
+                        <button type="button" class="btn btn-outline-primary"
+                                data-otag-mode="tree"
+                                onclick="setOtagMode('tree')">Tree</button>
+                        <button type="button" class="btn btn-outline-primary"
+                                data-otag-mode="atlas"
+                                onclick="setOtagMode('atlas')">Atlas</button>
+                    </div>
+
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Navigation">
+                        <button type="button" class="btn btn-outline-secondary"
+                                id="btn-otag-back" onclick="otagGoBack()"
+                                title="Back to previous focus" disabled>&larr; Back</button>
+                        <button type="button" class="btn btn-outline-secondary"
+                                id="btn-otag-reset" onclick="otagReset()"
+                                title="Reset to empty state">&#x21bb; Reset</button>
+                    </div>
+
+                    <div class="otag-galaxy-controls d-flex align-items-center gap-2">
+                        <span class="small text-muted">Depth:</span>
+                        <div class="btn-group btn-group-sm">
+                            <button type="button" class="btn btn-outline-secondary active"
+                                    data-otag-depth="1"
+                                    onclick="setOtagDepth(1)">1</button>
+                            <button type="button" class="btn btn-outline-secondary"
+                                    data-otag-depth="2"
+                                    onclick="setOtagDepth(2)">2</button>
+                            <button type="button" class="btn btn-outline-secondary"
+                                    data-otag-depth="3"
+                                    onclick="setOtagDepth(3)">3</button>
+                        </div>
+                        <span class="small text-muted ms-2">Edges:</span>
+                        <label class="form-check form-check-inline mb-0 small">
+                            <input type="checkbox" class="form-check-input otag-type-toggle"
+                                   data-otag-type="hierarchy" checked> hierarchy
+                        </label>
+                        <label class="form-check form-check-inline mb-0 small">
+                            <input type="checkbox" class="form-check-input otag-type-toggle"
+                                   data-otag-type="synonym" checked> synonym
+                        </label>
+                        <label class="form-check form-check-inline mb-0 small">
+                            <input type="checkbox" class="form-check-input otag-type-toggle"
+                                   data-otag-type="co_occurs" checked> co_occurs
+                        </label>
+                        <label class="form-check form-check-inline mb-0 small">
+                            <input type="checkbox" class="form-check-input otag-type-toggle"
+                                   data-otag-type="implies" checked> implies
+                        </label>
+                        <label class="form-check form-check-inline mb-0 small text-warning"
+                               title="Warning: very dense graph">
+                            <input type="checkbox" class="form-check-input otag-type-toggle"
+                                   data-otag-type="related"> related
+                        </label>
+                        <label class="form-check form-check-inline mb-0 small text-warning"
+                               title="Warning: ~2.9M edges, will be slow">
+                            <input type="checkbox" class="form-check-input otag-type-toggle"
+                                   data-otag-type="sibling_disjoint"> sibling_disjoint
+                        </label>
+                    </div>
+
+                    <div class="ms-auto position-relative" style="min-width:280px">
+                        <input type="text" class="form-control form-control-sm"
+                               id="otag-search-input"
+                               placeholder="Search cards or otags..."
+                               autocomplete="off">
+                        <div id="otag-search-dropdown" class="otag-search-dropdown"
+                             style="display:none"></div>
+                    </div>
+                </div>
+
+                <div class="row g-2">
+                    <div class="col-9">
+                        <div id="otag-explorer-canvas"
+                             style="background:#0c0d10; border-radius:6px;
+                                    height:75vh; position:relative;
+                                    overflow:hidden;">
+                            <svg id="otag-explorer-svg"
+                                 style="width:100%; height:100%; display:block;">
+                                <defs>
+                                    <radialGradient id="otag-bg-grad" cx="50%" cy="50%" r="60%">
+                                        <stop offset="0%" stop-color="#1a1d28" stop-opacity="1"/>
+                                        <stop offset="100%" stop-color="#0c0d10" stop-opacity="1"/>
+                                    </radialGradient>
+                                </defs>
+                                <rect x="0" y="0" width="100%" height="100%"
+                                      fill="url(#otag-bg-grad)"/>
+                                <g id="otag-zoom-root"></g>
+                            </svg>
+                            <!-- Outline mode renders into this container.
+                                 Hidden unless mode === 'outline'. -->
+                            <div id="otag-outline-container"
+                                 style="display:none; width:100%; height:100%;
+                                        overflow-y:auto; padding:18px 24px;
+                                        color:#e8e8ee; font-size:0.95rem;">
+                            </div>
+                            <div id="otag-explorer-loading"
+                                 style="position:absolute; top:50%; left:50%;
+                                        transform:translate(-50%,-50%);
+                                        color:#7da9ff; display:none;">
+                                Loading…
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-3">
+                        <div id="otag-explorer-side"
+                             style="background:#15171f; color:#e8e8ee;
+                                    border-radius:6px; padding:12px;
+                                    height:75vh; overflow-y:auto;
+                                    font-size:0.875rem;">
+                            <div class="text-muted small" id="otag-side-empty">
+                                Hover or click a node for details.
+                            </div>
+                            <div id="otag-side-content"></div>
+                        </div>
+                    </div>
+                </div>
+            </div><!-- /#tab-otag-explorer -->

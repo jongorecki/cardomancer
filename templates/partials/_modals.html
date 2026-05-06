@@ -1,0 +1,181 @@
+            <!-- ============================================================ -->
+            <!-- DATABASE MODAL (opened from Dashboard "Database…" button) -->
+            <!-- ============================================================ -->
+            <div class="modal fade" id="database-modal" tabindex="-1" aria-hidden="true">
+              <div class="modal-dialog modal-xl modal-dialog-scrollable">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title">Database</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                  </div>
+                  <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">Current Database</div>
+                            <div class="card-body" id="db-info">
+                                <p class="text-muted">Loading...</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">Update Database</div>
+                            <div class="card-body">
+                                <button class="btn btn-primary btn-sm" onclick="checkDbUpdate()">Check for Updates</button>
+                                <div id="db-update-check" class="mt-2 small"></div>
+                                <hr>
+                                <button class="btn btn-success btn-sm"
+                                        onclick="apiPost('/api/database/refresh-prices')"
+                                        id="btn-db-refresh-prices"
+                                        title="Download latest bulk data and refresh prices only. Fast (~1 min) — skips image download and hash regeneration.">
+                                    Refresh Prices Only
+                                </button>
+                                <button class="btn btn-warning btn-sm"
+                                        onclick="apiPost('/api/database/update')"
+                                        id="btn-db-update"
+                                        title="Download bulk data, download new images, regenerate both hash DBs. Slow (30+ min) — only needed when new sets release.">
+                                    Run Full Update
+                                </button>
+                                <button class="btn btn-secondary btn-sm" onclick="apiPost('/api/database/update/stop')">Cancel</button>
+                                <div class="small text-muted mt-2">
+                                    <strong>Refresh Prices Only</strong> downloads the latest Scryfall bulk data and reloads card info (name, set, prices, text). Skips image download + hash regen. Fast &mdash; use this when prices are stale.
+                                    <br>
+                                    <strong>Run Full Update</strong> also downloads new card images and rebuilds both hash databases. Slow &mdash; only needed when new sets have been released.
+                                </div>
+                                <div id="db-update-progress" class="mt-2">
+                                    <div class="progress" style="display:none;">
+                                        <div id="db-progress-bar" class="progress-bar" role="progressbar" style="width:0%"></div>
+                                    </div>
+                                    <p class="small mt-1" id="db-progress-message"></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                  </div><!-- /.modal-body -->
+                </div><!-- /.modal-content -->
+              </div><!-- /.modal-dialog -->
+            </div><!-- /#database-modal -->
+            <!-- ============================================================ -->
+            <!-- CALIBRATION WIZARD MODAL (Phase 4 item 4.22)                 -->
+            <!-- Orchestrates existing calibration endpoints in a 7-step flow -->
+            <!-- so a single "Start" click on a new session does a card pick  -->
+            <!-- immediately.                                                 -->
+            <!-- ============================================================ -->
+            <div class="modal fade" id="calibration-wizard-modal" tabindex="-1" aria-hidden="true">
+              <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title">
+                      Calibration Wizard
+                      <span id="wizard-step-header" class="badge bg-secondary ms-2">Step 1 of 7</span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                  </div>
+                  <div class="modal-body">
+                    <!-- Step progress rail -->
+                    <ol id="wizard-step-rail" class="list-unstyled small d-flex flex-wrap gap-2 mb-3">
+                      <li data-wizard-step="1" class="wizard-step-pill">1. Machine</li>
+                      <li data-wizard-step="2" class="wizard-step-pill">2. Camera</li>
+                      <li data-wizard-step="3" class="wizard-step-pill">3. ArUco markers</li>
+                      <li data-wizard-step="4" class="wizard-step-pill">4. Bin X calibration</li>
+                      <li data-wizard-step="5" class="wizard-step-pill">5. Bin Z probe</li>
+                      <li data-wizard-step="6" class="wizard-step-pill">6. Staging ROI</li>
+                      <li data-wizard-step="7" class="wizard-step-pill">7. Focus lock</li>
+                    </ol>
+
+                    <!-- Active step title + body -->
+                    <h5 id="wizard-step-title">Connecting to machine…</h5>
+                    <div id="wizard-step-body" class="mt-2"></div>
+
+                    <!-- Surface the last error without closing the modal -->
+                    <div id="wizard-error" class="alert alert-danger mt-3" style="display:none;"></div>
+                    <div id="wizard-info"  class="alert alert-info mt-3"   style="display:none;"></div>
+                  </div>
+                  <div class="modal-footer justify-content-between">
+                    <div>
+                      <button type="button" class="btn btn-outline-secondary btn-sm"
+                              id="wizard-btn-back">Back</button>
+                      <button type="button" class="btn btn-outline-warning btn-sm"
+                              id="wizard-btn-skip">Skip step</button>
+                    </div>
+                    <div>
+                      <button type="button" class="btn btn-secondary"
+                              data-bs-dismiss="modal">Close</button>
+                      <button type="button" class="btn btn-primary"
+                              id="wizard-btn-next">Next</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div><!-- /#calibration-wizard-modal -->
+            <!-- ============================================================ -->
+            <!-- MOXFIELD TEXT IMPORT / EXPORT MODAL                          -->
+            <!-- Replaces the auth'd API push/pull (Cloudflare-blocked).      -->
+            <!-- ============================================================ -->
+            <div class="modal fade" id="moxfield-text-modal" tabindex="-1" aria-hidden="true">
+              <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title">Moxfield Import / Export (text)</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                  </div>
+                  <div class="modal-body">
+                    <ul class="nav nav-tabs" role="tablist">
+                      <li class="nav-item">
+                        <button class="nav-link active" data-bs-toggle="tab"
+                                data-bs-target="#mox-paste-in">Paste in (wishlist)</button>
+                      </li>
+                      <li class="nav-item">
+                        <button class="nav-link" data-bs-toggle="tab"
+                                data-bs-target="#mox-paste-out" onclick="loadMoxfieldExportText()">Copy out (inventory)</button>
+                      </li>
+                    </ul>
+                    <div class="tab-content pt-3">
+                      <div class="tab-pane fade show active" id="mox-paste-in">
+                        <p class="small text-muted mb-2">
+                          Paste a Moxfield decklist or wishlist (plain text).
+                          Names are resolved against your local Scryfall cache —
+                          unresolved names are listed back so you can fix them.
+                          Basic lands are filtered at cache time.
+                        </p>
+                        <div class="mb-2">
+                          <label for="mox-paste-source-key" class="form-label small mb-1">Source key</label>
+                          <input type="text" class="form-control form-control-sm" id="mox-paste-source-key"
+                                 placeholder="moxfield:my-edh">
+                        </div>
+                        <div class="mb-2">
+                          <label for="mox-paste-display-name" class="form-label small mb-1">Display name (optional)</label>
+                          <input type="text" class="form-control form-control-sm" id="mox-paste-display-name"
+                                 placeholder="My EDH shortlist">
+                        </div>
+                        <textarea class="form-control font-monospace" id="mox-paste-textarea" rows="12"
+                                  placeholder="4 Lightning Bolt (LEA) 161&#10;1 Black Lotus&#10;// comments are ignored&#10;Commander&#10;1 Atraxa, Praetors' Voice"></textarea>
+                        <div id="mox-paste-result" class="mt-2 small"></div>
+                      </div>
+                      <div class="tab-pane fade" id="mox-paste-out">
+                        <p class="small text-muted mb-2">
+                          Current inventory as Moxfield text. Click the textarea
+                          and Ctrl+A / Ctrl+C, or use Copy below, then paste into
+                          Moxfield's Import deck or Binder bulk-add.
+                        </p>
+                        <textarea class="form-control font-monospace" id="mox-export-textarea"
+                                  rows="14" readonly></textarea>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="modal-footer justify-content-between">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <div>
+                      <button type="button" class="btn btn-outline-secondary"
+                              id="mox-export-copy-btn" style="display:none;"
+                              onclick="copyMoxfieldExportText()">Copy to clipboard</button>
+                      <button type="button" class="btn btn-primary"
+                              id="mox-paste-submit-btn"
+                              onclick="submitMoxfieldPaste()">Import</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div><!-- /#moxfield-text-modal -->

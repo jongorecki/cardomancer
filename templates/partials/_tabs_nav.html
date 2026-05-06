@@ -1,0 +1,13 @@
+        <ul class="nav nav-tabs" id="mainTabs" role="tablist">
+            <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-dashboard">Dashboard</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-bins">Bin Setup</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-session">Sort Session</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-calibration">Calibration</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-collection">Collection</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-session-review" onclick="loadDetectionReviewCounts()">Session Review <span class="badge bg-warning ms-1" id="detection-review-total-badge" style="display:none">0</span></a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-otag-explorer" onclick="initOtagExplorer()">&#9783; Otag Explorer</a></li>
+            <!-- Motion Preview and Database are not top-level tabs. To
+                 re-enable Motion Preview, restore this line:
+                 <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-motion">Motion Preview</a></li>
+                 Database content is embedded as a Dashboard card modal. -->
+        </ul>

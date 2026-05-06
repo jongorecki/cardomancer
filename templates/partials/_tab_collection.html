@@ -1,0 +1,399 @@
+            <!-- ============================================================ -->
+            <!-- COLLECTION TAB -->
+            <!-- ============================================================ -->
+            <div class="tab-pane fade" id="tab-collection">
+                <ul class="nav nav-pills mb-3" id="collection-subnav" role="tablist">
+                    <li class="nav-item"><a class="nav-link active" data-collection-view="inventory" href="#">Inventory</a></li>
+                    <li class="nav-item"><a class="nav-link" data-collection-view="locator" href="#">Locator</a></li>
+                    <li class="nav-item"><a class="nav-link" data-collection-view="sync" href="#">Sync</a></li>
+                    <li class="nav-item"><a class="nav-link" data-collection-view="cull" href="#">Cull</a></li>
+                </ul>
+                <div data-collection-section="inventory">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="card">
+                            <div class="card-header">Collection Overview</div>
+                            <div class="card-body" id="collection-stats">
+                                <p class="text-muted">Loading...</p>
+                            </div>
+                        </div>
+                        <div class="card mt-2" id="box-summary-card" style="display:none">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                Boxes
+                                <a href="/api/collection/boxes/labels" target="_blank" class="btn btn-outline-secondary btn-sm py-0" title="Print box labels">&#9113; Labels</a>
+                            </div>
+                            <div class="card-body p-0" id="box-summary-body"></div>
+                        </div>
+                        <div class="card mt-2">
+                            <div class="card-header">Add Card</div>
+                            <div class="card-body">
+                                <div class="position-relative mb-1">
+                                    <input type="text" class="form-control form-control-sm" id="add-card-name" placeholder="Card name *" autocomplete="off">
+                                    <div id="add-card-suggestions" class="list-group position-absolute w-100" style="z-index:1050;max-height:200px;overflow-y:auto;display:none"></div>
+                                </div>
+                                <select class="form-select form-select-sm mb-1" id="add-card-set" disabled>
+                                    <option value="">Select a card first</option>
+                                </select>
+                                <div id="add-card-printing-info" class="small text-secondary mb-1" style="display:none"></div>
+                                <div class="d-flex gap-1 mb-1">
+                                    <input type="number" class="form-control form-control-sm" id="add-card-qty" value="1" min="1" placeholder="Qty" style="flex:1">
+                                    <button class="btn btn-primary btn-sm" onclick="addManualCard()" style="flex:1">Add</button>
+                                </div>
+                                <div id="add-card-status" class="small mt-1" style="display:none"></div>
+                                <div id="add-card-image" class="text-center mt-2" style="display:none">
+                                    <img id="add-card-img" src="" alt="" class="rounded" style="max-width:100%;max-height:300px">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card mt-2">
+                            <div class="card-header">Search</div>
+                            <div class="card-body">
+                                <input type="text" class="form-control form-control-sm mb-1" id="search-name" placeholder="Card name...">
+                                <input type="text" class="form-control form-control-sm mb-1" id="search-set" placeholder="Set code...">
+                                <input type="text" class="form-control form-control-sm mb-1" id="search-colors" placeholder="Colors (e.g. WU)...">
+                                <select class="form-select form-select-sm mb-1" id="search-rarity">
+                                    <option value="">Any rarity</option>
+                                    <option value="common">Common</option>
+                                    <option value="uncommon">Uncommon</option>
+                                    <option value="rare">Rare</option>
+                                    <option value="mythic">Mythic</option>
+                                </select>
+                                <select class="form-select form-select-sm mb-1" id="search-box">
+                                    <option value="">Any box</option>
+                                    <option value="__unassigned__">Unassigned</option>
+                                </select>
+                                <button class="btn btn-primary btn-sm" onclick="searchCollection()">Search</button>
+                                <button class="btn btn-outline-secondary btn-sm" onclick="loadInventory()">Reset</button>
+                                <div class="d-flex gap-1 mt-1 flex-wrap">
+                                    <a href="/api/collection/export/csv" class="btn btn-outline-success btn-sm">Export CSV</a>
+                                    <a href="/api/collection/export/decklist" class="btn btn-outline-success btn-sm">Deck List</a>
+                                    <button class="btn btn-outline-info btn-sm" onclick="document.getElementById('csv-import-file').click()">Import CSV</button>
+                                    <input type="file" id="csv-import-file" accept=".csv" style="display:none" onchange="importCollectionCSV(this)">
+                                </div>
+                                <div id="import-status" class="small mt-1" style="display:none"></div>
+                                <hr>
+                                <p class="small text-secondary mb-1">Prices</p>
+                                <div class="d-flex gap-1 mb-1">
+                                    <button class="btn btn-outline-warning btn-sm" id="btn-price-update" onclick="startPriceUpdate()">Update Prices</button>
+                                    <button class="btn btn-outline-secondary btn-sm" id="btn-price-stop" onclick="stopPriceUpdate()" style="display:none">Stop</button>
+                                </div>
+                                <div id="price-update-status" class="small" style="display:none"></div>
+                                <div class="progress mt-1" id="price-progress-container" style="display:none;height:16px;">
+                                    <div class="progress-bar" id="price-progress-bar" role="progressbar" style="width:0%">0%</div>
+                                </div>
+                                <hr>
+                                <button class="btn btn-outline-danger btn-sm" onclick="resetCollection()">Reset Entire Collection</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-9">
+                        <div class="card mb-2" id="collection-filters-card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span>Filters</span>
+                                <button class="btn btn-outline-secondary btn-sm py-0" onclick="clearCollectionFilters()">Clear all</button>
+                            </div>
+                            <div class="card-body py-2">
+                                <div class="mb-2">
+                                    <label class="form-label small mb-1 fw-bold">Staples</label>
+                                    <div class="btn-group btn-group-sm flex-wrap" role="group" data-filter-group="staples">
+                                        <button type="button" class="btn btn-outline-primary chip" data-chip-token="staple:universal">Universal staple</button>
+                                        <button type="button" class="btn btn-outline-primary chip" data-chip-token="staple:cedh">cEDH staple</button>
+                                        <button type="button" class="btn btn-outline-primary chip" data-chip-token="staple:archetype">Archetype staple</button>
+                                        <button type="button" class="btn btn-outline-primary chip" data-chip-token="staple:any" data-chip-exclusive="1">Any staple</button>
+                                    </div>
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label small mb-1 fw-bold">Price / value</label>
+                                    <div class="btn-group btn-group-sm flex-wrap" role="group" data-filter-group="value">
+                                        <button type="button" class="btn btn-outline-success chip" data-chip-token="usd<1.00">Under $1</button>
+                                        <button type="button" class="btn btn-outline-success chip" data-chip-token="usd>=5.00">$5+</button>
+                                        <button type="button" class="btn btn-outline-success chip" data-chip-token="buylist:ck">On CK buylist</button>
+                                        <button type="button" class="btn btn-outline-success chip" data-chip-token="cull:true">Cull candidates</button>
+                                    </div>
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label small mb-1 fw-bold">Salt</label>
+                                    <div class="btn-group btn-group-sm flex-wrap" role="group" data-filter-group="salt">
+                                        <button type="button" class="btn btn-outline-warning chip" data-chip-token="salt>2">Salty (&gt;2)</button>
+                                        <button type="button" class="btn btn-outline-warning chip" data-chip-token="salt>3">Very salty (&gt;3)</button>
+                                    </div>
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label small mb-1 fw-bold">Combo</label>
+                                    <div class="btn-group btn-group-sm flex-wrap" role="group" data-filter-group="combo">
+                                        <button type="button" class="btn btn-outline-info chip" data-chip-token="combo:true">In a combo</button>
+                                    </div>
+                                </div>
+                                <div class="mb-2">
+                                    <a class="small text-secondary" data-bs-toggle="collapse" href="#collection-filters-advanced" role="button">Advanced (raw query)</a>
+                                    <div class="collapse mt-1" id="collection-filters-advanced">
+                                        <input type="text" class="form-control form-control-sm" id="collection-filter-raw"
+                                               placeholder='Extra tokens, e.g. t:creature c:ur' oninput="updateCollectionFilter()">
+                                        <div class="form-text small">Free text is ANDed with the chips above.</div>
+                                    </div>
+                                </div>
+                                <div class="small text-secondary">
+                                    Compiled query:
+                                    <code id="collection-filter-compiled" class="ms-1">(none)</code>
+                                </div>
+                                <div id="collection-filter-error" class="small text-danger mt-1" style="display:none"></div>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header">
+                                Inventory <span class="badge bg-secondary" id="inventory-count">0</span>
+                            </div>
+                            <div class="card-body p-0">
+                                <div class="d-flex align-items-center gap-2 px-2 py-1" id="bulk-actions" style="display:none">
+                                    <span class="small text-secondary"><span id="bulk-count">0</span> selected</span>
+                                    <button class="btn btn-outline-info btn-sm py-0" onclick="bulkBoxAssign()">Assign to Box</button>
+                                    <button class="btn btn-outline-secondary btn-sm py-0" onclick="bulkClearSelection()">Clear</button>
+                                </div>
+                                <table class="table table-sm table-striped mb-0">
+                                    <thead><tr>
+                                        <th style="width:30px"><input type="checkbox" id="select-all-inv" onchange="toggleSelectAll(this)"></th>
+                                        <th class="sortable" data-sort="name">Name <span class="sort-arrow"></span></th>
+                                        <th class="sortable" data-sort="set_code">Set <span class="sort-arrow"></span></th>
+                                        <th class="sortable" data-sort="colors">Colors <span class="sort-arrow"></span></th>
+                                        <th class="sortable" data-sort="type_line">Type <span class="sort-arrow"></span></th>
+                                        <th class="sortable" data-sort="rarity">Rarity <span class="sort-arrow"></span></th>
+                                        <th class="sortable" data-sort="price_usd">Price <span class="sort-arrow"></span></th>
+                                        <th class="sortable" data-sort="quantity">Qty <span class="sort-arrow"></span></th>
+                                        <th class="sortable" data-sort="box">Box <span class="sort-arrow"></span></th>
+                                        <th></th>
+                                    </tr></thead>
+                                    <tbody id="inventory-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="d-flex justify-content-center mt-2" id="inventory-pagination"></div>
+                    </div>
+                </div>
+                </div><!-- end data-collection-section="inventory" -->
+
+                <div data-collection-section="cull" style="display:none">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="card">
+                            <div class="card-header">Cull Settings</div>
+                            <div class="card-body">
+                                <label class="form-label small mb-1">Preset</label>
+                                <select class="form-select form-select-sm mb-3" id="cull-preset">
+                                    <option value="default" selected>Default — low price + no staple</option>
+                                    <option value="strict">Strict — price must be $0</option>
+                                </select>
+                                <label class="form-label small mb-1">Max market price</label>
+                                <div class="input-group input-group-sm mb-2">
+                                    <span class="input-group-text">$</span>
+                                    <input type="number" class="form-control" id="cull-max-price"
+                                           value="1.00" min="0" step="0.25">
+                                </div>
+                                <label class="form-label small mb-1">Max CK buylist price</label>
+                                <div class="input-group input-group-sm mb-3">
+                                    <span class="input-group-text">$</span>
+                                    <input type="number" class="form-control" id="cull-max-buylist"
+                                           value="0.05" min="0" step="0.01">
+                                </div>
+                                <button class="btn btn-primary btn-sm w-100 mb-2"
+                                        onclick="loadCullCandidates()">Find Candidates</button>
+                                <button class="btn btn-outline-success btn-sm w-100"
+                                        onclick="exportCullCSV()">Export CSV</button>
+                                <hr>
+                                <p class="small text-muted mb-0">
+                                    Dead-weight cards: vanilla/french-vanilla text, no staple
+                                    tier, low salt score, and below the buylist threshold.
+                                </p>
+                                <p class="small text-muted mt-1 mb-0">
+                                    Requires enrichment data (EDHREC + CK buylist) to be
+                                    refreshed for best results.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-9">
+                        <div class="card">
+                            <div class="card-header d-flex align-items-center gap-2">
+                                <span>Cull Candidates</span>
+                                <span class="badge bg-danger" id="cull-count">0</span>
+                            </div>
+                            <div class="card-body p-0">
+                                <div id="cull-status" class="text-muted small text-center py-3" style="display:none">
+                                    Loading&hellip;
+                                </div>
+                                <div id="cull-empty" class="text-muted small text-center py-3" style="display:none">
+                                    No candidates found. Run enrichment refresh first if this seems wrong.
+                                </div>
+                                <div class="table-responsive">
+                                <table class="table table-sm table-striped mb-0" id="cull-table" style="display:none">
+                                    <thead><tr>
+                                        <th>Name</th>
+                                        <th>Set</th>
+                                        <th>Type</th>
+                                        <th>Price</th>
+                                        <th>Buylist</th>
+                                        <th>Salt</th>
+                                        <th>Qty</th>
+                                        <th>Action</th>
+                                        <th>Location</th>
+                                        <th>Reasons</th>
+                                    </tr></thead>
+                                    <tbody id="cull-body"></tbody>
+                                </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                </div><!-- end data-collection-section="cull" -->
+
+                <div data-collection-section="locator" style="display:none">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="card">
+                            <div class="card-header">Locate Cards</div>
+                            <div class="card-body">
+                                <label class="form-label small mb-1">Scryfall query</label>
+                                <div class="input-group input-group-sm mb-2">
+                                    <input type="text" class="form-control" id="locator-query"
+                                           placeholder="e.g. c:r t:instant" autocomplete="off"
+                                           onkeydown="if(event.key==='Enter') runLocatorQuery()">
+                                </div>
+                                <button class="btn btn-primary btn-sm w-100 mb-1"
+                                        onclick="runLocatorQuery()">Find</button>
+                                <button class="btn btn-outline-secondary btn-sm w-100"
+                                        onclick="clearLocatorResults()">Clear</button>
+                                <hr>
+                                <p class="small text-muted mb-0">
+                                    Returns owned cards matching the query, grouped by
+                                    physical box and divider.
+                                    Supports the same syntax as sort bin queries.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-9">
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span>
+                                    Locate Results
+                                    <span class="badge bg-secondary ms-1" id="locator-total">0</span>
+                                    <span class="text-muted small ms-2" id="locator-query-echo"></span>
+                                </span>
+                            </div>
+                            <div class="card-body">
+                                <div id="locator-status" class="text-muted small text-center py-3"
+                                     style="display:none">Searching…</div>
+                                <div id="locator-empty" class="text-muted small text-center py-3"
+                                     style="display:none">No cards found matching that query.</div>
+                                <div id="locator-error" class="alert alert-danger py-2 small"
+                                     style="display:none"></div>
+                                <div id="locator-results"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                </div><!-- end data-collection-section="locator" -->
+
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">Session History</div>
+                            <div class="card-body p-0">
+                                <table class="table table-sm mb-0">
+                                    <thead><tr>
+                                        <th>ID</th><th>Date</th><th>Mode</th><th>Notes</th>
+                                        <th>Scans</th><th>Recognized</th><th>Unrecognized</th><th></th>
+                                    </tr></thead>
+                                    <tbody id="sessions-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span>Scan Review Queue <span class="badge bg-warning" id="review-queue-count">0</span></span>
+                                <div class="d-flex align-items-center gap-2">
+                                    <label class="form-label mb-0 small">Threshold:</label>
+                                    <input type="number" class="form-control form-control-sm" id="review-threshold"
+                                           value="12" min="5" max="30" step="1" style="width:70px"
+                                           onchange="loadReviewQueue()">
+                                    <button class="btn btn-outline-primary btn-sm py-0" onclick="loadReviewQueue()">Refresh</button>
+                                </div>
+                            </div>
+                            <div class="card-body p-0" id="review-queue-container">
+                                <table class="table table-sm mb-0" id="review-queue-table">
+                                    <thead><tr>
+                                        <th style="width:70px">Camera</th>
+                                        <th style="width:60px">Crop</th>
+                                        <th style="width:60px">Guess</th>
+                                        <th class="review-sort" data-sort-key="session_id" style="cursor:pointer">Session <span class="sort-arrow"></span></th>
+                                        <th class="review-sort" data-sort-key="scan_num" style="cursor:pointer">Scan# <span class="sort-arrow"></span></th>
+                                        <th class="review-sort" data-sort-key="name" style="cursor:pointer">Card Name <span class="sort-arrow"></span></th>
+                                        <th class="review-sort" data-sort-key="set_code" style="cursor:pointer">Set <span class="sort-arrow"></span></th>
+                                        <th class="review-sort" data-sort-key="method" style="cursor:pointer">Method <span class="sort-arrow"></span></th>
+                                        <th class="review-sort" data-sort-key="hash_distance" style="cursor:pointer">Distance <span class="sort-arrow"></span></th>
+                                        <th class="review-sort" data-sort-key="bin" style="cursor:pointer">Bin <span class="sort-arrow"></span></th>
+                                        <th>Actions</th>
+                                    </tr></thead>
+                                    <tbody id="review-queue-body"></tbody>
+                                </table>
+                                <p class="text-muted small text-center py-2" id="review-queue-empty" style="display:none">
+                                    No borderline scans to review
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                Wishlist <span class="badge bg-secondary" id="wishlist-count">0</span>
+                            </div>
+                            <div class="card-body p-0">
+                                <table class="table table-sm mb-0">
+                                    <thead><tr>
+                                        <th>Card Name</th><th>Set Pref</th><th>Max Price</th>
+                                        <th>Priority</th><th>Notes</th><th></th>
+                                    </tr></thead>
+                                    <tbody id="wishlist-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">Add to Wishlist</div>
+                            <div class="card-body">
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <input type="text" class="form-control form-control-sm" id="wish-name" placeholder="Card name *">
+                                    </div>
+                                    <div class="col-3">
+                                        <input type="text" class="form-control form-control-sm" id="wish-set" placeholder="Set pref">
+                                    </div>
+                                    <div class="col-3">
+                                        <input type="number" class="form-control form-control-sm" id="wish-price" placeholder="Max $" step="0.01">
+                                    </div>
+                                    <div class="col-4">
+                                        <select class="form-select form-select-sm" id="wish-priority">
+                                            <option value="low">Low</option>
+                                            <option value="normal" selected>Normal</option>
+                                            <option value="high">High</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-5">
+                                        <input type="text" class="form-control form-control-sm" id="wish-notes" placeholder="Notes">
+                                    </div>
+                                    <div class="col-3">
+                                        <button class="btn btn-primary btn-sm w-100" onclick="addWishlistItem()">Add</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
