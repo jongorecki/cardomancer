@@ -210,6 +210,12 @@ def clamp_z(z):
 VACUUM_ON_DELAY_MS  = 250      # Wait after vacuum on before lifting (let suction grip)
 PRESSURE_ON_MS      = 500      # How long to pulse pressure to release card
 
+# Z-bounce: executed on retry pickups to break suction between stuck cards.
+# Bounce is performed inside the source bin, vacuum ON, at probe-contact Z.
+Z_BOUNCE_DISTANCE_MM = 10.0  # how far up/down each pulse travels
+Z_BOUNCE_COUNT = 3           # number of up/down pulses
+Z_BOUNCE_FEEDRATE = 4000     # mm/min — slower than travel for sharper jolt
+
 # Bin width (mm)
 BIN_WIDTH = 100.0
 
@@ -1064,11 +1070,54 @@ def move_to_bin(bin_number):
 # Staging motion (white background detection)
 # =========================================================================
 
-def pick_from_position(x_position):
+def _z_bounce_at_contact(x_position):
+    """
+    Emit a short Z-bounce sequence at the cached probe-contact Z for
+    `x_position`. Used on retry pickups to break suction between stuck
+    cards: the top card stays on the cup, extras drop back onto the
+    stack during the down strokes.
+
+    Preconditions:
+      - Vacuum is already ON and the head is at probe-contact Z inside
+        the bin (i.e. called after `_probe_with_cache(x_position)` and
+        after the `G4 P{VACUUM_ON_DELAY_MS}` dwell).
+      - `_probe_z_cache[x_position]` is populated (fails loud if not).
+
+    Behaviour:
+      - Emits `Z_BOUNCE_COUNT` up/down pulses of `Z_BOUNCE_DISTANCE_MM`,
+        each at `Z_BOUNCE_FEEDRATE`, with `M400` after every Z move.
+      - Contains NO X moves. Per `feedback_no_zx_overlap`, Z must fully
+        complete between strokes and no X travel may overlap. Do not
+        add X moves here.
+    """
+    contact_z = _probe_z_cache.get(x_position)
+    assert contact_z is not None, (
+        f"_z_bounce_at_contact: no cached contact Z for x={x_position}; "
+        f"_probe_with_cache must run before bounce."
+    )
+    up_z = contact_z + Z_BOUNCE_DISTANCE_MM
+    assert up_z < Z_CLEAR_HEIGHT, (
+        f"_z_bounce_at_contact: up_z={up_z} would exceed Z_CLEAR_HEIGHT="
+        f"{Z_CLEAR_HEIGHT}; bounce distance too large for this contact Z."
+    )
+    for _ in range(Z_BOUNCE_COUNT):
+        _send_and_wait(f"G0 Z{up_z} F{Z_BOUNCE_FEEDRATE}")
+        _send_and_wait("M400")
+        _send_and_wait(f"G0 Z{contact_z} F{Z_BOUNCE_FEEDRATE}")
+        _send_and_wait("M400")
+    print(f"[gcode] Z-bounce x{Z_BOUNCE_COUNT} completed at x={x_position}")
+
+
+def pick_from_position(x_position, bounce: bool = False):
     """
     Move to x_position, probe down to contact, vacuum grip, lift to clear height.
     Generic pick — works for source bin, staging area, or any surface.
     Uses cached probe height for fast approach on repeat visits.
+
+    If `bounce=True`, emits a short Z-bounce at contact after the
+    vacuum-on dwell and before the final lift. This is used on retry
+    pickups from the source bin to break suction between stuck cards.
+    Only the source-bin caller should pass `bounce=True`.
     """
     z_clear = _z_travel_height()
     _send_and_wait("G90")
@@ -1082,6 +1131,11 @@ def pick_from_position(x_position):
     # Vacuum on, wait for grip
     _send_and_wait("M106 P0 S255")
     _send_and_wait(f"G4 P{VACUUM_ON_DELAY_MS}")
+    # On retry: try to shake loose any stuck cards below the top one.
+    # We're still at probe-contact Z; extras fall back onto the stack
+    # during the down pulses.
+    if bounce:
+        _z_bounce_at_contact(x_position)
     # Lift
     _send_and_wait(f"G0 Z{z_clear} F{Z_FEEDRATE}")
     _send_and_wait("M400")
