@@ -21,6 +21,20 @@ CROP_SIZE = 745
 PHASH_DISTANCE_THRESHOLD = 120    # scaled for 256-bit (was 40 for 64-bit)
 PHASH_CLOSE_MATCH_DIFF = 40       # scaled for 256-bit (was 10 for 64-bit)
 
+# Identity-confidence threshold for autonomy-ladder routing. Scans whose
+# best-match hash distance is BELOW this value pass straight through to
+# the matched bin. Scans BETWEEN this and PHASH_DISTANCE_THRESHOLD are
+# "low identity confidence" — they still match a card, but uncertainly:
+# the worker routes them to the sort_config's fallback bin and seeds an
+# 'identity' detection-review row so the user can verify them later
+# (see plans/autonomy_ladder.md). Above PHASH_DISTANCE_THRESHOLD the
+# match is rejected entirely (unrecognized path, also goes to fallback).
+#
+# Tuned high (most cards identify confidently in normal sessions; the
+# review queue should only catch genuinely uncertain ones). Lower it
+# only if the queue is too sparse to be useful.
+IDENTITY_LOW_CONFIDENCE_DISTANCE = 90
+
 # --- Sorting ---
 SORTING_MODES = {
     "1": "color",

@@ -1412,7 +1412,12 @@ class SortWorker:
         from cards import extract_card_info, CARD_DATA_BY_ID
         from card_identify_hybrid import identify_card, is_card_back
         from foil_detect import detect_foil
-        from config import PHASH_DISTANCE_THRESHOLD, PHASH_CLOSE_MATCH_DIFF, EXCLUDED_SETS
+        from config import (
+            PHASH_DISTANCE_THRESHOLD,
+            PHASH_CLOSE_MATCH_DIFF,
+            EXCLUDED_SETS,
+            IDENTITY_LOW_CONFIDENCE_DISTANCE,
+        )
 
         sort_start = time.time()
 
@@ -1846,6 +1851,29 @@ class SortWorker:
                          "sending to bin 10")
                 logical_bin = 10
 
+            # Identity-confidence gate (autonomy ladder):
+            # If the hash distance is in the low-confidence band, we don't
+            # trust the matched card. Override routing to the sort_config's
+            # fallback_bin so the user can find these in one place; tag
+            # the scan as identity_low_confidence so the detection review
+            # queue (per plans/autonomy_ladder.md) seeds an 'identity'
+            # row for it. This override precedes wishlist/priority because
+            # we shouldn't trust a low-confidence name to match a wishlist
+            # entry either.
+            identity_low_conf = (
+                hash_distance is not None
+                and hash_distance >= IDENTITY_LOW_CONFIDENCE_DISTANCE
+            )
+            if identity_low_conf and self.sort_config_obj is not None:
+                fallback_bin = self.sort_config_obj.fallback_bin
+                self.log(
+                    f"LOW IDENTITY CONFIDENCE: '{card_name}' "
+                    f"(hash_distance={hash_distance:.1f} >= "
+                    f"{IDENTITY_LOW_CONFIDENCE_DISTANCE}) -> "
+                    f"fallback bin {fallback_bin}"
+                )
+                logical_bin = fallback_bin
+
             # Wishlist override
             if self.wishlist_bin is not None:
                 try:
@@ -1917,6 +1945,10 @@ class SortWorker:
                 'frame_effects': card_info.get('FrameEffects', []),
                 'colors': card_info.get('Colors', []),
                 'types': card_info.get('Types', []),
+                # Identity-confidence flag for the UI to show a badge
+                # ("low confidence — review later"). Drives the
+                # detection review queue's 'identity' variable.
+                'identity_low_confidence': bool(identity_low_conf),
                 'cmc': card_info.get('CMC', 0),
                 'price': card_info.get('Price', 'N/A'),
                 'rarity': card_info.get('Rarity', '?'),

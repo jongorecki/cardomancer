@@ -1523,7 +1523,7 @@ def delete_moxfield_wishlist(conn, source_key):
 
 # Variables the review system knows about. Keeping this list centralized so
 # the API layer, tests, and UI can validate without hard-coding strings.
-DETECTION_VARIABLES = ('foil', 'border', 'set_symbol')
+DETECTION_VARIABLES = ('identity', 'foil', 'border', 'set_symbol')
 
 VALID_VERDICTS = ('correct', 'wrong', 'skip')
 
@@ -1637,6 +1637,13 @@ def seed_detection_reviews_from_scans(conn, variables=None,
     produce rows with confidence=NULL — those surface first in the queue.
 
     Detected values are pulled from whatever the DB already knows:
+      - identity:   name from scan_history (proxy for "machine guessed
+                    this card") for scans whose hash_distance crossed the
+                    IDENTITY_LOW_CONFIDENCE_DISTANCE bar — these are the
+                    only scans whose identity is uncertain enough to merit
+                    review. Confident scans (low hash_distance) are NOT
+                    seeded for 'identity'; the queue stays focused on
+                    genuinely uncertain matches.
       - foil:       unknown (NULL) — no detector yet
       - border:     unknown (NULL) — detect_border_type() isn't persisted
       - set_symbol: set_code from scan_history (best available proxy)
@@ -1652,11 +1659,15 @@ def seed_detection_reviews_from_scans(conn, variables=None,
         if v not in DETECTION_VARIABLES:
             raise ValueError(f"unknown variable: {v!r}")
 
+    # Threshold for 'identity' seeding. Imported lazily so test code can
+    # monkey-patch the config module before this loop runs.
+    from config import IDENTITY_LOW_CONFIDENCE_DISTANCE as _IDENT_THRESH
+
     where = []
     params = []
     if only_recognized:
         where.append("recognized = 1")
-    sql = "SELECT id, set_code FROM scan_history"
+    sql = "SELECT id, name, set_code, hash_distance FROM scan_history"
     if where:
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY id DESC"
@@ -1669,8 +1680,26 @@ def seed_detection_reviews_from_scans(conn, variables=None,
     for scan in scans:
         scan_id = scan['id']
         set_code = scan['set_code'] or None
+        name = scan['name'] or None
+        hash_distance = scan['hash_distance']
         for variable in variables:
             detected = None
+            if variable == 'identity':
+                # Only seed identity reviews for scans that crossed the
+                # low-confidence bar. Confident matches don't need review.
+                if hash_distance is None or hash_distance < _IDENT_THRESH:
+                    continue
+                detected = name
+                # Store hash distance as the "confidence" so the queue
+                # can sort: highest distance = least confident first.
+                cur = conn.execute(
+                    """INSERT OR IGNORE INTO detection_reviews
+                       (scan_id, variable, detected_value, confidence)
+                       VALUES (?, ?, ?, ?)""",
+                    (scan_id, variable, detected, float(hash_distance))
+                )
+                inserted += cur.rowcount
+                continue
             if variable == 'set_symbol':
                 # The best proxy for "detected set symbol" we currently have
                 # is the set code that identification landed on. It's not
