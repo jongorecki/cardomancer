@@ -279,6 +279,8 @@ async function loadSortConfigFile(filename) {
         if (sel) sel.value = filename;
         const dashSel = document.getElementById('dashboard-sort-preset-select');
         if (dashSel) dashSel.value = filename;
+        // Mirror into the Phase 4 pre-sort hero ("Active preset: ...").
+        _updateHeroPresetName(filename);
     } catch (e) {
         addLog(`Failed to load sort config "${filename}": ` + e);
     }
@@ -305,6 +307,8 @@ function markSortConfigDirty() {
     _scDirty = true;
     const badge = document.getElementById('sort-config-dirty-badge');
     if (badge) badge.style.display = '';
+    const heroPill = document.getElementById('pre-sort-dirty-pill');
+    if (heroPill) heroPill.style.display = '';
     _updateSortConfigToolbar();
 }
 
@@ -312,7 +316,26 @@ function _clearDirty() {
     _scDirty = false;
     const badge = document.getElementById('sort-config-dirty-badge');
     if (badge) badge.style.display = 'none';
+    const heroPill = document.getElementById('pre-sort-dirty-pill');
+    if (heroPill) heroPill.style.display = 'none';
     _updateSortConfigToolbar();
+}
+
+// Mirror the active preset name into the pre-sort hero so the user can
+// see at a glance which preset will run when they hit Start. Called
+// from onSortPresetSelect() and the boot path that loads the default.
+function _updateHeroPresetName(name) {
+    const el = document.getElementById('pre-sort-active-preset');
+    if (!el) return;
+    if (name && name.trim()) {
+        el.textContent = name.replace(/\.txt$/, '');
+        el.classList.remove('text-secondary');
+        el.classList.add('text-primary');
+    } else {
+        el.innerHTML = '&mdash;';
+        el.classList.remove('text-primary');
+        el.classList.add('text-secondary');
+    }
 }
 
 function _updateSortConfigToolbar() {

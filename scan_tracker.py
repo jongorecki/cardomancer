@@ -326,6 +326,87 @@ class ScanTracker:
         print(f"[tracker] Session ended. {self.scan_count} cards scanned.")
         print(f"[tracker] Logs saved to: {self.session_dir}")
 
+    def resume_session(self, session_id):
+        """Rehydrate this tracker from a previously-started session that
+        didn't end cleanly (power-loss-resume flow, Phase 4 part 5).
+
+        Reconstructs scan_count + bins from the DB scan_history. Does
+        NOT reopen the original CSV (its state after a crash is
+        undefined); writes a fresh resume_<timestamp> log directory
+        instead. The original session log directory is left untouched
+        for forensic value.
+
+        Returns True on success, False if the session doesn't exist or
+        was already ended (caller should fall back to discard).
+        """
+        conn = collection_db.get_connection()
+        meta = collection_db.get_session_metadata(conn, session_id)
+        if meta is None:
+            conn.close()
+            print(f"[tracker] resume_session: #{session_id} not found")
+            return False
+        if meta.get('end_time') is not None:
+            conn.close()
+            print(f"[tracker] resume_session: #{session_id} already ended at "
+                  f"{meta['end_time']}")
+            return False
+
+        self._db_conn = conn
+        self._db_session_id = session_id
+
+        # Rehydrate counts from scan_history (more reliable than any
+        # in-memory state, which is gone after the crash).
+        self.bins = {
+            str(b): []
+            for b in collection_db.get_session_bin_counts(conn, session_id).keys()
+        }
+        self.scan_count = sum(
+            collection_db.get_session_bin_counts(conn, session_id).values()
+        )
+        cur = conn.execute(
+            "SELECT COUNT(*) FROM scan_history "
+            "WHERE session_id = ? AND recognized = 0",
+            (session_id,)
+        )
+        self.unrecognized_count = int(cur.fetchone()[0])
+
+        # Open a fresh resume log directory so further scans land in a
+        # clean CSV without colliding with whatever partial state the
+        # original session_dir is in.
+        os.makedirs(SCAN_LOGS_DIR, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.session_dir = os.path.join(
+            SCAN_LOGS_DIR, f"session_{timestamp}_resumed_{session_id}"
+        )
+        os.makedirs(self.session_dir, exist_ok=True)
+
+        self.session_meta = {
+            "start_time": meta.get('start_time'),
+            "resumed_at": datetime.now().isoformat(),
+            "sort_mode": meta.get('sort_mode'),
+            "config_name": meta.get('config_name'),
+            "bin_count": meta.get('bin_count'),
+            "resumed_from_session_id": int(session_id),
+        }
+        self._save_session_meta()
+
+        # Open a new CSV for the resumed segment.
+        csv_path = os.path.join(self.session_dir, "scans.csv")
+        self._csv_file = open(csv_path, 'w', newline='', encoding='utf-8')
+        self._csv_writer = csv.writer(self._csv_file)
+        self._csv_writer.writerow([
+            "scan_num", "timestamp", "name", "set", "all_sets",
+            "collector_number", "colors", "cmc", "type_line", "rarity",
+            "price_usd", "bin", "method", "hash_distance", "recognized",
+            "is_foil", "foil_confidence", "frame", "border_color",
+            "frame_effects",
+        ])
+
+        self.scans = []
+        print(f"[tracker] Resumed session #{session_id}: "
+              f"{self.scan_count} prior scans, {len(self.bins)} bins.")
+        return True
+
     def _save_session_meta(self):
         path = os.path.join(self.session_dir, "session.json")
         with open(path, 'w', encoding='utf-8') as f:

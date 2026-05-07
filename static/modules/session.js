@@ -68,36 +68,88 @@ async function startSession() {
 
 let _cachedBinDetails = {};  // full card lists per bin
 
+// Phase 4 part 3 — bin tile row. Replaces the previous vertical
+// expand/collapse list with a grid of bin tiles. Each tile shows:
+//   - Bin number + (when applicable) FULL badge + fullness bar
+//   - Per-bin Empty button (small, top-right corner)
+//   - Live count vs. capacity
+//   - Last card dropped (name + set + foil/price hint)
+//   - Click to expand → reveals a scrollable strip of recent cards
+//     in this bin (same hover-preview behavior as before).
+//
+// Existing callers (motion.js's _flushPendingBinUpdates,
+// socket.js's session_started + bin_update handlers, simulation.js)
+// keep calling this function with the same (cardsPerBin,
+// binDetailsData, binFullness) signature — no plumbing changes.
 function updateBinContentsPanel(cardsPerBin, binDetailsData, binFullness) {
     if (!cardsPerBin) return;
     _cachedBinCounts = cardsPerBin;
     if (binDetailsData) _cachedBinDetails = binDetailsData;
     const binsFull = new Set((binFullness && binFullness.bins_full) || []);
     const binCounts = (binFullness && binFullness.bin_card_counts) || {};
-    const limit = (binFullness && binFullness.bin_card_limit) || 150;
+    const limit = (binFullness && binFullness.bin_card_limit) || 300;
     const panel = document.getElementById('session-bin-contents');
-    let html = '';
-    for (const [bin, count] of Object.entries(cardsPerBin).sort((a, b) => parseInt(a[0]) - parseInt(b[0]))) {
+    if (!panel) return;
+
+    const entries = Object.entries(cardsPerBin)
+        .sort((a, b) => parseInt(a[0]) - parseInt(b[0]));
+
+    if (entries.length === 0) {
+        panel.innerHTML = '<p class="text-muted small mb-0">No cards sorted yet.</p>';
+        drawMotionCanvas();
+        drawBinLayoutCanvas();
+        return;
+    }
+
+    // Preserve which bins were expanded across re-renders. Without
+    // this every event would collapse everything mid-sort, which
+    // disrupts the user's investigation of "what just went here?".
+    const previouslyExpanded = new Set(
+        Array.from(panel.querySelectorAll('.bin-tile-detail'))
+             .filter(el => el.style.display !== 'none')
+             .map(el => el.getAttribute('data-bin'))
+    );
+
+    let html = '<div class="bin-tile-grid">';
+    for (const [bin, count] of entries) {
         const cards = _cachedBinDetails[bin] || [];
-        const isExpanded = panel.querySelector(`#bin-detail-${bin}`)?.style.display !== 'none';
+        const lastCard = cards.length > 0 ? cards[cards.length - 1] : null;
         const isFull = binsFull.has(parseInt(bin));
-        const fullBadge = isFull ? ' <span class="badge bg-danger">FULL</span>' : '';
-        const countDisplay = binCounts[bin] ? `${binCounts[bin]}/${limit}` : count;
-        html += `<div class="bin-section mb-2">
-            <div class="d-flex justify-content-between align-items-center bin-header${isFull ? ' text-danger' : ''}"
-                 style="cursor:pointer;">
-                <strong onclick="toggleBinDetail(${bin})" class="flex-grow-1">Bin ${bin}${fullBadge}</strong>
-                <button class="btn btn-outline-success btn-sm py-0 px-1 me-2"
-                        onclick="event.stopPropagation(); markBinEmpty(${bin})"
-                        title="Mark bin as emptied (resets card count)">Empty</button>
-                <span class="badge ${isFull ? 'bg-danger' : 'bg-secondary'}" onclick="toggleBinDetail(${bin})">${countDisplay}</span>
-            </div>
-            <div id="bin-detail-${bin}" class="bin-card-list" style="display:${isExpanded ? 'block' : 'none'};">`;
+        const liveCount = binCounts[bin] || count;
+        const pct = limit > 0 ? Math.min(100, Math.round((liveCount / limit) * 100)) : 0;
+        const fullBadge = isFull
+            ? ' <span class="badge bg-danger ms-1">FULL</span>' : '';
+        const isExpanded = previouslyExpanded.has(String(bin));
+
+        // Last-card line — set + name; foil tag if applicable.
+        let lastCardLine = '';
+        if (lastCard) {
+            const foilTag = lastCard.is_foil
+                ? ' <span class="badge bg-warning text-dark" style="font-size:0.6em">&#9733;</span>'
+                : '';
+            const setStr = lastCard.set ? lastCard.set.toUpperCase() : '';
+            lastCardLine = `<div class="bin-tile-last small text-muted text-truncate"
+                                 title="${escapeHtml(lastCard.name)}">
+                <span class="text-secondary">last:</span>
+                ${escapeHtml(lastCard.name)}${foilTag}
+                ${setStr ? `<span class="ms-1 text-muted">${setStr}</span>` : ''}
+            </div>`;
+        } else {
+            lastCardLine = `<div class="bin-tile-last small text-muted">empty</div>`;
+        }
+
+        // Fullness bar — subtle accent that flips warning > 75% and
+        // danger when bin is marked full.
+        const barClass = isFull ? 'bin-tile-bar-full'
+            : (pct >= 75 ? 'bin-tile-bar-warn' : '');
+        const barStyle = `width:${pct}%;`;
+
+        // Recent-cards strip (hidden by default; click bin number / count
+        // to reveal). Reuses the existing _scryfallImageUrl + hover
+        // preview pattern.
+        let cardListHtml = '';
         if (cards.length > 0) {
             for (const card of cards) {
-                // Scryfall direct image URL for the hover preview.
-                // Only wire it up when we have both set + collector
-                // number — without those the URL is useless.
                 const canPreview = card.set && card.collector_number;
                 const imgUrl = canPreview
                     ? _scryfallImageUrl(card.set, card.collector_number, 'normal')
@@ -106,41 +158,63 @@ function updateBinContentsPanel(cardsPerBin, binDetailsData, binFullness) {
                     ? `onmouseenter="_showCardPreview(event, '${imgUrl}', 'left')" onmouseleave="_hideCardPreview()" style="cursor:help"`
                     : '';
                 const foilTag = card.is_foil
-                    ? ' <span class="badge bg-warning text-dark" style="font-size:0.65em">★</span>'
+                    ? ' <span class="badge bg-warning text-dark" style="font-size:0.6em">&#9733;</span>'
                     : '';
                 const priceTag = card.price && card.price !== 'null' && card.price !== 'N/A'
-                    ? `<span class="text-success ms-1">${card.price}</span>`
+                    ? `<span class="text-success ms-1">${escapeHtml(String(card.price))}</span>`
                     : '';
-                html += `<div class="bin-card-entry small text-truncate ps-2 d-flex justify-content-between align-items-center"
-                              title="${card.name} (${card.set}/${card.collector_number})" ${hoverAttr}>
+                cardListHtml += `<div class="bin-tile-card-entry small d-flex justify-content-between align-items-center text-truncate"
+                                      title="${escapeHtml(card.name)}" ${hoverAttr}>
                     <span class="text-truncate">
-                        <span class="text-muted">#${card.scan_num}</span> ${card.name}${foilTag}
+                        <span class="text-muted">#${card.scan_num}</span>
+                        ${escapeHtml(card.name)}${foilTag}
                     </span>
-                    <span class="flex-shrink-0 ms-2">
-                        <span class="text-muted">${card.set ? card.set.toUpperCase() : ''}</span>
-                        ${priceTag}
+                    <span class="flex-shrink-0 ms-2 text-muted">
+                        ${card.set ? card.set.toUpperCase() : ''}${priceTag}
                     </span>
                 </div>`;
             }
-        } else {
-            html += `<div class="small text-muted ps-2">${count} card${count !== 1 ? 's' : ''}</div>`;
         }
-        html += `</div></div>`;
+
+        html += `
+            <div class="bin-tile${isFull ? ' bin-tile-full' : ''}"
+                 onclick="toggleBinDetail(${bin})">
+                <div class="bin-tile-head d-flex justify-content-between align-items-center">
+                    <strong>Bin ${bin}${fullBadge}</strong>
+                    <button class="btn btn-outline-success btn-sm py-0 px-1"
+                            onclick="event.stopPropagation(); markBinEmpty(${bin})"
+                            title="Mark bin as emptied (resets card count)">Empty</button>
+                </div>
+                <div class="bin-tile-count">
+                    <span class="bin-tile-count-num">${liveCount}</span>
+                    <span class="bin-tile-count-limit text-muted small">/ ${limit}</span>
+                </div>
+                <div class="bin-tile-bar">
+                    <div class="bin-tile-bar-fill ${barClass}" style="${barStyle}"></div>
+                </div>
+                ${lastCardLine}
+                <div class="bin-tile-detail" data-bin="${bin}"
+                     style="display:${isExpanded ? 'block' : 'none'};"
+                     onclick="event.stopPropagation();">
+                    ${cardListHtml || '<div class="small text-muted">No card detail yet.</div>'}
+                </div>
+            </div>`;
     }
-    panel.innerHTML = html || '<p class="text-muted small">No cards sorted yet</p>';
+    html += '</div>';
+    panel.innerHTML = html;
     drawMotionCanvas();
     drawBinLayoutCanvas();
 }
 
 function toggleBinDetail(binNum) {
-    const el = document.getElementById(`bin-detail-${binNum}`);
+    const el = document.querySelector(`.bin-tile-detail[data-bin="${binNum}"]`);
     if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 
 function toggleAllBinDetails() {
-    const lists = document.querySelectorAll('.bin-card-list');
-    const anyHidden = [...lists].some(el => el.style.display === 'none');
-    lists.forEach(el => { el.style.display = anyHidden ? 'block' : 'none'; });
+    const details = document.querySelectorAll('.bin-tile-detail');
+    const anyHidden = [...details].some(el => el.style.display === 'none');
+    details.forEach(el => { el.style.display = anyHidden ? 'block' : 'none'; });
 }
 
 // =========================================================================
@@ -300,9 +374,14 @@ function _ensureStaleSessionBanner() {
     bar.className = 'alert alert-warning d-none mb-0 rounded-0';
     bar.style.borderRadius = '0';
     bar.innerHTML = `
-        <div class="container-fluid d-flex align-items-center gap-3">
+        <div class="container-fluid d-flex align-items-center gap-3 flex-wrap">
             <strong>Unfinished session detected</strong>
             <span id="stale-session-summary" class="flex-grow-1 small"></span>
+            <button id="btn-resume-stale-session" class="btn btn-sm btn-success"
+                    onclick="resumeStaleSession()"
+                    title="Rehydrate the session and pause — click Resume to actually start sorting again.">
+                Resume
+            </button>
             <button id="btn-discard-stale-session" class="btn btn-sm btn-warning"
                     onclick="discardStaleSession()">Mark as ended</button>
             <button class="btn btn-sm btn-link"
@@ -345,6 +424,23 @@ async function discardStaleSession() {
     // the banner. If it didn't fire (network error etc.), apiPost already
     // surfaced the toast — just leave the banner up so the user can retry.
     return r;
+}
+
+// Phase 4 pt 5 — resume rather than discard. Hits the rehydration
+// endpoint; the worker rebuilds tracker + sort_config_obj and lands
+// in 'paused', emitting stale_session_resumed which the handler
+// below hides the banner on. The user then clicks the existing
+// Resume button (in the live readout) to actually start motion.
+async function resumeStaleSession() {
+    if (!_stalePrimary) return;
+    const id = _stalePrimary.id;
+    return await apiPost('/api/session/resume-stale', { session_id: id });
+}
+
+function onStaleSessionResumed(data) {
+    addLog(`Resumed stale session #${data.session_id} (${data.scan_count} prior scans). Press Resume to continue sorting.`);
+    dismissStaleSessionBanner();
+    _stalePrimary = null;
 }
 
 function onStaleSessionDiscarded(data) {

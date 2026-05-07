@@ -12,8 +12,100 @@
                 <!--    from the old Sort Session tab. -->
                 <!-- ===================================================== -->
 
+                <!-- ===================================================== -->
+                <!-- Post-sort hero — visible only in post-sort. Shows the -->
+                <!-- session summary (counts) and the user's three obvious -->
+                <!-- next moves: launch another sort, edit the config, or  -->
+                <!-- review uncertain cards from this session.             -->
+                <!-- ===================================================== -->
+                <div class="row mb-3" data-stage="post">
+                    <div class="col-12">
+                        <div class="card" style="border-color: var(--accent-sigil);">
+                            <div class="card-body">
+                                <div class="d-flex flex-wrap align-items-baseline justify-content-between mb-3">
+                                    <h2 class="mb-0"
+                                        style="font-family: var(--font-display); font-weight: 700; font-size: 1.6rem; color: var(--text-primary);">
+                                        Session complete
+                                    </h2>
+                                    <small class="text-muted" id="post-sort-end-reason"></small>
+                                </div>
+                                <div class="row text-center mb-3">
+                                    <div class="col-md-4">
+                                        <div style="font-size: 2.2rem; font-weight: 600; color: var(--accent-blue); line-height: 1;"
+                                             id="post-sort-total-scans">0</div>
+                                        <small class="text-muted">cards sorted</small>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div style="font-size: 2.2rem; font-weight: 600; color: var(--accent-green); line-height: 1;"
+                                             id="post-sort-recognized">0</div>
+                                        <small class="text-muted">identified</small>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div style="font-size: 2.2rem; font-weight: 600; color: var(--accent-yellow); line-height: 1;"
+                                             id="post-sort-unrecognized">0</div>
+                                        <small class="text-muted">to review</small>
+                                    </div>
+                                </div>
+                                <div class="d-flex gap-2 flex-wrap">
+                                    <button class="btn btn-success"
+                                            onclick="startAnotherSession()">
+                                        Start another session &rarr;
+                                    </button>
+                                    <button class="btn btn-outline-secondary"
+                                            onclick="returnToPreSort()">
+                                        Edit configuration
+                                    </button>
+                                    <button class="btn btn-outline-warning"
+                                            onclick="goToReviewQueue()">
+                                        Review uncertain cards
+                                        <span id="post-sort-review-count" class="badge bg-warning text-dark ms-1" style="display:none;">0</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===================================================== -->
+                <!-- Pre-sort hero — visible only in pre-sort. Surfaces    -->
+                <!-- the primary action ("Start Session") prominently and  -->
+                <!-- shows the active preset + dirty state at a glance so  -->
+                <!-- the user has one obvious next step once they're       -->
+                <!-- happy with the configuration below. -->
+                <!-- ===================================================== -->
+                <div class="row mb-3" data-stage="pre">
+                    <div class="col-12">
+                        <div class="card" style="border-color: var(--accent-blue);">
+                            <div class="card-body d-flex flex-wrap align-items-center gap-3">
+                                <div class="flex-grow-1">
+                                    <h2 class="mb-1"
+                                        style="font-family: var(--font-display); font-weight: 700; font-size: 1.6rem; color: var(--text-primary); margin: 0;">
+                                        Ready to sort
+                                    </h2>
+                                    <p class="text-muted small mb-0 mt-1">
+                                        Active preset:
+                                        <strong id="pre-sort-active-preset" class="text-secondary">&mdash;</strong>
+                                        <span id="pre-sort-dirty-pill" class="badge bg-warning text-dark ms-2" style="display:none;">
+                                            unsaved edits
+                                        </span>
+                                    </p>
+                                </div>
+                                <button class="btn btn-success btn-lg"
+                                        onclick="startSession()"
+                                        title="Begin a new sort session with the configuration below.">
+                                    Start Session &rarr;
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Unified Sort Configuration card (feature/sort-override) -->
-                <div class="row mb-2">
+                <!-- Phase 4 stage: pre-sort + post-sort. The user configures
+                     queries before starting; once running, this whole block
+                     hides so the live stats can take over. Visible again on
+                     post-sort so they can tweak before the next session. -->
+                <div class="row mb-2" data-stage="pre post">
                     <div class="col-12">
                         <div class="card">
                             <div class="card-header d-flex justify-content-between align-items-center"
@@ -258,8 +350,12 @@
 
                 <!-- ===================================================== -->
                 <!-- Bin Routing summary (was Dashboard) -->
+                <!-- Phase 4 stage: visible across all stages. Pre-sort,    -->
+                <!-- it shows the user where each bin is configured to     -->
+                <!-- route. Running, it shows live counts. Post-sort, it   -->
+                <!-- shows final tallies until the next session starts.    -->
                 <!-- ===================================================== -->
-                <div class="row mt-3">
+                <div class="row mt-3" data-stage="all">
                     <div class="col-12">
                         <div class="card">
                             <div class="card-header d-flex justify-content-between align-items-center">
@@ -285,9 +381,12 @@
 
                 <!-- ===================================================== -->
                 <!-- Bin layout canvas + bin table + manual position +     -->
-                <!-- overflow + saved bin configs (was Bin Setup tab). -->
+                <!-- overflow + saved bin configs (was Bin Setup tab).     -->
+                <!-- Phase 4 stage: pre-sort only. Calibration-flavored    -->
+                <!-- physical-bin layout work. Hidden during running so    -->
+                <!-- the live workspace isn't competing with it.           -->
                 <!-- ===================================================== -->
-                <div class="row mt-3">
+                <div class="row mt-3" data-stage="pre">
                     <div class="col-md-6">
                         <div class="card">
                             <div class="card-header">Bin Configuration</div>
@@ -402,9 +501,13 @@
                 <!-- ===================================================== -->
                 <!-- Live session readout: camera feed + controls +        -->
                 <!-- last card / overlay / stats / stack / bin contents.   -->
-                <!-- (was middle/bottom of the Sort Session tab) -->
+                <!-- Phase 4 stage: running + post. The running stage is   -->
+                <!-- the live workspace; post-sort keeps the same panel    -->
+                <!-- visible (now static) so the user can review the       -->
+                <!-- final state, current source-bin gauge reading, and    -->
+                <!-- the last card detected before deciding what's next.   -->
                 <!-- ===================================================== -->
-                <div class="row mt-3">
+                <div class="row mt-3" data-stage="running post">
                     <div class="col-md-5">
                         <!-- Camera feed with overlay -->
                         <div class="card">
@@ -632,10 +735,14 @@
                 </div>
 
                 <!-- ===================================================== -->
-                <!-- Test Scan + Quick Stats (was Dashboard) -->
+                <!-- Quick Stats + Test Scan row.                          -->
+                <!-- Row itself is always-visible so neighbors line up;    -->
+                <!-- each column declares its own stages so Quick Stats    -->
+                <!-- shows during running + post (throughput live, then    -->
+                <!-- final summary), and Test Scan shows only pre-sort.    -->
                 <!-- ===================================================== -->
-                <div class="row mt-3">
-                    <div class="col-md-6">
+                <div class="row mt-3" data-stage="all">
+                    <div class="col-md-6" data-stage="running post">
                         <div class="card">
                             <div class="card-header">Quick Stats</div>
                             <div class="card-body" id="dashboard-stats">
@@ -643,7 +750,15 @@
                             </div>
                         </div>
                     </div>
-                    <div class="col-md-6">
+                    <!--
+                      Test Scan stays in the same row block but lives only
+                      in the pre-sort stage — it's a diagnostic for verifying
+                      detection works before committing a real sort. Spec
+                      (plans/sort_flow_stages.md) says Test Scan ultimately
+                      belongs on Setup; for now it stays gated to pre-sort
+                      here.
+                    -->
+                    <div class="col-md-6" data-stage="pre">
                         <div class="card">
                             <div class="card-header">Test Scan</div>
                             <div class="card-body">

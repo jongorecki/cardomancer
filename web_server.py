@@ -4059,6 +4059,19 @@ def api_discard_stale_session():
     return jsonify({'queued': True})
 
 
+@app.route('/api/session/resume-stale', methods=['POST'])
+def api_resume_stale_session():
+    """Phase 4 part 5 — full power-loss-resume.
+    Rebuilds the worker's tracker + sort_config_obj from the session's
+    saved metadata and lands in 'paused' so the user clicks Resume."""
+    body = request.get_json(silent=True) or {}
+    session_id = body.get('session_id')
+    if session_id is None:
+        return jsonify({'error': 'missing_session_id'}), 400
+    worker.enqueue('resume_stale_session', session_id=int(session_id))
+    return jsonify({'queued': True})
+
+
 # =========================================================================
 # Source-bin estimated count from probe
 # =========================================================================

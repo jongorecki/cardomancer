@@ -68,6 +68,9 @@ document.addEventListener('DOMContentLoaded', () => {
         currentState = data.state;
         updateStateBadge();
         updateSessionButtons();
+        if (typeof initSortStageFromState === 'function') {
+            initSortStageFromState(data.state);
+        }
         if (data.motion) {
             motionState = data.motion;
             drawMotionCanvas();

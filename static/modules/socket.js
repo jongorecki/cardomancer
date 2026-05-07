@@ -83,6 +83,15 @@ socket.on('stale_session_discarded', (data) => {
     }
 });
 
+// Phase 4 pt 5 — full power-loss-resume rehydration completed.
+// Banner hides; the worker is in 'paused', the existing UI Resume
+// button picks up from there.
+socket.on('stale_session_resumed', (data) => {
+    if (typeof onStaleSessionResumed === 'function') {
+        onStaleSessionResumed(data);
+    }
+});
+
 // Bin chain exhausted — session paused per autonomy ladder rule
 // "machine never stops unless it has to."
 socket.on('bin_full_prompt', (data) => {
@@ -528,6 +537,15 @@ socket.on('session_ended', (data) => {
     btn.classList.add('btn-outline-primary');
     btn.innerHTML = '&#9654; Continuous';
     document.getElementById('btn-undo').disabled = true;
+    if (typeof renderPostSortSummary === 'function') renderPostSortSummary(data);
+    if (typeof onSessionEndedStageHook === 'function') onSessionEndedStageHook();
+});
+
+// Phase 4 stage transitions — Sort tab walks pre → running → post per
+// plans/sort_flow_stages.md. session_started bumps to running; the
+// session_ended handler above bumps to post. Pause keeps us in running.
+socket.on('session_started', () => {
+    if (typeof onSessionStarted === 'function') onSessionStarted();
 });
 
 socket.on('bin_update', (data) => {
