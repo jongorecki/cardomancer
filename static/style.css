@@ -6,60 +6,74 @@
  * Base
  * ========================================================================= */
 
+/* ---------------------------------------------------------------------------
+ * Semantic color tokens — map onto the brand palette in tokens.css.
+ *
+ * Operator UI is dark by default. Page background is indigo-900 (the
+ * darkest brand value), surfaces step lighter through indigo-800 → custom
+ * elevated card. Foreground uses near-parchment for primary text so it
+ * harmonizes with the indigo wash without losing AA contrast.
+ *
+ * `--accent-blue` is now the brand mid-violet. Most of the existing UI
+ * references --accent-blue for buttons / focus rings / link text, so
+ * remapping it here propagates the brand without touching every selector.
+ * ------------------------------------------------------------------------- */
 :root {
-    --bg-page: #121418;
-    --bg-card: #1c1f26;
-    --bg-card-header: #252830;
-    --bg-input: #252830;
-    --bg-input-focus: #2c3040;
-    --bg-surface: #0e1014;
-    --border-subtle: #363a45;
-    --border-card: #2e323c;
-    --text-primary: #e8eaf0;
-    --text-secondary: #a0a6b4;
-    --text-muted: #787e8e;
-    --text-label: #c0c4ce;
-    --accent-blue: #5b9cf5;
-    --accent-green: #4caf7c;
-    --accent-yellow: #e0a740;
-    --accent-red: #e05050;
-    --accent-cyan: #56c8d8;
+    --bg-page: var(--indigo-900);
+    --bg-card: #1C1F33;
+    --bg-card-header: #25274A;
+    --bg-input: #25274A;
+    --bg-input-focus: #2E3157;
+    --bg-surface: #0E0E22;
+    --border-subtle: #2E3050;
+    --border-card: #2A2C46;
+    --text-primary: #ECEAF6;
+    --text-secondary: #B6B3CD;
+    --text-muted: #807DA0;
+    --text-label: #C7C4DD;
+    --accent-blue: var(--indigo-400);   /* mid-violet; primary action accent */
+    --accent-green: var(--status-green);
+    --accent-yellow: var(--status-yellow);
+    --accent-red: var(--status-red);
+    --accent-cyan: var(--status-cyan);
+    --accent-sigil: var(--amber-500);   /* ritual/sigil pop, used sparingly */
 }
 
-/* Light theme overrides */
+/* Light theme overrides — parchment + ink instead of indigo + parchment.
+ * Marketing aesthetic if/when the operator UI is run in light mode. */
 [data-theme="light"] {
-    --bg-page: #f0f2f5;
-    --bg-card: #ffffff;
-    --bg-card-header: #f5f6f8;
-    --bg-input: #ffffff;
-    --bg-input-focus: #f0f2f5;
-    --bg-surface: #e8eaee;
-    --border-subtle: #d0d4dc;
-    --border-card: #d0d4dc;
-    --text-primary: #1a1d24;
-    --text-secondary: #555b6a;
-    --text-muted: #8590a0;
-    --text-label: #3a3f4a;
-    --accent-blue: #2a6fd6;
-    --accent-green: #2e8b57;
-    --accent-yellow: #c08820;
-    --accent-red: #cc3333;
-    --accent-cyan: #1a8a96;
-    --bg-card-hover: #edf0f4;
+    --bg-page: var(--parchment-100);
+    --bg-card: #FFFFFF;
+    --bg-card-header: var(--parchment-50);
+    --bg-input: #FFFFFF;
+    --bg-input-focus: var(--parchment-50);
+    --bg-surface: var(--parchment-200);
+    --border-subtle: var(--parchment-300);
+    --border-card: var(--parchment-300);
+    --text-primary: var(--ink-900);
+    --text-secondary: var(--ink-700);
+    --text-muted: var(--ink-500);
+    --text-label: var(--ink-700);
+    --accent-blue: var(--indigo-600);   /* PRIMARY indigo on light */
+    --accent-green: #2E8B57;
+    --accent-yellow: #C08820;
+    --accent-red: #CC3333;
+    --accent-cyan: #1A8A96;
+    --bg-card-hover: var(--parchment-50);
 }
 [data-theme="light"] .navbar {
-    background: linear-gradient(180deg, #ffffff, #f0f2f5) !important;
-    border-bottom: 1px solid #d0d4dc;
+    background: linear-gradient(180deg, #FFFFFF, var(--parchment-100)) !important;
+    border-bottom: 1px solid var(--parchment-300);
 }
-[data-theme="light"] .navbar-brand { color: #1a1d24 !important; }
-[data-theme="light"] .nav-tabs .nav-link { color: #555b6a; }
-[data-theme="light"] .nav-tabs .nav-link.active { color: #1a1d24; background: #ffffff; border-color: #d0d4dc #d0d4dc #fff; }
-[data-theme="light"] .table { color: #1a1d24; }
-[data-theme="light"] .table-striped > tbody > tr:nth-of-type(odd) > * { background-color: #f7f8fa; }
-[data-theme="light"] .inventory-row-hover { background-color: #e0e4ee !important; }
-[data-theme="light"] .btn-estop { color: #fff; }
-[data-theme="light"] #add-card-suggestions .list-group-item { background: #fff; color: #1a1d24; border-color: #d0d4dc; }
-[data-theme="light"] #add-card-suggestions .list-group-item:hover { background: #edf0f4; }
+[data-theme="light"] .navbar-brand { color: var(--indigo-600) !important; }
+[data-theme="light"] .nav-tabs .nav-link { color: var(--ink-700); }
+[data-theme="light"] .nav-tabs .nav-link.active { color: var(--ink-900); background: #FFFFFF; border-color: var(--parchment-300) var(--parchment-300) #FFFFFF; }
+[data-theme="light"] .table { color: var(--ink-900); }
+[data-theme="light"] .table-striped > tbody > tr:nth-of-type(odd) > * { background-color: #F7F4EC; }
+[data-theme="light"] .inventory-row-hover { background-color: var(--indigo-100) !important; }
+[data-theme="light"] .btn-estop { color: #FFFFFF; }
+[data-theme="light"] #add-card-suggestions .list-group-item { background: #FFFFFF; color: var(--ink-900); border-color: var(--parchment-300); }
+[data-theme="light"] #add-card-suggestions .list-group-item:hover { background: var(--parchment-50); }
 
 body {
     background-color: var(--bg-page);
