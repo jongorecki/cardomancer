@@ -40,6 +40,22 @@ SCAN_LOGS_DIR = os.path.join(SCRIPT_DIR, "scan_logs")
 # default cap that drives overflow routing decisions.
 DEFAULT_BIN_CAPACITY = 300
 
+# --- Source-bin count estimation ---
+# Used by web_worker to estimate how many cards remain in the source
+# bin from the difference between the current probe Z and a calibrated
+# empty-bin reference Z, divided by the per-card thickness.
+#
+# 0.305 mm is the Wizards-published thickness of a standard unsleeved
+# Magic card. Sleeved cards are ~0.45 mm; Penny / KMC sleeves ~0.40 mm.
+# The Sort flow's "Pause to refill source" workflow makes the user
+# explicitly aware of refills, so this estimate doesn't have to be
+# perfect — a ~10% error margin is fine for "you have ~50 cards left."
+CARD_THICKNESS_MM = 0.305
+
+# Path where the empty-source-bin reference Z is persisted so it
+# survives restarts. Single value: {"empty_z": <float>, "calibrated_at": "<iso>"}.
+EMPTY_SOURCE_BIN_REF_PATH = os.path.join(SCRIPT_DIR, "empty_source_z.json")
+
 # --- Excluded sets (promo/special sets to deprioritize) ---
 EXCLUDED_SETS = {
     # Collector's / International / Foreign Black Border editions —

@@ -4059,6 +4059,41 @@ def api_discard_stale_session():
 
 
 # =========================================================================
+# Source-bin estimated count from probe
+# =========================================================================
+# Calibration is a one-shot user action: empty the source bin, hit
+# this endpoint, the worker probes the bin and saves the Z as the
+# reference for future count estimates. The estimate itself is emitted
+# automatically via the `source_bin_count_update` socket event whenever
+# the source bin is probed during a sort.
+
+@app.route('/api/source-bin/calibrate-empty', methods=['POST'])
+def api_calibrate_empty_source_bin():
+    worker.enqueue('calibrate_empty_source_bin')
+    return jsonify({'queued': True})
+
+
+@app.route('/api/source-bin/state', methods=['GET'])
+def api_source_bin_state():
+    """Return current empty-Z reference + last probed Z + estimate.
+    Useful for the UI to populate its source-bin gauge on page load
+    without waiting for the next probe-driven event."""
+    import gcode_control as _gcode
+    empty_z = worker._load_empty_source_z()
+    bin_locs = _gcode.get_bin_locations() or {}
+    source_x = bin_locs.get(0, _gcode.X_SOURCE_BIN)
+    probed_z = _gcode.get_cached_probe_z(source_x)
+    estimate = worker._estimate_source_count(probed_z, empty_z) if probed_z is not None else None
+    return jsonify({
+        'empty_z': empty_z,
+        'probed_z': probed_z,
+        'estimated_count': estimate,
+        'calibrated': empty_z is not None,
+        'card_thickness_mm': __import__('config').CARD_THICKNESS_MM,
+    })
+
+
+# =========================================================================
 # SocketIO events
 # =========================================================================
 

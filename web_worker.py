@@ -517,6 +517,9 @@ class SortWorker:
         gcode_control.connect_to_board()
         # Wire up bin fullness callback
         gcode_control.set_bin_fullness_callback(self._on_bin_fullness)
+        # Wire up post-probe callback so we can update the source-bin
+        # count estimate on every probe at the source X.
+        gcode_control.set_post_probe_callback(self._on_post_probe)
         if gcode_control.is_connected():
             self.state = 'idle'
             self.log("Connected to control board")
@@ -3075,6 +3078,140 @@ class SortWorker:
 
         self.log(f"Discarded stale session #{session_id}")
         self.emit('stale_session_discarded', {'session_id': int(session_id)})
+
+    # --- Source-bin estimated count from probe ---
+    #
+    # Every time the source bin is probed (during pick_from_position with
+    # X = source_x), the post-probe callback below fires. We compare the
+    # probed Z to a calibrated empty-bin reference Z and divide by card
+    # thickness to get an estimated remaining-card count. The Sort tab's
+    # Running stage will surface this number so the user knows how much
+    # longer their stack will take.
+    #
+    # Calibration is a separate one-shot command — user empties the
+    # source bin, presses "Calibrate empty source", machine probes, the
+    # resulting Z is persisted to disk so it survives restarts.
+
+    def _on_post_probe(self, x_position, probed_z):
+        """gcode_control post-probe callback. Filters for source-bin
+        probes and emits a count estimate when applicable."""
+        try:
+            import gcode_control
+            bin_locs = gcode_control.get_bin_locations() or {}
+            source_x = bin_locs.get(0, gcode_control.X_SOURCE_BIN)
+        except Exception:
+            return
+        # Tolerate small float jitter in stored bin X
+        if abs(float(x_position) - float(source_x)) > 0.5:
+            return  # not a source-bin probe
+        empty_z = self._load_empty_source_z()
+        estimate = self._estimate_source_count(probed_z, empty_z)
+        self.emit('source_bin_count_update', {
+            'probed_z': float(probed_z),
+            'empty_z': empty_z,
+            'estimated_count': estimate,
+            'calibrated': empty_z is not None,
+        })
+
+    @staticmethod
+    def _estimate_source_count(probed_z, empty_z):
+        """Pure helper: compute estimated remaining cards in the source
+        bin. Returns None if no empty-Z reference is available.
+        Clamps to 0 if probed_z is below empty_z (sensor jitter or the
+        bin moved since calibration)."""
+        from config import CARD_THICKNESS_MM
+        if empty_z is None:
+            return None
+        if CARD_THICKNESS_MM <= 0:
+            return None
+        delta = float(probed_z) - float(empty_z)
+        if delta < 0:
+            return 0
+        return int(round(delta / CARD_THICKNESS_MM))
+
+    def _load_empty_source_z(self):
+        """Load the persisted empty-source-bin reference Z. Returns None
+        if not yet calibrated."""
+        from config import EMPTY_SOURCE_BIN_REF_PATH
+        try:
+            with open(EMPTY_SOURCE_BIN_REF_PATH, 'r', encoding='utf-8') as f:
+                import json as _json
+                data = _json.load(f)
+            z = data.get('empty_z')
+            return float(z) if z is not None else None
+        except FileNotFoundError:
+            return None
+        except Exception as e:
+            print(f"[worker] Could not read empty_source_z.json: {e}")
+            return None
+
+    def _save_empty_source_z(self, z):
+        """Persist the empty-source-bin reference Z to disk."""
+        from config import EMPTY_SOURCE_BIN_REF_PATH
+        from datetime import datetime as _dt
+        import json as _json
+        payload = {
+            'empty_z': float(z),
+            'calibrated_at': _dt.now().isoformat(),
+        }
+        with open(EMPTY_SOURCE_BIN_REF_PATH, 'w', encoding='utf-8') as f:
+            _json.dump(payload, f, indent=2)
+
+    def _cmd_calibrate_empty_source_bin(self, **kwargs):
+        """Drive to the source bin, probe with an empty bin, persist
+        the resulting Z as the reference for future count estimates.
+        Pre-conditions: hardware connected, machine homed, source bin
+        empty (the user is responsible for verifying). The probe itself
+        triggers the post-probe callback which would emit a stale count
+        — we explicitly re-emit a fresh update with the new reference
+        after the calibration completes."""
+        import gcode_control
+        if not gcode_control.is_connected():
+            self.emit('error', {'message': 'Cannot calibrate — machine not connected'})
+            return
+        if self.state not in ('idle', 'paused'):
+            self.emit('error', {
+                'message': f"Cannot calibrate while state={self.state}; "
+                           f"end the session first."
+            })
+            return
+
+        self.log("Calibrating empty source bin — driving to source X and probing…")
+        try:
+            bin_locs = gcode_control.get_bin_locations() or {}
+            source_x = bin_locs.get(0, gcode_control.X_SOURCE_BIN)
+            # Invalidate cached probe so the probe runs full-travel
+            # (an old cached value would short-circuit and we'd record
+            # the wrong height).
+            gcode_control.invalidate_probe_cache_for_x(source_x)
+            # Move to the source X at clear height, then probe down.
+            z_clear = gcode_control._z_travel_height()
+            gcode_control._send_and_wait(f"G0 Z{z_clear} F{gcode_control.Z_FEEDRATE}")
+            gcode_control._send_and_wait("M400")
+            gcode_control._send_and_wait(f"G0 X{source_x} F{gcode_control.X_FEEDRATE}")
+            gcode_control._send_and_wait("M400")
+            gcode_control._probe_with_cache(source_x)
+            empty_z = gcode_control.get_cached_probe_z(source_x)
+            if empty_z is None:
+                self.emit('error', {
+                    'message': 'Probe did not return a Z value — calibration aborted.'
+                })
+                return
+            self._save_empty_source_z(empty_z)
+            self.log(f"Empty-source reference Z = {empty_z:.2f} mm "
+                     f"(saved to empty_source_z.json)")
+            self.emit('source_bin_calibrated', {'empty_z': float(empty_z)})
+            # Re-emit a count update with the fresh reference so any
+            # listeners refresh their display.
+            self.emit('source_bin_count_update', {
+                'probed_z': float(empty_z),
+                'empty_z': float(empty_z),
+                'estimated_count': 0,
+                'calibrated': True,
+            })
+        except Exception as e:
+            self.log(f"Source-bin calibration error: {e}")
+            self.emit('error', {'message': f'Source-bin calibration failed: {e}'})
 
     # --- ArUco Calibration Commands ---
 

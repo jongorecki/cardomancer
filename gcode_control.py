@@ -725,6 +725,24 @@ def verify_x_position(target_x, tolerance=0.5):
 Z_APPROACH_MARGIN = 10.0  # mm above last known Z to fast-move before probing
 _probe_z_cache = {}        # {x_position: last_probed_z}
 
+# Callback fired after every successful probe so observers (e.g. the
+# web_worker source-bin count estimator) can react without each callsite
+# of _probe_with_cache having to know about them.
+_post_probe_callback = None
+
+
+def set_post_probe_callback(fn):
+    """Register a callable(x_position, probed_z) that fires after every
+    successful _probe_with_cache. Pass None to clear."""
+    global _post_probe_callback
+    _post_probe_callback = fn
+
+
+def get_cached_probe_z(x_position):
+    """Read-only access to the last-probed Z at the given X. Returns None
+    if no probe has happened at that X yet (or the cache was cleared)."""
+    return _probe_z_cache.get(x_position)
+
 
 def _probe_with_cache(x_position):
     """
@@ -750,6 +768,12 @@ def _probe_with_cache(x_position):
     z_pos = _get_current_z()
     if z_pos is not None:
         _probe_z_cache[x_position] = z_pos
+        if _post_probe_callback is not None:
+            try:
+                _post_probe_callback(x_position, z_pos)
+            except Exception as cb_err:
+                # Never let an observer break the probe path.
+                print(f"[gcode] post-probe callback error: {cb_err}")
 
 
 def clear_probe_cache():
