@@ -84,6 +84,26 @@ def _create_tables(conn: sqlite3.Connection) -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_staples_tier ON staples(tier);
 
+        -- Per-source card ranks (1 = most-played). Populated by enrichment
+        -- sources that produce a global ordering — currently EDHREC during
+        -- its refresh — and consumed by the `edhrec-top:N` query predicate
+        -- (and future per-source variants like `edhtop16-top:N`).
+        --
+        -- Ranks are *positions* (smaller = higher), not raw scores. The
+        -- companion score column is the underlying value the rank was
+        -- derived from (inclusion%, deck count, etc.) so callers can
+        -- inspect or break ties without re-running the source.
+        CREATE TABLE IF NOT EXISTS card_rankings (
+            oracle_id    TEXT NOT NULL,
+            source       TEXT NOT NULL,
+            rank         INTEGER NOT NULL,
+            score        REAL,
+            last_updated TEXT,
+            PRIMARY KEY (oracle_id, source)
+        );
+        CREATE INDEX IF NOT EXISTS idx_card_rankings_source_rank
+            ON card_rankings(source, rank);
+
         CREATE TABLE IF NOT EXISTS salt_scores (
             oracle_id TEXT PRIMARY KEY,
             salt REAL,
