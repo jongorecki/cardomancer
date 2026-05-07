@@ -175,6 +175,11 @@ class SortConfig:
                     "WHERE oracle_id=? AND source='edhrec' LIMIT 1",
                     (oracle_id,),
                 ).fetchone()
+                cedh_rank_row = conn.execute(
+                    "SELECT rank FROM card_rankings "
+                    "WHERE oracle_id=? AND source='edhtop16' LIMIT 1",
+                    (oracle_id,),
+                ).fetchone()
                 data = {
                     "staple_universal":  "universal"  in tiers,
                     "staple_cedh":       "cedh"       in tiers,
@@ -185,6 +190,8 @@ class SortConfig:
                                           if buylist_row else None),
                     "edhrec_top_rank":   (int(rank_row[0])
                                           if rank_row else None),
+                    "edhtop16_top_rank": (int(cedh_rank_row[0])
+                                          if cedh_rank_row else None),
                 }
             finally:
                 conn.close()
