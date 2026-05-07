@@ -686,7 +686,12 @@
                         <div class="card mt-2">
                             <div class="card-header">Session Stats</div>
                             <div class="card-body" id="session-stats-panel">
-                                <p class="text-muted">No active session</p>
+                                <div class="cm-empty-state cm-empty-compact">
+                                    <img class="cm-empty-sigil"
+                                         src="/static/branding/sigils/sigil-stars.svg"
+                                         alt="" width="48" height="48" aria-hidden="true">
+                                    <div class="cm-empty-title">No active session.</div>
+                                </div>
                             </div>
                         </div>
                         <!-- Stack estimate (source-bin count from probe vs. empty reference) -->
@@ -746,7 +751,15 @@
                         <div class="card">
                             <div class="card-header">Quick Stats</div>
                             <div class="card-body" id="dashboard-stats">
-                                <p class="text-muted">No active session. Start a sort above.</p>
+                                <div class="cm-empty-state cm-empty-compact">
+                                    <img class="cm-empty-sigil"
+                                         src="/static/branding/sigils/sigil-spiral.svg"
+                                         alt="" width="48" height="48" aria-hidden="true">
+                                    <div class="cm-empty-title">No active session.</div>
+                                    <p class="cm-empty-body small text-muted mb-0">
+                                        Start a sort above to see throughput here.
+                                    </p>
+                                </div>
                             </div>
                         </div>
                     </div>

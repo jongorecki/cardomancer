@@ -198,6 +198,95 @@ body {
 }
 
 /* =========================================================================
+ * Phase 3 polish — empty-state + skeleton-loader components.
+ *
+ * Used by static/modules/components.js. Sigils live in
+ * static/branding/sigils/ and render as inline <img>s.
+ * ========================================================================= */
+.cm-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: var(--text-secondary);
+    gap: var(--space-2);
+}
+.cm-empty-standard {
+    padding: var(--space-6) var(--space-4);
+    min-height: 180px;
+}
+.cm-empty-compact {
+    padding: var(--space-3);
+    min-height: 96px;
+}
+.cm-empty-sigil {
+    opacity: 0.55;
+    /* Use the brand accent for the sigil tint. SVGs are single-color so
+     * we re-color them via filter — works without re-authoring the asset. */
+    filter: brightness(0.9);
+}
+[data-theme="light"] .cm-empty-sigil {
+    filter: invert(20%) sepia(60%) saturate(800%) hue-rotate(225deg);
+}
+.cm-empty-title {
+    font-family: var(--font-display);
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-lg);
+    color: var(--text-primary);
+}
+.cm-empty-body {
+    max-width: 38ch;
+}
+
+/* Skeleton loaders — gentle horizontal shimmer in the brand-tinted
+ * surface color so panels under load read as "filling in" rather than
+ * "broken". */
+@keyframes cm-skeleton-shimmer {
+    0%   { background-position: -160% 0; }
+    100% { background-position:  160% 0; }
+}
+.cm-skeleton {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-2);
+}
+.cm-skeleton-line {
+    height: 14px;
+    border-radius: var(--radius-sm);
+    background: linear-gradient(
+        90deg,
+        var(--bg-card-header) 0%,
+        var(--bg-input-focus) 50%,
+        var(--bg-card-header) 100%
+    );
+    background-size: 200% 100%;
+    animation: cm-skeleton-shimmer 1.6s ease-in-out infinite;
+}
+.cm-skeleton-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: var(--space-3);
+    padding: var(--space-2);
+}
+.cm-skeleton-card {
+    height: 110px;
+    border-radius: var(--radius-md);
+    background: linear-gradient(
+        90deg,
+        var(--bg-card-header) 0%,
+        var(--bg-input-focus) 50%,
+        var(--bg-card-header) 100%
+    );
+    background-size: 200% 100%;
+    animation: cm-skeleton-shimmer 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+    .cm-skeleton-line, .cm-skeleton-card { animation: none; }
+}
+
+/* =========================================================================
  * Navbar
  * ========================================================================= */
 
