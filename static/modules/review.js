@@ -399,8 +399,9 @@ async function loadDetectionReviewCounts() {
             totalBadge.textContent = total;
             totalBadge.style.display = total > 0 ? '' : 'none';
         }
-        // If the tab is currently visible, refresh the active queue.
-        const pane = document.getElementById('tab-session-review');
+        // If Setup tab is currently visible, refresh the active queue
+        // (Session Review folded into Setup post-Phase-1b).
+        const pane = document.getElementById('tab-setup');
         if (pane && pane.classList.contains('active')) {
             loadDetectionReviewQueue();
         }

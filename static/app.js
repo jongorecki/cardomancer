@@ -33,29 +33,29 @@ document.addEventListener('DOMContentLoaded', () => {
         loadDbInfo();
     });
 
-    document.querySelector('a[href="#tab-bins"]').addEventListener('shown.bs.tab', () => {
-        loadBinTable();
-        loadBinConfigList();
-        loadOverflowConfig();
-    });
+    // Sort tab: refresh bin data and start the staging camera feed so the
+    // user can see the platform before pressing Start Session. Bin Setup
+    // and Sort Session both fold into the Sort tab post-Phase-1b, so all
+    // these loaders fire on the same shown.bs.tab event.
+    const sortTab = document.querySelector('a[href="#tab-sort"]');
+    if (sortTab) {
+        sortTab.addEventListener('shown.bs.tab', () => {
+            loadBinTable();
+            loadBinConfigList();
+            loadOverflowConfig();
+            startCameraFeed('session-camera-feed');
+        });
+    }
 
-    document.querySelector('a[href="#tab-calibration"]').addEventListener('shown.bs.tab', () => {
-        loadCameraOffset();
-        loadSourceBinsStatus();
-    });
-
-    // Sort Session tab: start the camera feed immediately so the user
-    // can see the staging area before pressing Start Session. Without
-    // this, the feed only started on the `session_started` socket
-    // event, so opening the tab just showed a blank camera box and
-    // made the whole screen look "dead".
-    document.querySelector('a[href="#tab-session"]').addEventListener('shown.bs.tab', () => {
-        startCameraFeed('session-camera-feed');
-    });
-
-    document.querySelector('a[href="#tab-motion"]')?.addEventListener('shown.bs.tab', () => {
-        drawMotionCanvas();
-    });
+    // Setup tab: load camera offset + source-bin status when the user
+    // navigates to the tab (Calibration content lives here post-Phase-1b).
+    const setupTab = document.querySelector('a[href="#tab-setup"]');
+    if (setupTab) {
+        setupTab.addEventListener('shown.bs.tab', () => {
+            loadCameraOffset();
+            loadSourceBinsStatus();
+        });
+    }
 
     // Initial state poll
     apiGet('/api/status').then(data => {

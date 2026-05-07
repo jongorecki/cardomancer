@@ -4,6 +4,9 @@
         <span class="navbar-brand mb-0 h1">MTG Card Sorter</span>
         <div class="d-flex align-items-center gap-3">
             <button class="btn btn-sm btn-outline-secondary" onclick="toggleTheme()" id="theme-toggle" title="Toggle light/dark theme">&#9788;</button>
+            <button class="btn btn-sm btn-outline-secondary" id="btn-open-settings"
+                    data-bs-toggle="modal" data-bs-target="#settings-modal"
+                    title="Settings">&#9881;</button>
             <span id="connection-badge" class="badge bg-secondary">Disconnected</span>
             <span id="state-badge" class="badge bg-secondary">--</span>
             <span id="camera-badge" class="badge bg-secondary" title="Camera health — click for details" style="cursor:pointer;" onclick="showCameraDetails()">&#128247; --</span>

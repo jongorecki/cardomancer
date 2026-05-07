@@ -1,12 +1,10 @@
         <ul class="nav nav-tabs" id="mainTabs" role="tablist">
-            <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-dashboard">Dashboard</a></li>
-            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-bins">Bin Setup</a></li>
-            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-session">Sort Session</a></li>
-            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-calibration">Calibration</a></li>
+            <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-sort">Sort</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-collection">Collection</a></li>
-            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-session-review" onclick="loadDetectionReviewCounts()">Session Review <span class="badge bg-warning ms-1" id="detection-review-total-badge" style="display:none">0</span></a></li>
-            <!-- Motion Preview and Database are not top-level tabs. To
-                 re-enable Motion Preview, restore this line:
-                 <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-motion">Motion Preview</a></li>
-                 Database content is embedded as a Dashboard card modal. -->
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-setup" onclick="loadDetectionReviewCounts()">Setup <span class="badge bg-warning ms-1" id="detection-review-total-badge" style="display:none">0</span></a></li>
+            <!-- Motion Preview, Database, and Settings are not top-level tabs.
+                 Motion Preview lives inside the Setup tab as a hidden
+                 #motion-preview-section. Database is reachable from the
+                 Settings modal. Settings is opened via the gear icon in
+                 the top navbar. -->
         </ul>

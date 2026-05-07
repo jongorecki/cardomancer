@@ -79,14 +79,15 @@ function toggleArucoLive() {
 // and stop it when navigating away, so we don't leave a hidden MJPEG
 // stream running in the background.
 document.addEventListener('DOMContentLoaded', () => {
-    const calTab = document.querySelector('a[href="#tab-calibration"]');
+    // Calibration content folded into the Setup tab post-Phase-1b.
+    // Note: the ArUco live MJPEG stream now starts whenever Setup is
+    // shown — even if the user only opened Setup to view Hardware. A
+    // future polish pass should gate this on the calibration sub-section
+    // actually being scrolled into view.
+    const calTab = document.querySelector('a[href="#tab-setup"]');
     if (calTab) {
         calTab.addEventListener('shown.bs.tab', () => {
             if (!arucoLiveActive) toggleArucoLive();
-            // Refresh the saved-setups dropdown every time the user
-            // navigates to the tab so a setup saved from elsewhere
-            // (or a file manually dropped into the scripts dir) shows
-            // up without having to reload the page.
             refreshSavedSetups();
         });
         calTab.addEventListener('hidden.bs.tab', () => {

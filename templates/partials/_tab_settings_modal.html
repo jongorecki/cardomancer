@@ -1,0 +1,88 @@
+            <!-- ============================================================ -->
+            <!-- SETTINGS MODAL                                               -->
+            <!-- Triggered by the gear icon in the navbar.                    -->
+            <!-- Holds infrequently-used app-wide controls: enrichment data   -->
+            <!-- sources, database update launcher, version info.             -->
+            <!-- ============================================================ -->
+            <div class="modal fade" id="settings-modal" tabindex="-1" aria-hidden="true">
+              <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title">Settings</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                  </div>
+                  <div class="modal-body">
+
+                    <!-- ============================================== -->
+                    <!-- Appearance                                     -->
+                    <!-- ============================================== -->
+                    <div class="card mb-3">
+                        <div class="card-header">Appearance</div>
+                        <div class="card-body">
+                            <p class="small text-muted mb-0">
+                                Use the &#9788; button in the top navbar to toggle the
+                                light / dark theme. More appearance options will land
+                                in a later phase.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- ============================================== -->
+                    <!-- Data &amp; Sources (was Dashboard card)        -->
+                    <!-- ============================================== -->
+                    <div class="card mb-3">
+                        <div class="card-header">Data &amp; Sources</div>
+                        <div class="card-body">
+                            <p class="text-muted small mb-2">
+                                External enrichment sources (Scryfall Tagger,
+                                EDHREC, edhtop16, Commander Spellbook, buylists).
+                                Phase 0A stubs register here; real pulls land in
+                                Phase 1+.
+                            </p>
+                            <div id="enrichment-sources" class="small">
+                                <em class="text-muted">Loading&hellip;</em>
+                            </div>
+                            <button class="btn btn-sm btn-outline-secondary mt-2"
+                                    onclick="loadEnrichmentSources()">
+                                Refresh status
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- ============================================== -->
+                    <!-- Database                                       -->
+                    <!-- ============================================== -->
+                    <div class="card mb-3">
+                        <div class="card-header">Database</div>
+                        <div class="card-body">
+                            <p class="small text-muted mb-2">
+                                Inspect the local Scryfall card database, refresh
+                                prices, or rebuild perceptual hashes.
+                            </p>
+                            <button class="btn btn-outline-secondary"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#database-modal">
+                                Open card database&hellip;
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- ============================================== -->
+                    <!-- Version / About                                -->
+                    <!-- TODO: wire #app-version to the real build tag  -->
+                    <!--       (e.g. git short SHA from a Flask jinja   -->
+                    <!--       context processor) when versioning lands. -->
+                    <!-- ============================================== -->
+                    <div class="card">
+                        <div class="card-header">About</div>
+                        <div class="card-body">
+                            <p class="small mb-0">
+                                Card Sorter &mdash; version: <span id="app-version">dev</span>
+                            </p>
+                        </div>
+                    </div>
+
+                  </div><!-- /.modal-body -->
+                </div><!-- /.modal-content -->
+              </div><!-- /.modal-dialog -->
+            </div><!-- /#settings-modal -->

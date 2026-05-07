@@ -645,9 +645,9 @@ hr {
     .table { min-width: 500px; }
 
     /* Sort session layout */
-    #tab-session .col-md-5,
-    #tab-session .col-md-4,
-    #tab-session .col-md-3 {
+    #tab-sort .col-md-5,
+    #tab-sort .col-md-4,
+    #tab-sort .col-md-3 {
         margin-bottom: 8px;
     }
 
@@ -666,7 +666,7 @@ hr {
     .btn-sm { font-size: 0.78em; padding: 0.2rem 0.45rem; }
 
     /* Stack sort session controls */
-    #tab-session .d-flex.gap-2 { flex-wrap: wrap; }
+    #tab-sort .d-flex.gap-2 { flex-wrap: wrap; }
     #btn-detect { min-width: 120px !important; font-size: 0.95em !important; }
 
     /* Inventory table: hide less critical columns on small screens */
@@ -715,7 +715,7 @@ hr {
     }
 
     /* Full-width buttons */
-    #tab-session .btn { width: 100%; }
+    #tab-sort .btn { width: 100%; }
     #btn-detect { width: 100% !important; }
 }
 
