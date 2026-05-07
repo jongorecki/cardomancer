@@ -357,3 +357,61 @@ function onStaleSessionDiscarded(data) {
     dismissStaleSessionBanner();
     _stalePrimary = null;
 }
+
+// =========================================================================
+// Bin-full prompt (autonomy ladder: "machine pauses only when it has to")
+// =========================================================================
+// Fired by web_worker when the routed logical bin's whole overflow chain
+// is full. Session pauses, banner appears, user empties a bin via the
+// existing per-bin Empty button (or refills source / changes config),
+// then clicks Resume.
+
+function _ensureBinFullBanner() {
+    let bar = document.getElementById('bin-full-banner');
+    if (bar) return bar;
+    bar = document.createElement('div');
+    bar.id = 'bin-full-banner';
+    bar.className = 'alert alert-danger d-none mb-0 rounded-0';
+    bar.style.borderRadius = '0';
+    bar.innerHTML = `
+        <div class="container-fluid d-flex align-items-center gap-3">
+            <strong>Bin full — session paused</strong>
+            <span id="bin-full-summary" class="flex-grow-1 small"></span>
+            <button class="btn btn-sm btn-success"
+                    onclick="apiPost('/api/session/resume')">Resume</button>
+            <button class="btn btn-sm btn-link"
+                    onclick="dismissBinFullBanner()">Dismiss</button>
+        </div>`;
+    document.body.insertBefore(bar, document.body.firstChild);
+    return bar;
+}
+
+function showBinFullBanner(payload) {
+    const bar = _ensureBinFullBanner();
+    if (!payload) {
+        bar.classList.add('d-none');
+        return;
+    }
+    const chain = (payload.chain || []).join(' → ');
+    const dropped = payload.last_dropped !== null && payload.last_dropped !== undefined
+        ? `Last card dropped in bin ${payload.last_dropped}.`
+        : '';
+    document.getElementById('bin-full-summary').textContent =
+        `Bin chain ${chain} is full. ${dropped} `
+        + `Empty a bin (per-bin Empty button), then Resume.`;
+    bar.classList.remove('d-none');
+    addLog(`Bin chain ${chain} full — session paused.`);
+}
+
+function dismissBinFullBanner() {
+    const bar = document.getElementById('bin-full-banner');
+    if (bar) bar.classList.add('d-none');
+}
+
+// When a bin is marked empty via the existing per-bin button, the
+// backend clears it from bins_full. The banner can stay visible until
+// the user clicks Resume — keeping it up reminds them they still need
+// to take that action.
+function onBinFullCleared() {
+    dismissBinFullBanner();
+}

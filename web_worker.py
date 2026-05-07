@@ -153,7 +153,11 @@ class SortWorker:
         self.overflow_map = {}        # {int: [int, ...]}
         self.bin_card_counts = {}     # {physical_bin: int} — cards dropped this session
         self.bins_full = set()        # set of physical bin numbers at capacity
-        self.bin_card_limit = 150     # max cards per physical bin before overflow
+        # Default per-bin cap. Pulled from config.DEFAULT_BIN_CAPACITY so the
+        # working assumption ("~300 cards per bin before the Z-probe trips")
+        # is centralized. Per-session override via _cmd_set_bin_card_limit.
+        from config import DEFAULT_BIN_CAPACITY as _DEFAULT_BIN_CAPACITY
+        self.bin_card_limit = _DEFAULT_BIN_CAPACITY
 
         # Abort flag for long-running multi-phase commands (e.g. new
         # hardware setup). Set from outside the worker thread via
@@ -2003,6 +2007,14 @@ class SortWorker:
         self._increment_bin_count(physical_bin)
         self.last_drop_x = bin_locs.get(physical_bin, staging_x)
 
+        # If this drop just exhausted the overflow chain for the routed
+        # logical bin, pause and prompt the user to empty a bin instead
+        # of silently overflowing the same physical bin forever. The card
+        # we just dropped is still counted; the *next* cycle is the one
+        # that won't run.
+        if self._is_chain_exhausted(logical_bin):
+            self._pause_for_bin_full(logical_bin, physical_bin=physical_bin)
+
         # Track sort timing
         sort_duration = time.time() - sort_start
         self.sort_times.append(sort_duration)
@@ -2628,6 +2640,45 @@ class SortWorker:
         # All bins full — drop in the last bin of the chain and warn
         last_bin = chain[-1] if chain else logical_bin
         return last_bin
+
+    def _is_chain_exhausted(self, logical_bin):
+        """Return True if every bin in the overflow chain for this logical
+        bin is currently marked full. Drives the bin-full-prompt flow per
+        plans/autonomy_ladder.md and plans/sort_flow_stages.md."""
+        if logical_bin is None:
+            return False
+        chain = self.overflow_map.get(logical_bin, [logical_bin])
+        return bool(chain) and all(b in self.bins_full for b in chain)
+
+    def _pause_for_bin_full(self, logical_bin, physical_bin=None):
+        """Pause the session and emit a bin_full_prompt so the UI can ask
+        the user to empty a bin and resume. Called *after* the current
+        card has been dropped (in the "least-bad" already-full bin) — the
+        next sort cycle will not run because state == 'paused'.
+
+        The prompt's `chain` is the full overflow chain (in evaluation
+        order) so the UI can show "you need to empty one of these" rather
+        than just naming a single bin. `last_dropped` is the bin we just
+        deposited the current card into."""
+        chain = self.overflow_map.get(logical_bin, [logical_bin])
+        if self.state == 'sorting':
+            self.state = 'paused'
+        # Leave continuous_sorting as-is. After the user empties a bin
+        # (which removes it from bins_full), Resume → _cmd_resume re-arms
+        # the loop automatically. If they Resume without emptying, the
+        # next cycle will route + drop again and immediately re-pause —
+        # which is correct feedback, not a bug.
+        self.log(
+            f"Bin chain exhausted for logical bin {logical_bin} "
+            f"({chain}) — session paused, waiting for the user to empty "
+            f"a bin before resuming."
+        )
+        self.emit('bin_full_prompt', {
+            'logical_bin': int(logical_bin) if logical_bin is not None else None,
+            'chain': [int(b) for b in chain],
+            'last_dropped': int(physical_bin) if physical_bin is not None else None,
+            'bins_full': sorted(int(b) for b in self.bins_full),
+        })
 
     def _increment_bin_count(self, physical_bin):
         """

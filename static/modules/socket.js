@@ -64,6 +64,23 @@ socket.on('stale_session_discarded', (data) => {
     }
 });
 
+// Bin chain exhausted — session paused per autonomy ladder rule
+// "machine never stops unless it has to."
+socket.on('bin_full_prompt', (data) => {
+    if (typeof showBinFullBanner === 'function') {
+        showBinFullBanner(data);
+    }
+});
+
+// When the user clicks Resume after emptying a bin, the worker emits
+// session_resumed (via _cmd_resume → state setter sorter_state event).
+// Use that to clear the bin-full banner.
+socket.on('sorter_state', (data) => {
+    if (data.state === 'sorting' && typeof dismissBinFullBanner === 'function') {
+        dismissBinFullBanner();
+    }
+});
+
 // =========================================================================
 // Card detection events
 // =========================================================================
