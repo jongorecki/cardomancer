@@ -136,6 +136,7 @@ class SortConfig:
           salt (float|None)
           in_combo (bool)
           buylist_ck_price (float|None)
+          edhrec_top_rank (int|None)  — global rank, 1 = most-played
         Degrades to {} if enrichment.db is unavailable.
 
         Note: cull:true evaluation also uses card_data['oracle_text'] directly
@@ -169,6 +170,11 @@ class SortConfig:
                     "WHERE oracle_id=? AND vendor='ck' LIMIT 1",
                     (oracle_id,),
                 ).fetchone()
+                rank_row = conn.execute(
+                    "SELECT rank FROM card_rankings "
+                    "WHERE oracle_id=? AND source='edhrec' LIMIT 1",
+                    (oracle_id,),
+                ).fetchone()
                 data = {
                     "staple_universal":  "universal"  in tiers,
                     "staple_cedh":       "cedh"       in tiers,
@@ -177,6 +183,8 @@ class SortConfig:
                     "in_combo":          combo_row is not None,
                     "buylist_ck_price":  (buylist_row[0]
                                           if buylist_row else None),
+                    "edhrec_top_rank":   (int(rank_row[0])
+                                          if rank_row else None),
                 }
             finally:
                 conn.close()

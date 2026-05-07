@@ -193,6 +193,17 @@ class EDHRECSource(EnrichmentSource):
             )
         )
 
+        # Compute global card rankings used by the `edhrec-top:N` query
+        # predicate. Source of truth is the inclusion% (num_decks /
+        # potential_decks) on the per-card detail pages and the top/year
+        # page; cards seen on neither stay unranked. Built before the
+        # write so the rank rows go in the same transaction below.
+        rank_rows = self._compute_rankings(
+            top_cards=top_cards,
+            card_details=card_details,
+            name_map=name_map,
+        )
+
         self._emit(emit, 6, 6, "Writing enrichment to DB …")
         rows_changed = 0
         coverage_pct = 0.0
@@ -201,6 +212,7 @@ class EDHRECSource(EnrichmentSource):
             rows_changed = self._write(conn, staple_rows, salt_rows,
                                        theme_rows, commander_rank_rows,
                                        warnings)
+            rows_changed += self._write_rankings(conn, rank_rows)
             total_staples = conn.execute(
                 "SELECT COUNT(*) FROM staples WHERE source='edhrec'"
             ).fetchone()[0]
@@ -646,6 +658,87 @@ class EDHRECSource(EnrichmentSource):
                 changed += len(commander_rank_rows)
 
         return changed
+
+    # -- Global rankings (Phase 3, edhrec-top:N predicate) -------------------
+
+    @staticmethod
+    def _compute_rankings(
+        top_cards: list[dict],
+        card_details: dict[str, dict],
+        name_map: dict[str, str],
+    ) -> list[dict]:
+        """Build a global ranking of cards by their best inclusion%.
+
+        Source signal:
+          - Per-card detail pages (card_details) carry num_decks +
+            potential_decks. Inclusion% = num_decks / potential_decks.
+          - The top/year page (top_cards) is a fallback for cards we
+            didn't fetch a detail page for.
+
+        Cards seen on neither stay unranked. Best inclusion% wins; ties
+        are broken by deterministic tuple ordering on oracle_id so the
+        output is stable across runs.
+        """
+        ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        best: dict[str, float] = {}
+
+        def _consider(name: str | None, num_decks, potential):
+            if not name:
+                return
+            try:
+                num_decks = int(num_decks or 0)
+                potential = int(potential or 0)
+            except (TypeError, ValueError):
+                return
+            if potential <= 0:
+                return
+            oid = _lookup(name, name_map)
+            if not oid:
+                return
+            pct = num_decks / potential
+            if pct > best.get(oid, -1.0):
+                best[oid] = pct
+
+        for slug, card in card_details.items():
+            name = card.get("name") or (card.get("names") or [None])[0]
+            _consider(name, card.get("num_decks"), card.get("potential_decks"))
+
+        for cv in top_cards:
+            _consider(cv.get("name"),
+                      cv.get("num_decks"), cv.get("potential_decks"))
+
+        # Sort DESC by score, deterministic tiebreak on oracle_id, assign ranks
+        ordered = sorted(best.items(), key=lambda kv: (-kv[1], kv[0]))
+        return [
+            {
+                "oracle_id": oid,
+                "source": "edhrec",
+                "rank": rank,
+                "score": float(score),
+                "last_updated": ts,
+            }
+            for rank, (oid, score) in enumerate(ordered, start=1)
+        ]
+
+    @staticmethod
+    def _write_rankings(conn, rank_rows: list[dict]) -> int:
+        """Atomically replace EDHREC's rank rows.
+
+        Ranks are positions, so an old N=2000 rank list and a new N=1500
+        list need the stale rows wiped. The straightforward path is
+        DELETE WHERE source='edhrec' THEN bulk insert. Safe inside the
+        same transaction the caller opened."""
+        if not rank_rows:
+            return 0
+        with conn:
+            conn.execute("DELETE FROM card_rankings WHERE source = 'edhrec'")
+            conn.executemany(
+                """INSERT INTO card_rankings
+                       (oracle_id, source, rank, score, last_updated)
+                   VALUES (:oracle_id, :source, :rank, :score, :last_updated)""",
+                rank_rows,
+            )
+        return len(rank_rows)
 
     # -- Helpers -------------------------------------------------------------
 

@@ -156,6 +156,13 @@ FIELD_ALIASES = {
     #          wishlist:<username>  or  wishlist:<username>!exact
     "deck": "deck",
     "wishlist": "wishlist",
+    # Generalized rank-based filters. `edhrec-top:1000` matches cards
+    # whose EDHREC global rank is <= 1000 (top 1000 most-played). The
+    # ranks are populated by the EDHREC enrichment source at refresh
+    # time and consumed via enrichment_data['edhrec_top_rank'].
+    "edhrec-top": "edhrec_top",
+    "edhrec_top": "edhrec_top",
+    "edhrectop": "edhrec_top",
 }
 
 
@@ -253,10 +260,13 @@ def tokenize(query_string):
             continue
 
         # Try to parse as field:value or field>=value etc.
+        # Field names may contain hyphens or underscores after the first
+        # alpha (e.g. `edhrec-top`, `set_type`) so users aren't forced
+        # into squashed names like `edhrectop`.
         field_match = re.match(
-            r'^([a-zA-Z]+)'        # field name
-            r'([:=]|[<>]=?|!=)'    # operator
-            r'(.+)$',              # value
+            r'^([a-zA-Z][a-zA-Z_-]*)'  # field name (alpha-led, may include - or _)
+            r'([:=]|[<>]=?|!=)'        # operator
+            r'(.+)$',                  # value
             word
         )
         if field_match:
@@ -697,6 +707,29 @@ def _eval_field_query(fq, card_data, otag_cache=None, enrichment_data=None):
             return any(enrichment_data.get(f"staple_{t}", False)
                        for t in ("universal", "cedh", "archetype"))
         return bool(enrichment_data.get(f"staple_{val_lower}", False))
+
+    # --- Enrichment: EDHREC global rank ---
+    # Syntax:
+    #   edhrec-top:1000     — card is in EDHREC's top 1000 (rank <= 1000)
+    #   edhrec-top<=1000    — same
+    #   edhrec-top<100      — card is in top 99 (rank < 100)
+    #   edhrec-top>500      — card ranked outside the top 500
+    #   -edhrec-top:1000    — card is NOT in top 1000 (uses standard NOT)
+    #
+    # Cards with no rank (not in the EDHREC pull, or pull never ran) match
+    # nothing — they're missing data, not "outside top N." Wrap with NOT
+    # to express "definitely not in the top N" if needed.
+    if field == 'edhrec_top':
+        if enrichment_data is None:
+            return False
+        rank = enrichment_data.get("edhrec_top_rank")
+        if rank is None:
+            return False
+        # The bare colon (`edhrec-top:1000`) reads as "in the top 1000"
+        # which is rank <= 1000. Other operators pass through to _compare
+        # so users can do rank>500, rank<100, etc.
+        cmp_op = '<=' if op in (':', '=') else op
+        return _compare(rank, cmp_op, val)
 
     # --- Enrichment: salt score ---
     if field == 'salt':

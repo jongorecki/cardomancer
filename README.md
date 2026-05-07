@@ -1,4 +1,12 @@
-An automated Magic: The Gathering card sorting robot. A Marlin-controlled X/Z gantry picks cards from a source bin, stages them for visual identification via a hybrid perceptual-hash / DINOv2 pipeline, and drops each card into a user-configured destination bin. This repo contains the host-side software — motion control, vision, web UI, and data — that drives the hardware from a workshop PC.
+<p align="center">
+  <img src="static/branding/cardomancer-logo.png" alt="Cardomancer — Trading Card Collection System" width="520">
+</p>
+
+# Cardomancer — Trading Card Collection System
+
+A hardware appliance + software platform that automates organizing your physical Magic: The Gathering collection. A Marlin-controlled X/Z gantry picks cards from a source bin, stages them for visual identification via a hybrid perceptual-hash / DINOv2 pipeline, and drops each card into a user-configured destination bin — while the software keeps a running inventory, supports filter-driven sort rules, and ties the physical layout (bins, boxes, dividers) to the digital collection.
+
+This repo contains the host-side software: motion control, vision, web UI, sort-rule engine, enrichment data, and the appliance's local Flask app.
 
 Private project. No license is granted. Not for redistribution.
 
