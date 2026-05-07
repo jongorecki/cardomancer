@@ -48,18 +48,20 @@ async function apiPost(url, data) {
     return Object.assign({ ok: true }, body);
 }
 
-// Lightweight toast/alert for API errors. Falls back to alert() if no
-// toast container is present. Kept simple on purpose — one place to
-// change later if we want a nicer UI.
+// User-facing API error. Routes through the errors.json catalog
+// (errors.js) so the user sees a friendly toast with a what-happened
+// + what-to-try line instead of a raw alert. Falls back to alert()
+// only if errors.js hasn't loaded yet (very early page lifetime).
 function showApiError(code, message) {
     console.warn(`[api] ${code}: ${message}`);
     try {
-        // Also drop it into the activity log if the helper exists
         if (typeof addLog === 'function') {
             addLog(`Error (${code}): ${message}`);
         }
     } catch (_) {}
-    // Simple alert so the user can't miss it — especially the
-    // "connect the machine first" case, which is the most common.
-    alert(`${message}`);
+    if (typeof showError === 'function') {
+        showError(code, message);
+    } else {
+        alert(`${message}`);
+    }
 }
