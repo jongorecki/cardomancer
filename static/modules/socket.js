@@ -528,6 +528,14 @@ socket.on('session_ended', (data) => {
     btn.classList.add('btn-outline-primary');
     btn.innerHTML = '&#9654; Continuous';
     document.getElementById('btn-undo').disabled = true;
+    if (typeof onSessionEndedStageHook === 'function') onSessionEndedStageHook();
+});
+
+// Phase 4 stage transitions — Sort tab walks pre → running → post per
+// plans/sort_flow_stages.md. session_started bumps to running; the
+// session_ended handler above bumps to post. Pause keeps us in running.
+socket.on('session_started', () => {
+    if (typeof onSessionStarted === 'function') onSessionStarted();
 });
 
 socket.on('bin_update', (data) => {

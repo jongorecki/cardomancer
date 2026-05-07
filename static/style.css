@@ -84,6 +84,28 @@ body {
 }
 
 /* =========================================================================
+ * Phase 4 — staged Sort tab.
+ *
+ * #tab-sort gets a data-sort-stage attribute (pre / running / post) from
+ * static/modules/sortStage.js. Each stage-specific section in
+ * _tab_sort.html declares which stages it belongs to via data-stage
+ * (e.g. data-stage="pre" or data-stage="running post" for multi-stage).
+ *
+ * Sections without a data-stage attribute are always visible (chrome
+ * that spans every stage). Sections with data-stage that doesn't include
+ * the current sort stage are hidden.
+ *
+ * Implementation note: we use [data-stage~="X"] (whitespace-separated
+ * containment) so both "pre" and "pre running" match the "pre" stage
+ * cleanly without forcing a single-string convention.
+ * ========================================================================= */
+#tab-sort[data-sort-stage="pre"]     [data-stage]:not([data-stage~="pre"]):not([data-stage~="all"]),
+#tab-sort[data-sort-stage="running"] [data-stage]:not([data-stage~="running"]):not([data-stage~="all"]),
+#tab-sort[data-sort-stage="post"]    [data-stage]:not([data-stage~="post"]):not([data-stage~="all"]) {
+    display: none !important;
+}
+
+/* =========================================================================
  * Navbar
  * ========================================================================= */
 
