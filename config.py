@@ -3,6 +3,14 @@
 
 import os
 
+# --- Brand ---
+# Cardomancer (a play on "cartomancy" — divination by cards). Decided
+# 2026-05-07. Use this constant for user-facing copy: page title,
+# navbar header, error-banner branding, About / version dialog,
+# generated exports, etc. Internal identifiers (modules, repo, log
+# prefixes) keep their existing technical names.
+APP_NAME = "Cardomancer"
+
 # --- Paths ---
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CARDS_JSON_PATH = os.path.join(SCRIPT_DIR, "default-cards-20260424090836.json")

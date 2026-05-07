@@ -246,7 +246,8 @@ for _stub_name, _stub_cls in ALL_STUBS.items():
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    from config import APP_NAME
+    return render_template('index.html', app_name=APP_NAME)
 
 
 # =========================================================================
