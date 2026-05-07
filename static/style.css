@@ -106,6 +106,98 @@ body {
 }
 
 /* =========================================================================
+ * Phase 4 part 3 — bin tile grid (Running/Post stage Sort tab).
+ *
+ * Replaces the previous vertical expand/collapse list with a responsive
+ * grid of tiles. Each tile is one destination bin and shows count,
+ * fullness bar, last-card snippet, and a per-bin Empty button.
+ * Click a tile to expand the recent-cards strip.
+ * ========================================================================= */
+.bin-tile-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: var(--space-3);
+}
+
+.bin-tile {
+    background: var(--bg-card);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
+    transition: border-color var(--transition-fast),
+                background-color var(--transition-fast);
+    cursor: pointer;
+}
+.bin-tile:hover {
+    border-color: var(--accent-blue);
+    background: var(--bg-card-header);
+}
+.bin-tile-full {
+    border-color: var(--accent-red);
+}
+
+.bin-tile-head strong {
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+}
+
+.bin-tile-count {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    margin: 4px 0 6px;
+}
+.bin-tile-count-num {
+    font-family: var(--font-mono);
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--accent-blue);
+    line-height: 1;
+}
+.bin-tile-count-limit {
+    font-family: var(--font-mono);
+}
+
+.bin-tile-bar {
+    height: 4px;
+    background: var(--bg-input);
+    border-radius: var(--radius-pill);
+    overflow: hidden;
+    margin-bottom: 6px;
+}
+.bin-tile-bar-fill {
+    height: 100%;
+    background: var(--accent-blue);
+    transition: width var(--transition-base), background-color var(--transition-base);
+}
+.bin-tile-bar-fill.bin-tile-bar-warn {
+    background: var(--accent-yellow);
+}
+.bin-tile-bar-fill.bin-tile-bar-full {
+    background: var(--accent-red);
+}
+
+.bin-tile-last {
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.bin-tile-detail {
+    margin-top: var(--space-2);
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--border-subtle);
+    max-height: 200px;
+    overflow-y: auto;
+}
+.bin-tile-card-entry {
+    padding: 2px 0;
+    color: var(--text-secondary);
+}
+.bin-tile-card-entry:hover {
+    color: var(--text-primary);
+}
+
+/* =========================================================================
  * Navbar
  * ========================================================================= */
 
