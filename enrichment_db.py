@@ -66,23 +66,12 @@ def _create_tables(conn: sqlite3.Connection) -> None:
             last_updated TEXT
         );
 
-        -- Typed relationship graph between otags.  Populated by
-        -- derive_otag_relations.derive_all().  Source 'derived' rows are
-        -- rebuilt atomically on each derivation run; 'manual' rows are
-        -- hand-curated and never overwritten by the derivation.
-        CREATE TABLE IF NOT EXISTS otag_relations (
-            src_otag      TEXT NOT NULL,
-            dst_otag      TEXT NOT NULL,
-            relation_type TEXT NOT NULL,
-            weight        REAL NOT NULL DEFAULT 1.0,
-            source        TEXT NOT NULL,
-            last_updated  TEXT NOT NULL,
-            PRIMARY KEY (src_otag, dst_otag, relation_type)
-        );
-        CREATE INDEX IF NOT EXISTS idx_otag_relations_dst
-            ON otag_relations(dst_otag, relation_type);
-        CREATE INDEX IF NOT EXISTS idx_otag_relations_type
-            ON otag_relations(relation_type, weight DESC);
+        -- otag_relations and tag_catalog.cluster_id were the storage
+        -- backing the Otag Explorer UI (Galaxy / Outline / Tree / Atlas
+        -- modes), which was removed in Phase 1a along with its scraper
+        -- and graph-derivation modules. Older DBs may still have the
+        -- orphan table / column — they're harmless but no longer
+        -- populated or read by any code path.
 
         CREATE TABLE IF NOT EXISTS staples (
             oracle_id TEXT NOT NULL,
@@ -249,12 +238,9 @@ def _migrate_existing_schema(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(
         conn, "tag_catalog", "last_updated", "TEXT"
     )
-    # cluster_id: integer Louvain community assigned over the co_occurs
-    # graph by web_enrichment.compute_otag_clusters. Populated lazily via
-    # the CLI / Atlas-mode endpoint; NULL until first computation.
-    _add_column_if_missing(
-        conn, "tag_catalog", "cluster_id", "INTEGER"
-    )
+    # cluster_id was added for the deleted Otag Explorer's Atlas mode.
+    # Don't add it on fresh DBs; older DBs that already have the column
+    # keep it as an orphan (harmless — nothing populates or reads it).
 
 
 def _add_column_if_missing(conn: sqlite3.Connection, table: str,
