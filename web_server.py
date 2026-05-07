@@ -4082,6 +4082,37 @@ def api_run_self_test():
     return jsonify({'queued': True})
 
 
+# =========================================================================
+# Support bundle (Phase 3)
+# =========================================================================
+# Single-button download from Settings → "Download support bundle".
+# The first thing we ask for in any support thread.
+
+@app.route('/api/support/bundle', methods=['GET'])
+def api_support_bundle():
+    """Return a zip with logs, recent scan sessions, runtime state,
+    and version info. See support_bundle.py for what's included and
+    (more importantly) what's intentionally NOT included."""
+    from datetime import datetime as _dt
+    import support_bundle
+    from config import APP_NAME
+    try:
+        data = support_bundle.build_support_bundle(
+            repo_root=SCRIPT_DIR,
+            worker=worker,
+            app_name=APP_NAME,
+        )
+    except Exception as e:
+        return jsonify({'error': 'bundle_failed', 'message': str(e)}), 500
+    filename = (f"{APP_NAME.lower()}-support-"
+                f"{_dt.now().strftime('%Y%m%d_%H%M%S')}.zip")
+    return Response(
+        data,
+        mimetype='application/zip',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+    )
+
+
 @app.route('/api/source-bin/state', methods=['GET'])
 def api_source_bin_state():
     """Return current empty-Z reference + last probed Z + estimate.
