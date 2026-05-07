@@ -214,7 +214,7 @@ See [plans/handoff/07_shared_interfaces.md](plans/handoff/07_shared_interfaces.m
 
 ### Known bugs
 
-- **E-stop recovery is incomplete.** "Reset & Re-home" after an E-stop does not resume the in-flight session; likely a stale abort flag or missing state transition in `_cmd_reset_after_estop`. Logged in project memory.
+- ~~**E-stop recovery is incomplete.**~~ Fixed 2026-05-07. `_cmd_reset_after_estop` now restores `continuous_sorting` from the pre-estop snapshot so the user's Resume click re-arms the continuous loop. Regression test in [tests/test_estop_recovery.py](tests/test_estop_recovery.py).
 
 ---
 

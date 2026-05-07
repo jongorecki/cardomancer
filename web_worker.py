@@ -2951,12 +2951,24 @@ class SortWorker:
         had_session = pre.get('had_session', False) and self.tracker is not None
 
         if had_session:
+            # Restore continuous_sorting from the pre-estop snapshot.
+            # emergency_stop() forced it False to prevent auto-resume the
+            # instant state flips, but the user's Reset & Re-home click is
+            # their explicit confirmation that the machine is safe to
+            # resume — and the upcoming Resume click is a second
+            # confirmation. Without this restoration the user's Resume
+            # produces 'sorting' state with continuous_sorting=False, no
+            # detect_and_sort is enqueued, and the machine sits silent
+            # while the (out-of-sync) Continuous button's visual state
+            # still says "on" — a known confusing-as-broken bug.
+            self.continuous_sorting = bool(pre.get('continuous', False))
+
             # Session survived (tracker was NOT ended during e-stop).
             # Land in 'paused' so the user must explicitly Resume to
             # continue sorting. This mirrors normal pause/resume UX.
             self.state = 'paused'
             self.log("Reset complete — session preserved, in paused state. "
-                     "Press Resume or Detect to continue sorting.")
+                     "Press Resume to continue sorting.")
             self.emit('session_paused', {
                 'reason': 'emergency_stop_recovered',
                 'resumable': True,
@@ -2964,6 +2976,7 @@ class SortWorker:
             self.emit('estop_reset_complete', {
                 'resumed': True,
                 'state': 'paused',
+                'continuous_will_resume': self.continuous_sorting,
             })
         else:
             # No active session — straight to idle so Start Session
