@@ -34,6 +34,12 @@ SORTING_MODES = {
 SORT_CONFIGS_DIR = os.path.join(SCRIPT_DIR, "sort_configs")
 SCAN_LOGS_DIR = os.path.join(SCRIPT_DIR, "scan_logs")
 
+# Working assumption for destination bin capacity (cards). The Z-probe
+# fullness check trips around this count in normal use; sort configs
+# that don't specify their own `limit:` directive use this as the
+# default cap that drives overflow routing decisions.
+DEFAULT_BIN_CAPACITY = 300
+
 # --- Excluded sets (promo/special sets to deprioritize) ---
 EXCLUDED_SETS = {
     # Collector's / International / Foreign Black Border editions —

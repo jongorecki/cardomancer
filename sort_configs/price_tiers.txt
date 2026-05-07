@@ -3,7 +3,9 @@
 # High-value cards first so they get their own bins.
 # Cheap cards get multiple overflow bins since there are more of them.
 #
-# Optional: set "limit: 50" to cap each bin at 50 cards.
+# Optional: set "limit: 300" to cap each bin at 300 cards
+# (matches config.DEFAULT_BIN_CAPACITY — roughly when the Z-probe
+# fullness check trips on the physical bins).
 # When a bin fills up, cards overflow to the next matching bin.
 
 bins: 8
