@@ -259,6 +259,58 @@ def end_session(conn, session_id, total_scans=0, recognized=0, unrecognized=0):
     conn.commit()
 
 
+def find_stale_sessions(conn):
+    """
+    Return any sessions where end_time IS NULL — these are sessions that
+    were active when the app exited unexpectedly (power loss, crash,
+    forced kill). Used by the power-loss-resume flow at startup.
+
+    Each row is a dict with: id, start_time, sort_mode, config_name,
+    bin_count, scan_count (computed from scan_history). Ordered most
+    recent first.
+    """
+    rows = conn.execute(
+        """SELECT s.id, s.start_time, s.sort_mode, s.config_name,
+                  s.bin_count,
+                  (SELECT COUNT(*) FROM scan_history sh
+                   WHERE sh.session_id = s.id) AS scan_count
+           FROM sessions s
+           WHERE s.end_time IS NULL
+           ORDER BY s.start_time DESC"""
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_session_bin_counts(conn, session_id):
+    """
+    Reconstruct per-bin scan counts for a (possibly stale) session by
+    grouping scan_history rows. Returns {bin_number: count}. Used by
+    the power-loss-resume flow to rehydrate the worker's tracker.bins.
+    """
+    rows = conn.execute(
+        """SELECT bin, COUNT(*) AS n
+           FROM scan_history
+           WHERE session_id = ? AND bin IS NOT NULL
+           GROUP BY bin""",
+        (session_id,)
+    ).fetchall()
+    return {int(row['bin']): int(row['n']) for row in rows}
+
+
+def get_session_metadata(conn, session_id):
+    """
+    Return a single session row as a dict (for resume reconstruction
+    and Resume-prompt display). Returns None if no such session.
+    """
+    row = conn.execute(
+        """SELECT id, start_time, end_time, sort_mode, config_name,
+                  bin_count, total_scans, recognized, unrecognized, notes
+           FROM sessions WHERE id = ?""",
+        (session_id,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
 # ---------------------------------------------------------------------------
 # Recording scans
 # ---------------------------------------------------------------------------

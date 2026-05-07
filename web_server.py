@@ -4041,6 +4041,24 @@ def api_reset_after_estop():
 
 
 # =========================================================================
+# Power-loss / unclean-shutdown recovery
+# =========================================================================
+# Stale sessions are surfaced to the UI via the `stale_session_detected`
+# socket event emitted from worker._cmd_check_stale_session at startup.
+# This iteration ships detect + discard; Resume (rehydrate tracker)
+# lands in Phase 4 with the staged Sort tab rebuild.
+
+@app.route('/api/session/discard-stale', methods=['POST'])
+def api_discard_stale_session():
+    body = request.get_json(silent=True) or {}
+    session_id = body.get('session_id')
+    if session_id is None:
+        return jsonify({'error': 'missing_session_id'}), 400
+    worker.enqueue('discard_stale_session', session_id=int(session_id))
+    return jsonify({'queued': True})
+
+
+# =========================================================================
 # SocketIO events
 # =========================================================================
 
@@ -4052,6 +4070,25 @@ def handle_connect():
     socketio.emit('hardware_status', {
         'connected': worker.state != 'disconnected',
     })
+    # Re-check for stale sessions on every browser connect. The worker's
+    # startup emission of `stale_session_detected` happens before any
+    # browser is connected (so it's lost), and a user reload should
+    # re-surface the prompt if they didn't act on it.
+    try:
+        import collection_db as _cdb
+        conn = _cdb.get_connection()
+        try:
+            stale = _cdb.find_stale_sessions(conn)
+        finally:
+            conn.close()
+        if stale:
+            socketio.emit('stale_session_detected', {
+                'count': len(stale),
+                'primary': stale[0],
+                'all': stale,
+            })
+    except Exception as e:
+        print(f"[server] stale-session check on connect failed: {e}")
 
 
 # =========================================================================
@@ -5055,6 +5092,13 @@ def main():
         worker.enqueue('connect')
     else:
         print("[server] Auto-connect disabled via CARD_SORTER_NO_AUTO_CONNECT")
+
+    # Check for sessions that didn't end cleanly (power loss, crash).
+    # If found, the worker emits `stale_session_detected` and the UI
+    # banner offers a Discard action. See plans/sort_flow_stages.md
+    # "Power-loss resume" — full Resume rehydration is Phase 4 work;
+    # this lands the detect + discard half so stale rows stop piling up.
+    worker.enqueue('check_stale_session')
 
     # Start the enrichment refresh scheduler. Failure here is non-fatal
     # — the core sorting flow does not depend on enrichment.

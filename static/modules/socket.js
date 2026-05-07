@@ -50,6 +50,20 @@ socket.on('estop_triggered', () => {
     alert('EMERGENCY STOP activated. Machine halted.\nUse Reset & Re-home to restart.');
 });
 
+// Power-loss / unclean-shutdown recovery — see session.js for the
+// banner UI. Phase 2 ships detect + discard; Phase 4 will land Resume.
+socket.on('stale_session_detected', (data) => {
+    if (typeof showStaleSessionBanner === 'function') {
+        showStaleSessionBanner(data);
+    }
+});
+
+socket.on('stale_session_discarded', (data) => {
+    if (typeof onStaleSessionDiscarded === 'function') {
+        onStaleSessionDiscarded(data);
+    }
+});
+
 // =========================================================================
 // Card detection events
 // =========================================================================

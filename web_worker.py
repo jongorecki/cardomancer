@@ -2991,6 +2991,91 @@ class SortWorker:
         # Clear the snapshot so a subsequent e-stop starts fresh.
         self._pre_estop_state = None
 
+    # --- Power-loss / unclean-shutdown recovery ---
+    #
+    # A "stale" session is one in the collection_db sessions table whose
+    # end_time IS NULL — meaning the app exited (crash, power loss, kill)
+    # while a sort was in progress, and we never got to call end_session().
+    # Without intervention these accumulate indefinitely; the UI gets
+    # noisier the more the user sorts. We surface them at startup and let
+    # the user decide what to do.
+    #
+    # This iteration ships detect + discard. Full Resume (rehydrate the
+    # tracker + sort_config_obj + bin counts and put the worker into
+    # 'paused' so the user can press Resume) lands in Phase 4 alongside
+    # the staged Sort tab rebuild. See plans/sort_flow_stages.md.
+
+    def _cmd_check_stale_session(self, **kwargs):
+        """Run on startup. Query the collection_db for any session that
+        didn't end cleanly; if found, emit `stale_session_detected` so
+        the frontend can prompt the user."""
+        try:
+            import collection_db
+            conn = collection_db.get_connection()
+            try:
+                stale = collection_db.find_stale_sessions(conn)
+            finally:
+                conn.close()
+        except Exception as e:
+            self.log(f"Stale-session check failed: {e}")
+            return
+
+        if not stale:
+            return
+
+        # Most recent stale session is the one most likely worth showing.
+        # Older stale sessions are listed too so the user can see how
+        # many have piled up.
+        primary = stale[0]
+        self.log(f"Found {len(stale)} unfinished session(s); most recent = "
+                 f"#{primary['id']} ({primary['scan_count']} scans, started "
+                 f"{primary['start_time']})")
+        self.emit('stale_session_detected', {
+            'count': len(stale),
+            'primary': primary,
+            'all': stale,
+        })
+
+    def _cmd_discard_stale_session(self, session_id=None, **kwargs):
+        """Mark a stale session as ended without resuming it. Stamps
+        end_time so it stops being detected on subsequent startups.
+        Total/recognized/unrecognized are computed from scan_history
+        so the historical record stays accurate."""
+        if session_id is None:
+            self.log("discard_stale_session: missing session_id")
+            return
+        try:
+            import collection_db
+            conn = collection_db.get_connection()
+            try:
+                # Compute final counts from scan_history rather than trusting
+                # any in-memory state (there is none — the original session
+                # ended without end_session() being called).
+                total = conn.execute(
+                    "SELECT COUNT(*) FROM scan_history WHERE session_id = ?",
+                    (int(session_id),)
+                ).fetchone()[0]
+                recognized = conn.execute(
+                    "SELECT COUNT(*) FROM scan_history "
+                    "WHERE session_id = ? AND recognized = 1",
+                    (int(session_id),)
+                ).fetchone()[0]
+                collection_db.end_session(
+                    conn, int(session_id),
+                    total_scans=int(total),
+                    recognized=int(recognized),
+                    unrecognized=int(total) - int(recognized),
+                )
+            finally:
+                conn.close()
+        except Exception as e:
+            self.log(f"discard_stale_session failed: {e}")
+            self.emit('error', {'message': f'Could not discard session: {e}'})
+            return
+
+        self.log(f"Discarded stale session #{session_id}")
+        self.emit('stale_session_discarded', {'session_id': int(session_id)})
+
     # --- ArUco Calibration Commands ---
 
     def _cmd_run_calibration(self, camera=None, expected_sources=1,

@@ -281,3 +281,79 @@ function onResortToggle() {
     if (!toggle || !row) return;
     row.style.display = toggle.checked ? '' : 'none';
 }
+
+// =========================================================================
+// Stale-session prompt (power-loss / unclean-shutdown recovery)
+// =========================================================================
+// Phase 2 ships detect + discard. Phase 4 will replace this banner with
+// the staged Sort tab's "Resume?" limbo state per plans/sort_flow_stages.md.
+//
+// The banner is injected into the page at startup (so we don't need to
+// touch every existing partial). It sits at the top of the body, above
+// the navbar, and is dismissible without taking action.
+
+function _ensureStaleSessionBanner() {
+    let bar = document.getElementById('stale-session-banner');
+    if (bar) return bar;
+    bar = document.createElement('div');
+    bar.id = 'stale-session-banner';
+    bar.className = 'alert alert-warning d-none mb-0 rounded-0';
+    bar.style.borderRadius = '0';
+    bar.innerHTML = `
+        <div class="container-fluid d-flex align-items-center gap-3">
+            <strong>Unfinished session detected</strong>
+            <span id="stale-session-summary" class="flex-grow-1 small"></span>
+            <button id="btn-discard-stale-session" class="btn btn-sm btn-warning"
+                    onclick="discardStaleSession()">Mark as ended</button>
+            <button class="btn btn-sm btn-link"
+                    onclick="dismissStaleSessionBanner()">Later</button>
+        </div>`;
+    document.body.insertBefore(bar, document.body.firstChild);
+    return bar;
+}
+
+let _stalePrimary = null;
+
+function showStaleSessionBanner(payload) {
+    const bar = _ensureStaleSessionBanner();
+    _stalePrimary = (payload && payload.primary) || null;
+    if (!_stalePrimary) {
+        bar.classList.add('d-none');
+        return;
+    }
+    const p = _stalePrimary;
+    const more = (payload.count > 1)
+        ? ` <span class="text-muted">(+${payload.count - 1} older — discard one at a time)</span>`
+        : '';
+    document.getElementById('stale-session-summary').innerHTML =
+        `Session #${p.id} (${p.scan_count} scan${p.scan_count === 1 ? '' : 's'}, `
+        + `started ${p.start_time})${more}`;
+    bar.classList.remove('d-none');
+    addLog(`Found ${payload.count} unfinished session(s); most recent #${p.id}`);
+}
+
+function dismissStaleSessionBanner() {
+    const bar = document.getElementById('stale-session-banner');
+    if (bar) bar.classList.add('d-none');
+}
+
+async function discardStaleSession() {
+    if (!_stalePrimary) return;
+    const id = _stalePrimary.id;
+    const r = await apiPost('/api/session/discard-stale', { session_id: id });
+    // Server emits stale_session_discarded on success; that handler hides
+    // the banner. If it didn't fire (network error etc.), apiPost already
+    // surfaced the toast — just leave the banner up so the user can retry.
+    return r;
+}
+
+function onStaleSessionDiscarded(data) {
+    addLog(`Marked stale session #${data.session_id} as ended.`);
+    // Re-fetch any remaining stale sessions in case there were multiple.
+    // The server only emitted the primary in stale_session_detected; the
+    // simplest re-check is to ask the server. For now, just hide the
+    // banner — the user can refresh to see remaining stale sessions on
+    // the next reload.
+    dismissStaleSessionBanner();
+    _stalePrimary = null;
+}
