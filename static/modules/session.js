@@ -415,3 +415,58 @@ function dismissBinFullBanner() {
 function onBinFullCleared() {
     dismissBinFullBanner();
 }
+
+// =========================================================================
+// Hardware self-test (Setup tab)
+// =========================================================================
+
+function runSelfTest() {
+    const row = document.getElementById('self-test-row');
+    const list = document.getElementById('self-test-results');
+    const summary = document.getElementById('self-test-summary');
+    const btn = document.getElementById('btn-run-self-test');
+    if (row) row.style.display = '';
+    if (list) list.innerHTML = '<li class="text-muted">Running diagnostics&hellip;</li>';
+    if (summary) summary.textContent = '';
+    if (btn) btn.disabled = true;
+    apiPost('/api/self-test/run');
+}
+
+function onSelfTestStarted() {
+    const list = document.getElementById('self-test-results');
+    if (list) list.innerHTML = '';
+}
+
+function onSelfTestStep(data) {
+    const list = document.getElementById('self-test-results');
+    if (!list) return;
+    const colors = { pass: 'success', fail: 'danger', skip: 'warning' };
+    const icons = { pass: '✓', fail: '✕', skip: '⚠' };
+    const cls = colors[data.status] || 'secondary';
+    const icon = icons[data.status] || '?';
+    const detail = data.detail
+        ? ` <span class="text-muted">${escapeHtml(data.detail)}</span>` : '';
+    const li = document.createElement('li');
+    li.innerHTML =
+        `<span class="badge bg-${cls} me-2">${icon} ${data.status}</span>`
+        + `<strong>${escapeHtml(data.step)}</strong>${detail}`;
+    list.appendChild(li);
+}
+
+function onSelfTestComplete(results) {
+    const summary = document.getElementById('self-test-summary');
+    const btn = document.getElementById('btn-run-self-test');
+    if (btn) btn.disabled = false;
+    const p = results.pass || 0;
+    const f = results.fail || 0;
+    const s = results.skip || 0;
+    if (summary) {
+        const verdict = (f === 0)
+            ? `All checks passed (${p}/${p + f + s}).`
+            : `${f} failure${f === 1 ? '' : 's'} — ${p} passed, ${s} skipped.`;
+        summary.textContent = verdict;
+        summary.className = 'small mt-2 mb-0 ' +
+            (f === 0 ? 'text-success' : 'text-danger');
+    }
+    addLog(`Self-test: ${p} passed, ${f} failed, ${s} skipped.`);
+}

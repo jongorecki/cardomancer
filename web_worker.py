@@ -3162,6 +3162,135 @@ class SortWorker:
         self.log(f"Discarded stale session #{session_id}")
         self.emit('stale_session_discarded', {'session_id': int(session_id)})
 
+    # --- Hardware self-test ---
+    #
+    # Sequential diagnostic: serial connection, X home, Z home, source-bin
+    # probe, camera capture. Each step emits a `self_test_step` event with
+    # {step, status: pass|fail|skip, detail}. The whole run finishes with
+    # `self_test_complete`. Designed for "first run on new hardware" and
+    # "did anything break since yesterday" sanity checks. Pre-condition:
+    # state in (idle, paused) — we don't run during a sort.
+
+    def _self_test_emit_step(self, step, status, detail=''):
+        self.log(f"[self-test] {step}: {status} — {detail}" if detail
+                 else f"[self-test] {step}: {status}")
+        self.emit('self_test_step', {
+            'step': step, 'status': status, 'detail': detail,
+        })
+
+    def _cmd_run_self_test(self, **kwargs):
+        """Run the hardware self-test sequence."""
+        # Allow disconnected (the first test IS the serial connection),
+        # idle, and paused. Disallow sorting (would race with the
+        # session's motion) and estopped (motion is halted).
+        if self.state in ('sorting', 'estopped'):
+            self.emit('error', {
+                'message': f'Cannot run diagnostics while state={self.state}; '
+                           f'stop the session first.'
+            })
+            return
+
+        import gcode_control
+        import time as _time
+        results = {'pass': 0, 'fail': 0, 'skip': 0}
+
+        def record(step, status, detail=''):
+            results[status] = results.get(status, 0) + 1
+            self._self_test_emit_step(step, status, detail)
+
+        self.emit('self_test_started', {})
+        self.log("Running hardware self-test…")
+
+        # 1. Serial connection
+        if gcode_control.is_connected():
+            record('Serial connection', 'pass',
+                   f'Connected on {gcode_control.SERIAL_PORT}.')
+        else:
+            record('Serial connection', 'fail',
+                   f'Not connected to {gcode_control.SERIAL_PORT}. '
+                   f'Click Connect (Hardware card) and re-run.')
+            # Without serial, the rest of the tests can't meaningfully run.
+            self.emit('self_test_complete', results)
+            return
+
+        # 2. Home X
+        try:
+            gcode_control.home_x()
+            record('Home X', 'pass', 'Homed to X=0.')
+        except Exception as e:
+            record('Home X', 'fail', f'Homing X raised: {e}')
+
+        # 3. Home Z
+        try:
+            gcode_control.home_z()
+            record('Home Z', 'pass', f'Homed to Z={gcode_control.Z_MAX}.')
+        except Exception as e:
+            record('Home Z', 'fail', f'Homing Z raised: {e}')
+
+        # 4. Source-bin probe (verifies probe sensor + Z-down motion)
+        try:
+            bin_locs = gcode_control.get_bin_locations() or {}
+            source_x = bin_locs.get(0, gcode_control.X_SOURCE_BIN)
+            # Invalidate cache so we get a real probe, not a fast-approach.
+            gcode_control.invalidate_probe_cache_for_x(source_x)
+            z_clear = gcode_control._z_travel_height()
+            gcode_control._send_and_wait(
+                f"G0 Z{z_clear} F{gcode_control.Z_FEEDRATE}")
+            gcode_control._send_and_wait("M400")
+            gcode_control._send_and_wait(
+                f"G0 X{source_x} F{gcode_control.X_FEEDRATE}")
+            gcode_control._send_and_wait("M400")
+            gcode_control._probe_with_cache(source_x)
+            probed_z = gcode_control.get_cached_probe_z(source_x)
+            if probed_z is None:
+                record('Source bin probe', 'fail',
+                       'Probe completed but Z position unreadable. '
+                       'Check probe wiring or Marlin configuration.')
+            else:
+                record('Source bin probe', 'pass',
+                       f'Probe contacted at Z={probed_z:.2f} mm.')
+        except Exception as e:
+            record('Source bin probe', 'fail', f'Probe raised: {e}')
+
+        # 5. Camera capture
+        cam = kwargs.get('camera')
+        if cam is None:
+            try:
+                from web_camera import camera as _cam
+                cam = _cam
+            except Exception:
+                cam = None
+        if cam is None:
+            record('Camera capture', 'skip',
+                   'No camera handle available in this context.')
+        else:
+            try:
+                frame = None
+                if hasattr(cam, 'get_frame'):
+                    frame = cam.get_frame()
+                elif hasattr(cam, 'read'):
+                    ok, frame = cam.read()
+                    if not ok:
+                        frame = None
+                if frame is None:
+                    record('Camera capture', 'fail',
+                           'Camera returned no frame. Check that the '
+                           'camera is started (Setup → Camera → Start).')
+                else:
+                    h = getattr(frame, 'shape', [None, None])[0]
+                    w = getattr(frame, 'shape', [None, None, None])[1] \
+                        if hasattr(frame, 'shape') else None
+                    detail = (f'Frame captured ({w}×{h}).'
+                              if w and h else 'Frame captured.')
+                    record('Camera capture', 'pass', detail)
+            except Exception as e:
+                record('Camera capture', 'fail', f'Camera raised: {e}')
+
+        self.log(f"Self-test complete: {results['pass']} passed, "
+                 f"{results['fail']} failed, "
+                 f"{results.get('skip', 0)} skipped.")
+        self.emit('self_test_complete', results)
+
     # --- Source-bin estimated count from probe ---
     #
     # Every time the source bin is probed (during pick_from_position with

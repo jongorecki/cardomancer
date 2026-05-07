@@ -72,6 +72,17 @@ socket.on('bin_full_prompt', (data) => {
     }
 });
 
+// Hardware self-test events (Setup → Run diagnostics).
+socket.on('self_test_started', () => {
+    if (typeof onSelfTestStarted === 'function') onSelfTestStarted();
+});
+socket.on('self_test_step', (data) => {
+    if (typeof onSelfTestStep === 'function') onSelfTestStep(data);
+});
+socket.on('self_test_complete', (data) => {
+    if (typeof onSelfTestComplete === 'function') onSelfTestComplete(data);
+});
+
 // When the user clicks Resume after emptying a bin, the worker emits
 // session_resumed (via _cmd_resume → state setter sorter_state event).
 // Use that to clear the bin-full banner.

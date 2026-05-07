@@ -4073,6 +4073,14 @@ def api_calibrate_empty_source_bin():
     return jsonify({'queued': True})
 
 
+@app.route('/api/self-test/run', methods=['POST'])
+def api_run_self_test():
+    """Trigger the hardware diagnostic sequence. Streams results via
+    self_test_step / self_test_complete socket events."""
+    worker.enqueue('run_self_test', camera=camera)
+    return jsonify({'queued': True})
+
+
 @app.route('/api/source-bin/state', methods=['GET'])
 def api_source_bin_state():
     """Return current empty-Z reference + last probed Z + estimate.
