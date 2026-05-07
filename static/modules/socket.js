@@ -528,6 +528,7 @@ socket.on('session_ended', (data) => {
     btn.classList.add('btn-outline-primary');
     btn.innerHTML = '&#9654; Continuous';
     document.getElementById('btn-undo').disabled = true;
+    if (typeof renderPostSortSummary === 'function') renderPostSortSummary(data);
     if (typeof onSessionEndedStageHook === 'function') onSessionEndedStageHook();
 });
 

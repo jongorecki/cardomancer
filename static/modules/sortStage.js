@@ -75,6 +75,62 @@ function onSessionEndedStageHook() {
     _applyStage('post');
 }
 
+// Populate the post-sort summary hero from the session_ended payload.
+// Called from socket.js's session_ended handler. Defensive about
+// missing fields — the worker emits a stripped-down payload if the
+// tracker teardown failed (see web_worker.py:2918), so we treat
+// every field as optional.
+function renderPostSortSummary(data) {
+    const safe = data || {};
+    const totalEl = document.getElementById('post-sort-total-scans');
+    const recogEl = document.getElementById('post-sort-recognized');
+    const unrecogEl = document.getElementById('post-sort-unrecognized');
+    if (totalEl) totalEl.textContent = String(safe.total_scans || 0);
+    if (recogEl) recogEl.textContent = String(safe.recognized || 0);
+    if (unrecogEl) unrecogEl.textContent = String(safe.unrecognized || 0);
+    const reasonEl = document.getElementById('post-sort-end-reason');
+    if (reasonEl) {
+        // session_ended doesn't yet carry a reason; show the timestamp
+        // for now and grow this as the worker exposes more.
+        reasonEl.textContent = `Ended ${new Date().toLocaleTimeString()}`;
+    }
+    // Refresh the review-queue count badge if the helper is available.
+    if (typeof loadDetectionReviewCounts === 'function') {
+        try { loadDetectionReviewCounts(); } catch (_) {}
+    }
+}
+
+// Post-sort action: launch another session with the same preset.
+// Calls the existing startSession() so identical to the pre-sort
+// hero's button — there's no duplication of the start machinery.
+function startAnotherSession() {
+    if (typeof startSession === 'function') startSession();
+}
+
+// Post-sort action: jump to the Setup tab and surface the detection
+// review queue. Setup's onclick already calls
+// loadDetectionReviewCounts(), so the user lands on a populated queue.
+function goToReviewQueue() {
+    const setupLink = document.querySelector('a[href="#tab-setup"]');
+    if (setupLink && typeof bootstrap !== 'undefined') {
+        new bootstrap.Tab(setupLink).show();
+    }
+}
+
+// When the detection-review counts refresh, mirror the pending count
+// onto the post-sort hero's "Review uncertain cards" badge so the
+// user knows whether it's worth clicking through.
+function updatePostSortReviewBadge(pending) {
+    const badge = document.getElementById('post-sort-review-count');
+    if (!badge) return;
+    if (pending && pending > 0) {
+        badge.textContent = String(pending);
+        badge.style.display = '';
+    } else {
+        badge.style.display = 'none';
+    }
+}
+
 // Power-loss / unclean-shutdown limbo: user hit a startup state where
 // a session was active but didn't end cleanly. The Sort tab should
 // surface a "Resume?" prompt rather than dropping straight into
