@@ -3,6 +3,14 @@
 
 import os
 
+# --- Brand ---
+# Cardomancer (a play on "cartomancy" — divination by cards). Decided
+# 2026-05-07. Use this constant for user-facing copy: page title,
+# navbar header, error-banner branding, About / version dialog,
+# generated exports, etc. Internal identifiers (modules, repo, log
+# prefixes) keep their existing technical names.
+APP_NAME = "Cardomancer"
+
 # --- Paths ---
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CARDS_JSON_PATH = os.path.join(SCRIPT_DIR, "default-cards-20260424090836.json")
@@ -21,6 +29,20 @@ CROP_SIZE = 745
 PHASH_DISTANCE_THRESHOLD = 120    # scaled for 256-bit (was 40 for 64-bit)
 PHASH_CLOSE_MATCH_DIFF = 40       # scaled for 256-bit (was 10 for 64-bit)
 
+# Identity-confidence threshold for autonomy-ladder routing. Scans whose
+# best-match hash distance is BELOW this value pass straight through to
+# the matched bin. Scans BETWEEN this and PHASH_DISTANCE_THRESHOLD are
+# "low identity confidence" — they still match a card, but uncertainly:
+# the worker routes them to the sort_config's fallback bin and seeds an
+# 'identity' detection-review row so the user can verify them later
+# (see plans/autonomy_ladder.md). Above PHASH_DISTANCE_THRESHOLD the
+# match is rejected entirely (unrecognized path, also goes to fallback).
+#
+# Tuned high (most cards identify confidently in normal sessions; the
+# review queue should only catch genuinely uncertain ones). Lower it
+# only if the queue is too sparse to be useful.
+IDENTITY_LOW_CONFIDENCE_DISTANCE = 90
+
 # --- Sorting ---
 SORTING_MODES = {
     "1": "color",
@@ -33,6 +55,28 @@ SORTING_MODES = {
 }
 SORT_CONFIGS_DIR = os.path.join(SCRIPT_DIR, "sort_configs")
 SCAN_LOGS_DIR = os.path.join(SCRIPT_DIR, "scan_logs")
+
+# Working assumption for destination bin capacity (cards). The Z-probe
+# fullness check trips around this count in normal use; sort configs
+# that don't specify their own `limit:` directive use this as the
+# default cap that drives overflow routing decisions.
+DEFAULT_BIN_CAPACITY = 300
+
+# --- Source-bin count estimation ---
+# Used by web_worker to estimate how many cards remain in the source
+# bin from the difference between the current probe Z and a calibrated
+# empty-bin reference Z, divided by the per-card thickness.
+#
+# 0.305 mm is the Wizards-published thickness of a standard unsleeved
+# Magic card. Sleeved cards are ~0.45 mm; Penny / KMC sleeves ~0.40 mm.
+# The Sort flow's "Pause to refill source" workflow makes the user
+# explicitly aware of refills, so this estimate doesn't have to be
+# perfect — a ~10% error margin is fine for "you have ~50 cards left."
+CARD_THICKNESS_MM = 0.305
+
+# Path where the empty-source-bin reference Z is persisted so it
+# survives restarts. Single value: {"empty_z": <float>, "calibrated_at": "<iso>"}.
+EMPTY_SOURCE_BIN_REF_PATH = os.path.join(SCRIPT_DIR, "empty_source_z.json")
 
 # --- Excluded sets (promo/special sets to deprioritize) ---
 EXCLUDED_SETS = {

@@ -1,0 +1,7 @@
+node_modules/
+.claude/
+backup/
+archive/
+static/otag_explorer.js
+*.min.css
+*.min.js

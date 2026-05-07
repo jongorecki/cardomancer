@@ -1,0 +1,125 @@
+{
+  "_meta": {
+    "version": 1,
+    "doc": "User-facing error catalog. Add an entry for any error code returned by the backend so the frontend can show a friendly toast instead of a raw code. Severity drives the visual treatment: 'info' (blue), 'warning' (yellow), 'error' (red). Unknown codes fall back to the raw message; that's a signal to add an entry here."
+  },
+
+  "network": {
+    "title": "Couldn't reach the machine",
+    "what_happened": "The browser couldn't talk to the Cardomancer server.",
+    "what_to_try": "Check that the Cardomancer service is running and that you're on the same network. Reload this page to retry.",
+    "severity": "error"
+  },
+
+  "not_connected": {
+    "title": "Hardware not connected",
+    "what_happened": "The controller is offline. Cardomancer can't move the head or pick a card without it.",
+    "what_to_try": "Open Setup → Hardware → Connect, or check that the USB cable is plugged in.",
+    "severity": "warning"
+  },
+
+  "busy": {
+    "title": "Cardomancer is busy",
+    "what_happened": "Another action is in progress. Cardomancer queued one operation at a time so they don't fight.",
+    "what_to_try": "Wait a moment for the current step to finish, then try again.",
+    "severity": "info"
+  },
+
+  "estopped": {
+    "title": "Emergency stop active",
+    "what_happened": "Cardomancer halted because the emergency stop was pressed.",
+    "what_to_try": "Make sure nothing is blocking the carriage, then click \"Reset & Re-home\" in the top bar.",
+    "severity": "warning"
+  },
+
+  "camera_not_active": {
+    "title": "Camera isn't running",
+    "what_happened": "Cardomancer needs a live camera feed to identify cards, and the feed isn't on.",
+    "what_to_try": "Open Setup → Camera → Start, then re-run this action.",
+    "severity": "warning"
+  },
+
+  "no_frame_available": {
+    "title": "Camera didn't return an image",
+    "what_happened": "The camera is on but Cardomancer didn't get a frame in time.",
+    "what_to_try": "Check that the lens is unblocked and that the camera USB cable is seated. If the issue persists, run Setup → Run diagnostics.",
+    "severity": "warning"
+  },
+
+  "no_bins_configured": {
+    "title": "No destination bins set up",
+    "what_happened": "Cardomancer doesn't know where to drop cards yet.",
+    "what_to_try": "Open Sort → configure your bin queries and bin positions before starting a session.",
+    "severity": "warning"
+  },
+
+  "no_source_configured": {
+    "title": "No source bin set up",
+    "what_happened": "Cardomancer doesn't know where to pick cards from.",
+    "what_to_try": "Open Setup → Calibration and run the ArUco calibration to set the source-bin position.",
+    "severity": "warning"
+  },
+
+  "no_staging_configured": {
+    "title": "No staging platform set up",
+    "what_happened": "Cardomancer can't drop cards on staging for the camera to see — the platform isn't calibrated.",
+    "what_to_try": "Open Setup → Calibration and run the calibration wizard so Cardomancer learns where the platform is.",
+    "severity": "warning"
+  },
+
+  "hash_db_missing": {
+    "title": "Card data missing",
+    "what_happened": "The art-hash database Cardomancer uses to recognize cards isn't on disk.",
+    "what_to_try": "Open Settings (gear icon) → Database → Update card data. If you're on a fresh install, this download is required before sorting.",
+    "severity": "error"
+  },
+
+  "cards_db_missing": {
+    "title": "Card metadata missing",
+    "what_happened": "The Scryfall card metadata file isn't on disk, so Cardomancer can't look up identified cards.",
+    "what_to_try": "Open Settings (gear icon) → Database → Update card data.",
+    "severity": "error"
+  },
+
+  "homing_failed": {
+    "title": "Homing failed",
+    "what_happened": "Cardomancer tried to home the axes but the move didn't complete.",
+    "what_to_try": "Check that the carriage moves freely and the limit switches are wired. Run Setup → Run diagnostics for a step-by-step check.",
+    "severity": "error"
+  },
+
+  "config_not_found": {
+    "title": "Sort preset not found",
+    "what_happened": "Cardomancer couldn't find the sort preset by that name.",
+    "what_to_try": "Pick another preset from the dropdown, or create a new one from the Sort tab.",
+    "severity": "warning"
+  },
+
+  "invalid_content": {
+    "title": "Sort preset is malformed",
+    "what_happened": "The preset content didn't parse — there's a syntax error in one of the bin queries.",
+    "what_to_try": "Check the preset for typos. Each bin needs a number and a query, e.g. \"bin1: c:r\".",
+    "severity": "warning"
+  },
+
+  "target_exists": {
+    "title": "Preset name already exists",
+    "what_happened": "A preset with that name is already saved.",
+    "what_to_try": "Pick a different name, or load the existing preset and edit it.",
+    "severity": "warning"
+  },
+
+  "missing_session_id": {
+    "title": "Missing session ID",
+    "what_happened": "Cardomancer needed a session ID to complete this action but didn't get one.",
+    "what_to_try": "Reload the page and try again. If this keeps happening, mention this code (missing_session_id) in your support note.",
+    "severity": "error"
+  },
+
+  "_default": {
+    "title": "Something went wrong",
+    "what_happened": "Cardomancer hit an error it doesn't have a friendly explanation for yet.",
+    "what_to_try": "Try the action again. If it keeps failing, copy the technical details (below) into a support note.",
+    "severity": "error"
+  }
+}

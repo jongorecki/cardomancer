@@ -246,7 +246,8 @@ for _stub_name, _stub_cls in ALL_STUBS.items():
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    from config import APP_NAME
+    return render_template('index.html', app_name=APP_NAME)
 
 
 # =========================================================================
@@ -4041,6 +4042,98 @@ def api_reset_after_estop():
 
 
 # =========================================================================
+# Power-loss / unclean-shutdown recovery
+# =========================================================================
+# Stale sessions are surfaced to the UI via the `stale_session_detected`
+# socket event emitted from worker._cmd_check_stale_session at startup.
+# This iteration ships detect + discard; Resume (rehydrate tracker)
+# lands in Phase 4 with the staged Sort tab rebuild.
+
+@app.route('/api/session/discard-stale', methods=['POST'])
+def api_discard_stale_session():
+    body = request.get_json(silent=True) or {}
+    session_id = body.get('session_id')
+    if session_id is None:
+        return jsonify({'error': 'missing_session_id'}), 400
+    worker.enqueue('discard_stale_session', session_id=int(session_id))
+    return jsonify({'queued': True})
+
+
+# =========================================================================
+# Source-bin estimated count from probe
+# =========================================================================
+# Calibration is a one-shot user action: empty the source bin, hit
+# this endpoint, the worker probes the bin and saves the Z as the
+# reference for future count estimates. The estimate itself is emitted
+# automatically via the `source_bin_count_update` socket event whenever
+# the source bin is probed during a sort.
+
+@app.route('/api/source-bin/calibrate-empty', methods=['POST'])
+def api_calibrate_empty_source_bin():
+    worker.enqueue('calibrate_empty_source_bin')
+    return jsonify({'queued': True})
+
+
+@app.route('/api/self-test/run', methods=['POST'])
+def api_run_self_test():
+    """Trigger the hardware diagnostic sequence. Streams results via
+    self_test_step / self_test_complete socket events."""
+    worker.enqueue('run_self_test', camera=camera)
+    return jsonify({'queued': True})
+
+
+# =========================================================================
+# Support bundle (Phase 3)
+# =========================================================================
+# Single-button download from Settings → "Download support bundle".
+# The first thing we ask for in any support thread.
+
+@app.route('/api/support/bundle', methods=['GET'])
+def api_support_bundle():
+    """Return a zip with logs, recent scan sessions, runtime state,
+    and version info. See support_bundle.py for what's included and
+    (more importantly) what's intentionally NOT included."""
+    from datetime import datetime as _dt
+    import support_bundle
+    from config import APP_NAME
+    try:
+        data = support_bundle.build_support_bundle(
+            repo_root=SCRIPT_DIR,
+            worker=worker,
+            app_name=APP_NAME,
+        )
+    except Exception as e:
+        return jsonify({'error': 'bundle_failed', 'message': str(e)}), 500
+    filename = (f"{APP_NAME.lower()}-support-"
+                f"{_dt.now().strftime('%Y%m%d_%H%M%S')}.zip")
+    return Response(
+        data,
+        mimetype='application/zip',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+    )
+
+
+@app.route('/api/source-bin/state', methods=['GET'])
+def api_source_bin_state():
+    """Return current empty-Z reference + last probed Z + estimate.
+    Useful for the UI to populate its source-bin gauge on page load
+    without waiting for the next probe-driven event."""
+    import gcode_control as _gcode
+    empty_z = worker._load_empty_source_z()
+    bin_locs = _gcode.get_bin_locations() or {}
+    source_x = bin_locs.get(0, _gcode.X_SOURCE_BIN)
+    probed_z = _gcode.get_cached_probe_z(source_x)
+    estimate = worker._estimate_source_count(probed_z, empty_z) if probed_z is not None else None
+    return jsonify({
+        'empty_z': empty_z,
+        'probed_z': probed_z,
+        'estimated_count': estimate,
+        'calibrated': empty_z is not None,
+        'card_thickness_mm': __import__('config').CARD_THICKNESS_MM,
+    })
+
+
+# =========================================================================
 # SocketIO events
 # =========================================================================
 
@@ -4052,6 +4145,25 @@ def handle_connect():
     socketio.emit('hardware_status', {
         'connected': worker.state != 'disconnected',
     })
+    # Re-check for stale sessions on every browser connect. The worker's
+    # startup emission of `stale_session_detected` happens before any
+    # browser is connected (so it's lost), and a user reload should
+    # re-surface the prompt if they didn't act on it.
+    try:
+        import collection_db as _cdb
+        conn = _cdb.get_connection()
+        try:
+            stale = _cdb.find_stale_sessions(conn)
+        finally:
+            conn.close()
+        if stale:
+            socketio.emit('stale_session_detected', {
+                'count': len(stale),
+                'primary': stale[0],
+                'all': stale,
+            })
+    except Exception as e:
+        print(f"[server] stale-session check on connect failed: {e}")
 
 
 # =========================================================================
@@ -5042,6 +5154,26 @@ def main():
 
     # Start the worker thread
     worker.start()
+
+    # Auto-connect to the hardware on boot. Failure is non-fatal —
+    # gcode_control.connect_to_board() handles missing/busy serial
+    # ports gracefully, and the UI shows Disconnected so the user can
+    # retry from Setup. This is the precondition for the autonomy
+    # ladder's "auto-home with confirm on first connect" prompt
+    # (plans/autonomy_ladder.md). Opt out by setting
+    # CARD_SORTER_NO_AUTO_CONNECT=1 in the environment.
+    if os.environ.get('CARD_SORTER_NO_AUTO_CONNECT', '').strip() in ('', '0', 'false', 'False'):
+        print("[server] Auto-connecting to hardware (set CARD_SORTER_NO_AUTO_CONNECT=1 to disable)")
+        worker.enqueue('connect')
+    else:
+        print("[server] Auto-connect disabled via CARD_SORTER_NO_AUTO_CONNECT")
+
+    # Check for sessions that didn't end cleanly (power loss, crash).
+    # If found, the worker emits `stale_session_detected` and the UI
+    # banner offers a Discard action. See plans/sort_flow_stages.md
+    # "Power-loss resume" — full Resume rehydration is Phase 4 work;
+    # this lands the detect + discard half so stale rows stop piling up.
+    worker.enqueue('check_stale_session')
 
     # Start the enrichment refresh scheduler. Failure here is non-fatal
     # — the core sorting flow does not depend on enrichment.

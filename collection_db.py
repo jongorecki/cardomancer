@@ -259,6 +259,58 @@ def end_session(conn, session_id, total_scans=0, recognized=0, unrecognized=0):
     conn.commit()
 
 
+def find_stale_sessions(conn):
+    """
+    Return any sessions where end_time IS NULL — these are sessions that
+    were active when the app exited unexpectedly (power loss, crash,
+    forced kill). Used by the power-loss-resume flow at startup.
+
+    Each row is a dict with: id, start_time, sort_mode, config_name,
+    bin_count, scan_count (computed from scan_history). Ordered most
+    recent first.
+    """
+    rows = conn.execute(
+        """SELECT s.id, s.start_time, s.sort_mode, s.config_name,
+                  s.bin_count,
+                  (SELECT COUNT(*) FROM scan_history sh
+                   WHERE sh.session_id = s.id) AS scan_count
+           FROM sessions s
+           WHERE s.end_time IS NULL
+           ORDER BY s.start_time DESC"""
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_session_bin_counts(conn, session_id):
+    """
+    Reconstruct per-bin scan counts for a (possibly stale) session by
+    grouping scan_history rows. Returns {bin_number: count}. Used by
+    the power-loss-resume flow to rehydrate the worker's tracker.bins.
+    """
+    rows = conn.execute(
+        """SELECT bin, COUNT(*) AS n
+           FROM scan_history
+           WHERE session_id = ? AND bin IS NOT NULL
+           GROUP BY bin""",
+        (session_id,)
+    ).fetchall()
+    return {int(row['bin']): int(row['n']) for row in rows}
+
+
+def get_session_metadata(conn, session_id):
+    """
+    Return a single session row as a dict (for resume reconstruction
+    and Resume-prompt display). Returns None if no such session.
+    """
+    row = conn.execute(
+        """SELECT id, start_time, end_time, sort_mode, config_name,
+                  bin_count, total_scans, recognized, unrecognized, notes
+           FROM sessions WHERE id = ?""",
+        (session_id,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
 # ---------------------------------------------------------------------------
 # Recording scans
 # ---------------------------------------------------------------------------
@@ -1471,7 +1523,7 @@ def delete_moxfield_wishlist(conn, source_key):
 
 # Variables the review system knows about. Keeping this list centralized so
 # the API layer, tests, and UI can validate without hard-coding strings.
-DETECTION_VARIABLES = ('foil', 'border', 'set_symbol')
+DETECTION_VARIABLES = ('identity', 'foil', 'border', 'set_symbol')
 
 VALID_VERDICTS = ('correct', 'wrong', 'skip')
 
@@ -1585,6 +1637,13 @@ def seed_detection_reviews_from_scans(conn, variables=None,
     produce rows with confidence=NULL — those surface first in the queue.
 
     Detected values are pulled from whatever the DB already knows:
+      - identity:   name from scan_history (proxy for "machine guessed
+                    this card") for scans whose hash_distance crossed the
+                    IDENTITY_LOW_CONFIDENCE_DISTANCE bar — these are the
+                    only scans whose identity is uncertain enough to merit
+                    review. Confident scans (low hash_distance) are NOT
+                    seeded for 'identity'; the queue stays focused on
+                    genuinely uncertain matches.
       - foil:       unknown (NULL) — no detector yet
       - border:     unknown (NULL) — detect_border_type() isn't persisted
       - set_symbol: set_code from scan_history (best available proxy)
@@ -1600,11 +1659,15 @@ def seed_detection_reviews_from_scans(conn, variables=None,
         if v not in DETECTION_VARIABLES:
             raise ValueError(f"unknown variable: {v!r}")
 
+    # Threshold for 'identity' seeding. Imported lazily so test code can
+    # monkey-patch the config module before this loop runs.
+    from config import IDENTITY_LOW_CONFIDENCE_DISTANCE as _IDENT_THRESH
+
     where = []
     params = []
     if only_recognized:
         where.append("recognized = 1")
-    sql = "SELECT id, set_code FROM scan_history"
+    sql = "SELECT id, name, set_code, hash_distance FROM scan_history"
     if where:
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY id DESC"
@@ -1617,8 +1680,26 @@ def seed_detection_reviews_from_scans(conn, variables=None,
     for scan in scans:
         scan_id = scan['id']
         set_code = scan['set_code'] or None
+        name = scan['name'] or None
+        hash_distance = scan['hash_distance']
         for variable in variables:
             detected = None
+            if variable == 'identity':
+                # Only seed identity reviews for scans that crossed the
+                # low-confidence bar. Confident matches don't need review.
+                if hash_distance is None or hash_distance < _IDENT_THRESH:
+                    continue
+                detected = name
+                # Store hash distance as the "confidence" so the queue
+                # can sort: highest distance = least confident first.
+                cur = conn.execute(
+                    """INSERT OR IGNORE INTO detection_reviews
+                       (scan_id, variable, detected_value, confidence)
+                       VALUES (?, ?, ?, ?)""",
+                    (scan_id, variable, detected, float(hash_distance))
+                )
+                inserted += cur.rowcount
+                continue
             if variable == 'set_symbol':
                 # The best proxy for "detected set symbol" we currently have
                 # is the set code that identification landed on. It's not

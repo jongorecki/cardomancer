@@ -1,0 +1,15 @@
+{
+  "name": "card-sorter-frontend",
+  "private": true,
+  "description": "Lint/format tooling for the Flask app's static frontend. The app itself does not require Node — npm install is only needed to run the linter locally.",
+  "scripts": {
+    "lint": "eslint \"static/**/*.js\"",
+    "lint:fix": "eslint --fix \"static/**/*.js\"",
+    "format": "prettier --write \"static/**/*.{js,css}\" \"templates/**/*.html\"",
+    "format:check": "prettier --check \"static/**/*.{js,css}\" \"templates/**/*.html\""
+  },
+  "devDependencies": {
+    "eslint": "^9.0.0",
+    "prettier": "^3.0.0"
+  }
+}

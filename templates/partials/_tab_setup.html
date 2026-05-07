@@ -1,0 +1,442 @@
+            <!-- ============================================================ -->
+            <!-- SETUP TAB -->
+            <!-- Folds the previous Calibration tab + Session Review tab +    -->
+            <!-- Dashboard's Hardware/Camera/wizard launcher + Motion Preview -->
+            <!-- (kept hidden) into a single tab. -->
+            <!-- ============================================================ -->
+            <div class="tab-pane fade" id="tab-setup">
+
+                <!-- ===================================================== -->
+                <!-- Calibration wizard launcher (was Dashboard) -->
+                <!-- ===================================================== -->
+                <div class="row mb-3">
+                    <div class="col-12">
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <button id="btn-open-calibration-wizard"
+                                    class="btn btn-outline-primary"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#calibration-wizard-modal">
+                                Run calibration wizard
+                            </button>
+                            <span id="wizard-status-summary"
+                                  class="small text-muted">
+                                Checking calibration status&hellip;
+                            </span>
+                            <button id="btn-run-self-test"
+                                    class="btn btn-outline-secondary ms-auto"
+                                    onclick="runSelfTest()"
+                                    title="Run a quick hardware diagnostic — connection, axes, probe, camera">
+                                Run diagnostics
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===================================================== -->
+                <!-- Self-test results -->
+                <!-- ===================================================== -->
+                <div class="row mb-3" id="self-test-row" style="display:none;">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span>Hardware diagnostics</span>
+                                <button class="btn btn-sm btn-link"
+                                        onclick="document.getElementById('self-test-row').style.display='none';">Close</button>
+                            </div>
+                            <div class="card-body">
+                                <ul id="self-test-results" class="list-unstyled small mb-0"></ul>
+                                <p id="self-test-summary" class="small text-muted mt-2 mb-0"></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===================================================== -->
+                <!-- Hardware + Camera (was Dashboard) -->
+                <!-- ===================================================== -->
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">Hardware</div>
+                            <div class="card-body">
+                                <p>Serial Port: <strong>COM3</strong> | Status: <span id="hw-status">Disconnected</span></p>
+                                <div class="btn-group">
+                                    <button class="btn btn-success btn-sm" onclick="apiPost('/api/connect')">Connect</button>
+                                    <button class="btn btn-secondary btn-sm" onclick="apiPost('/api/disconnect')">Disconnect</button>
+                                </div>
+                                <hr>
+                                <div class="btn-group">
+                                    <button class="btn btn-outline-primary btn-sm" onclick="apiPost('/api/home')">Home All</button>
+                                    <button class="btn btn-outline-primary btn-sm" onclick="apiPost('/api/home/x')">Home X</button>
+                                    <button class="btn btn-outline-primary btn-sm" onclick="apiPost('/api/home/z')">Home Z</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">Camera</div>
+                            <div class="card-body">
+                                <p>Status: <span id="cam-status">Inactive</span> | FPS: <span id="cam-fps">--</span></p>
+                                <div class="btn-group">
+                                    <button class="btn btn-success btn-sm" onclick="apiPost('/api/camera/start')">Start Camera</button>
+                                    <button class="btn btn-secondary btn-sm" onclick="apiPost('/api/camera/stop')">Stop Camera</button>
+                                </div>
+                                <div class="mt-2">
+                                    <img id="dashboard-preview" src="" class="img-fluid" style="max-height:200px; display:none;">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===================================================== -->
+                <!-- Calibration tools (entire former Calibration tab) -->
+                <!-- ===================================================== -->
+                <div class="row mt-3">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">Manual Motion</div>
+                            <div class="card-body">
+                                <div class="row g-2 mb-2">
+                                    <div class="col">
+                                        <label class="form-label">X Position (mm)</label>
+                                        <div class="input-group">
+                                            <input type="number" class="form-control" id="manual-x" value="100" min="0" max="1200">
+                                            <button class="btn btn-outline-primary" onclick="apiPost('/api/motion/move-x', {x: parseFloat(document.getElementById('manual-x').value)})">Move X</button>
+                                        </div>
+                                    </div>
+                                    <div class="col">
+                                        <label class="form-label">Z Position (mm)</label>
+                                        <div class="input-group">
+                                            <input type="number" class="form-control" id="manual-z" value="220" min="0" max="220">
+                                            <button class="btn btn-outline-primary" onclick="apiPost('/api/motion/move-z', {z: parseFloat(document.getElementById('manual-z').value)})">Move Z</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="btn-group">
+                                    <button class="btn btn-outline-primary btn-sm" onclick="apiPost('/api/home')">Home All</button>
+                                    <button class="btn btn-outline-primary btn-sm" onclick="apiPost('/api/home/x')">Home X</button>
+                                    <button class="btn btn-outline-primary btn-sm" onclick="apiPost('/api/home/z')">Home Z</button>
+                                    <button class="btn btn-outline-info btn-sm" onclick="apiPost('/api/motion/detection-position')">Detection Pos</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">Camera Test</div>
+                            <div class="card-body p-1">
+                                <img id="cal-camera-feed" src="" class="img-fluid" style="max-height:300px; background:#111;">
+                                <div class="mt-1">
+                                    <button class="btn btn-sm btn-outline-primary" onclick="startCameraFeed('cal-camera-feed')">Start Feed</button>
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="stopCameraFeed('cal-camera-feed')">Stop Feed</button>
+                                    <button class="btn btn-sm btn-outline-warning" onclick="detectMarkersNow()">Detect Markers</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Live ArUco camera view -->
+                <div class="row mt-2">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span>Live ArUco View</span>
+                                <div>
+                                    <span id="aruco-live-status" class="small text-secondary me-2">Off</span>
+                                    <button class="btn btn-sm btn-outline-primary" id="btn-aruco-live-toggle" onclick="toggleArucoLive()">Start Live View</button>
+                                </div>
+                            </div>
+                            <div class="card-body text-center p-2">
+                                <p class="small text-secondary mb-2">
+                                    Live camera feed with ArUco marker detection overlaid. Detected markers are
+                                    outlined in green with their ID and type. Use this to verify marker visibility
+                                    before (and during) a calibration sweep. Marker count is shown in the top-left.
+                                </p>
+                                <img id="aruco-live-feed" src="" alt="Live ArUco view (off)"
+                                     class="img-fluid rounded border border-secondary"
+                                     style="max-height:360px;background:#111;min-height:120px;display:none">
+                                <div id="aruco-live-placeholder" class="text-muted small p-4">
+                                    Click "Start Live View" to begin the ArUco overlay stream.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- ArUco Auto-Calibration -->
+                <div class="row mt-2">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">ArUco Auto-Calibration</div>
+                            <div class="card-body">
+                                <p class="small text-secondary mb-2">
+                                    Place ArUco markers in the bottom of each bin. Source bins use IDs 0-9,
+                                    destination bins use IDs 10-49. The machine will sweep across X to find all markers
+                                    and record bin positions automatically.
+                                </p>
+                                <div class="row g-2 mb-2">
+                                    <div class="col-4">
+                                        <label class="form-label small">Source bins</label>
+                                        <input type="number" class="form-control form-control-sm" id="cal-expected-sources" value="1" min="1" max="5">
+                                    </div>
+                                    <div class="col-4">
+                                        <label class="form-label small">Destination bins</label>
+                                        <input type="number" class="form-control form-control-sm" id="cal-expected-dests" value="7" min="1" max="40">
+                                    </div>
+                                    <div class="col-4">
+                                        <label class="form-label small">Max sweep X (mm)</label>
+                                        <input type="number" class="form-control form-control-sm" id="cal-max-sweep-x" value="790" min="100" max="2000">
+                                    </div>
+                                </div>
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="checkbox" id="cal-expect-staging" checked>
+                                    <label class="form-check-label small" for="cal-expect-staging">Expect staging platform marker (ID 49)</label>
+                                </div>
+                                <div class="d-flex gap-2 mb-2 flex-wrap">
+                                    <button class="btn btn-primary btn-sm" id="btn-start-cal" onclick="startCalibration()">Start Calibration</button>
+                                    <button class="btn btn-outline-danger btn-sm" id="btn-cancel-cal" onclick="cancelCalibration()" style="display:none">Cancel</button>
+                                    <button class="btn btn-outline-secondary btn-sm" onclick="checkSourceEmpty()">Check Source Empty</button>
+                                    <button class="btn btn-warning btn-sm" id="btn-new-hw-setup" onclick="newHardwareSetup()" title="Clear all cached state, home, run ArUco sweep, and probe every bin. Run this whenever the physical bin layout changes.">
+                                        &#9881; New Hardware Setup
+                                    </button>
+                                    <button class="btn btn-outline-warning btn-sm" id="btn-retry-hw-setup" onclick="retryHardwareSetup()" title="Re-run the new hardware setup with the current parameters. Use this if the last sweep missed bins or had bad detections.">
+                                        &#8634; Retry
+                                    </button>
+                                </div>
+                                <!-- Save / Reload auto-saved setup -->
+                                <div class="d-flex gap-2 mb-2 flex-wrap align-items-center">
+                                    <button class="btn btn-outline-primary btn-sm" onclick="reloadLastSetup()" title="Re-apply the auto-saved last hardware setup (bin positions, probe heights, camera offset) to the running machine without re-sweeping.">
+                                        Reload Last Setup
+                                    </button>
+                                    <div class="input-group input-group-sm" style="max-width:260px;">
+                                        <input type="text" id="cal-save-name" class="form-control" placeholder="Save as... (name)">
+                                        <button class="btn btn-outline-success" onclick="saveSetupAs()">Save</button>
+                                    </div>
+                                </div>
+                                <!-- Load a previously-saved named setup -->
+                                <div class="d-flex gap-2 mb-2 flex-wrap align-items-center">
+                                    <div class="input-group input-group-sm" style="max-width:380px;">
+                                        <span class="input-group-text">Load saved</span>
+                                        <select id="cal-saved-select" class="form-select">
+                                            <option value="">(none saved)</option>
+                                        </select>
+                                        <button class="btn btn-outline-primary" onclick="loadSavedSetup()" title="Apply the selected saved setup to the running machine without re-sweeping.">Load</button>
+                                        <button class="btn btn-outline-danger" onclick="deleteSavedSetup()" title="Delete the selected saved setup file from disk.">&times;</button>
+                                        <button class="btn btn-outline-secondary" onclick="refreshSavedSetups()" title="Re-read the saved setups directory.">&#8634;</button>
+                                    </div>
+                                </div>
+                                <div id="cal-progress-message" class="small text-secondary mb-1"></div>
+                                <div class="progress mb-2" id="cal-progress-container" style="display:none;height:16px;">
+                                    <div class="progress-bar" id="cal-progress-bar" role="progressbar" style="width:0%">0%</div>
+                                </div>
+                                <!-- Discovered bins list -->
+                                <div id="cal-discovered-bins"></div>
+                                <!-- Rejected markers (false positives filtered out) -->
+                                <div id="cal-rejected-markers"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">Calibration Settings</div>
+                            <div class="card-body">
+                                <div class="mb-2">
+                                    <label class="form-label small">Camera X Offset (mm)</label>
+                                    <div class="input-group input-group-sm">
+                                        <input type="number" class="form-control" id="cal-camera-offset" value="100" step="0.5">
+                                        <button class="btn btn-outline-primary" onclick="saveCameraOffset()">Set</button>
+                                    </div>
+                                    <p class="small text-muted mt-1 mb-0">
+                                        Distance from camera center to suction head center in mm.
+                                        Positive = camera is to the right (higher X) of suction head.
+                                    </p>
+                                </div>
+                                <hr>
+                                <div class="mb-2">
+                                    <label class="form-label small">Source Bins Status</label>
+                                    <div id="source-bins-status">
+                                        <p class="small text-muted">No calibration data</p>
+                                    </div>
+                                </div>
+                                <hr>
+                                <div>
+                                    <a href="/api/calibration/generate-markers" target="_blank" class="btn btn-outline-success btn-sm">
+                                        Print ArUco Markers
+                                    </a>
+                                    <a href="/api/calibration/generate-markers?ids=0&ids=1&ids=10&ids=11&ids=12&ids=13&ids=14&ids=15&ids=16&ids=17&ids=18&ids=19" target="_blank" class="btn btn-outline-secondary btn-sm">
+                                        2 Source + 10 Dest
+                                    </a>
+                                </div>
+                                <!-- Marker detection preview -->
+                                <div id="cal-marker-preview" class="mt-2" style="display:none">
+                                    <img id="cal-marker-preview-img" class="img-fluid rounded" style="max-height:250px">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Drop-height tuner — standalone tool for dialing in Z_DROP_OFFSET.
+                     Independent of the ArUco sweep; reuse it any time bin geometry changes. -->
+                <div class="row mt-2">
+                    <div class="col-md-12">
+                        <div class="card" id="drop-tuner-card">
+                            <div class="card-header">Drop height tuning</div>
+                            <div class="card-body">
+                                <p class="small text-muted mb-2">
+                                    Tunes the Z height at which cards are released into destination bins.
+                                    Current setting: <code id="drop-tuner-current-offset">50.0</code> mm above the bin.
+                                </p>
+                                <div id="drop-tuner-idle">
+                                    <button id="btn-drop-tuner-start" class="btn btn-outline-primary btn-sm" onclick="dropTunerStart()">
+                                        Start drop tuning
+                                    </button>
+                                </div>
+                                <div id="drop-tuner-active" style="display:none">
+                                    <p id="drop-tuner-status" class="small mb-2"></p>
+                                    <div id="drop-tuner-awaiting" style="display:none">
+                                        <p class="small mb-2">Place ONE card in the destination bin, then click "Pick up".</p>
+                                        <button id="btn-drop-tuner-pickup" class="btn btn-primary btn-sm" onclick="dropTunerPickup()">Pick up</button>
+                                        <button id="btn-drop-tuner-cancel-1" class="btn btn-outline-secondary btn-sm" onclick="dropTunerCancel()">Cancel</button>
+                                    </div>
+                                    <div id="drop-tuner-tuning" style="display:none">
+                                        <p class="small mb-2">
+                                            Current Z: <code id="drop-tuner-current-z">&mdash;</code> mm
+                                            (= drop offset <code id="drop-tuner-pending-offset">&mdash;</code> mm)
+                                        </p>
+                                        <div class="btn-group btn-group-sm mb-2 drop-tuner-step-group" role="group">
+                                            <button class="btn btn-outline-secondary" data-step="-10" onclick="dropTunerStep(-10)">&minus;10mm (deeper)</button>
+                                            <button class="btn btn-outline-secondary" data-step="-1" onclick="dropTunerStep(-1)">&minus;1mm</button>
+                                            <button class="btn btn-outline-secondary" data-step="1" onclick="dropTunerStep(1)">+1mm</button>
+                                            <button class="btn btn-outline-secondary" data-step="10" onclick="dropTunerStep(10)">+10mm (higher)</button>
+                                        </div>
+                                        <div>
+                                            <button id="btn-drop-tuner-test" class="btn btn-info btn-sm" onclick="dropTunerTestDrop()">Drop test</button>
+                                            <button id="btn-drop-tuner-save" class="btn btn-success btn-sm" onclick="dropTunerSave()">Save</button>
+                                            <button id="btn-drop-tuner-cancel-2" class="btn btn-outline-secondary btn-sm" onclick="dropTunerCancel()">Cancel</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===================================================== -->
+                <!-- Session Review (per-attribute detection review queues) -->
+                <!-- (was Session Review tab) -->
+                <!-- ===================================================== -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">Session Review</div>
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <ul class="nav nav-pills" id="detection-review-subnav" role="tablist">
+                                        <li class="nav-item">
+                                            <a class="nav-link active" data-review-variable="foil" href="#"
+                                               onclick="return selectDetectionReview('foil')">
+                                                Foil <span class="badge bg-warning ms-1" id="detection-badge-foil">0</span>
+                                            </a>
+                                        </li>
+                                        <li class="nav-item">
+                                            <a class="nav-link" data-review-variable="border" href="#"
+                                               onclick="return selectDetectionReview('border')">
+                                                Border <span class="badge bg-warning ms-1" id="detection-badge-border">0</span>
+                                            </a>
+                                        </li>
+                                        <li class="nav-item">
+                                            <a class="nav-link" data-review-variable="set_symbol" href="#"
+                                               onclick="return selectDetectionReview('set_symbol')">
+                                                Set Symbol <span class="badge bg-warning ms-1" id="detection-badge-set_symbol">0</span>
+                                            </a>
+                                        </li>
+                                    </ul>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <div class="form-check form-switch mb-0">
+                                            <input class="form-check-input" type="checkbox" id="detection-show-reviewed"
+                                                   onchange="loadDetectionReviewQueue()">
+                                            <label class="form-check-label small" for="detection-show-reviewed">Show reviewed</label>
+                                        </div>
+                                        <button class="btn btn-outline-secondary btn-sm py-0"
+                                                onclick="seedDetectionReviews()"
+                                                title="Scan session history and add any new scans to the queues">
+                                            Refresh Queue
+                                        </button>
+                                    </div>
+                                </div>
+                                <p class="text-muted small">
+                                    Queue items are ordered by ascending detector confidence &mdash;
+                                    items the detector was least sure about (or didn't score at
+                                    all) surface first. Correct / Wrong labels are saved so
+                                    future detector tuning can use them as ground truth.
+                                </p>
+                                <div id="detection-review-body">
+                                    <p class="text-muted text-center py-4" id="detection-review-empty">
+                                        Nothing to review in this queue.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===================================================== -->
+                <!-- Motion Preview (was its own tab; now hidden by default) -->
+                <!-- ===================================================== -->
+                <div id="motion-preview-section" style="display:none;">
+                    <div class="row mt-3">
+                        <div class="col-md-8">
+                            <div class="card">
+                                <div class="card-header">Machine Motion Preview</div>
+                                <div class="card-body">
+                                    <canvas id="motion-canvas" width="800" height="300" class="w-100" style="border:1px solid #333; background:#1a1a2e;"></canvas>
+                                    <div class="mt-2 d-flex align-items-center justify-content-between">
+                                        <div class="small text-muted">
+                                            <span class="me-3"><span style="color:#0f0;">&#9679;</span> Suction head</span>
+                                            <span class="me-3"><span style="color:#0af;">&#9679;</span> Carrying</span>
+                                            <span class="me-3"><span style="color:#ff0;">&#9675;</span> Destination</span>
+                                            <span class="me-3"><span style="color:#6af;">&#9644;</span> Source</span>
+                                            <span class="me-3"><span style="color:#777;">&#9644;</span> Staging</span>
+                                            <span class="me-3"><span style="color:#f80;">&#9632;</span> Camera</span>
+                                            <span><span style="color:#555;">&#9644;</span> Bins</span>
+                                        </div>
+                                        <div class="btn-group btn-group-sm" role="group">
+                                            <button class="btn btn-outline-secondary active" id="btn-speed-1x" onclick="setMotionSpeed(1)">1x</button>
+                                            <button class="btn btn-outline-secondary" id="btn-speed-2x" onclick="setMotionSpeed(2)">2x</button>
+                                            <button class="btn btn-outline-secondary" id="btn-speed-5x" onclick="setMotionSpeed(5)">5x</button>
+                                            <button class="btn btn-outline-secondary" id="btn-speed-10x" onclick="setMotionSpeed(10)">10x</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card">
+                                <div class="card-header">Test Run (Simulation)</div>
+                                <div class="card-body">
+                                    <p class="small text-muted">Simulate sorting random cards without hardware. Uses the sort mode configured on the Sort Session tab.</p>
+                                    <div class="mb-2">
+                                        <label class="form-label">Number of Cards</label>
+                                        <input type="number" class="form-control form-control-sm" id="sim-card-count" value="10" min="1" max="1000">
+                                    </div>
+                                    <div class="mb-2">
+                                        <span class="form-label">Sort Mode:</span>
+                                        <strong id="sim-mode-display">Color</strong>
+                                    </div>
+                                    <button class="btn btn-primary btn-sm" onclick="startSimulation()">Run Simulation</button>
+                                    <button class="btn btn-secondary btn-sm" onclick="apiPost('/api/sim/stop')">Stop</button>
+                                    <div id="sim-progress" class="mt-2 small"></div>
+                                </div>
+                            </div>
+                            <div class="card mt-2">
+                                <div class="card-header">Simulation Results</div>
+                                <div class="card-body p-2" id="sim-results" style="max-height:300px; overflow-y:auto;">
+                                    <p class="text-muted small">No results yet</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div><!-- /#tab-setup -->

@@ -251,7 +251,7 @@ Target: full non-live suite under 60s. Existing detection/hashing/motion tests a
 
 - **Card detection returns nothing** — Check that the ROI hasn't been masked into the frame (known regression mode), and verify that `CROP_SIZE` is still 745 in [config.py](config.py).
 - **Step skipping on X axis** — Known mechanical issue. Check rod alignment and idler bearing (see [PROJECT.md](PROJECT.md) "Known mechanical issues").
-- **E-stop recovery doesn't actually resume** — Known bug. After an E-stop, "Reset & Re-home" does not resume the in-flight session; the abort flag or state transition in `_cmd_reset_after_estop` is incomplete.
+- ~~**E-stop recovery doesn't actually resume**~~ — Fixed 2026-05-07. After Reset & Re-home, press Resume; the continuous loop picks up where it left off. Regression test in [tests/test_estop_recovery.py](tests/test_estop_recovery.py).
 - **Hash DB out of date** — Use the Dashboard tab to refresh from Scryfall bulk.
 - **Camera frame is upside down or wrong aspect** — Check rotation logic in [web_camera.py](web_camera.py). Do not change `CROP_SIZE` or rotation unless you are prepared to rebuild the hash database from scratch.
 
@@ -259,7 +259,7 @@ Target: full non-live suite under 60s. Existing detection/hashing/motion tests a
 
 ## Known issues
 
-- **E-stop recovery** — "Reset & Re-home" after an E-stop does not actually resume the in-flight session. Likely a stale abort flag or missing state transition in `_cmd_reset_after_estop`.
+- ~~**E-stop recovery**~~ — Fixed 2026-05-07. See [tests/test_estop_recovery.py](tests/test_estop_recovery.py).
 - **X-axis step skipping** — Mechanical root cause in progress (rod alignment, idler bearing, over-constrained pillow blocks). A higher-torque stepper is on standby if mechanical fixes are insufficient. See [PROJECT.md](PROJECT.md).
 
 ---

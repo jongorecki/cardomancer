@@ -153,7 +153,11 @@ class SortWorker:
         self.overflow_map = {}        # {int: [int, ...]}
         self.bin_card_counts = {}     # {physical_bin: int} — cards dropped this session
         self.bins_full = set()        # set of physical bin numbers at capacity
-        self.bin_card_limit = 150     # max cards per physical bin before overflow
+        # Default per-bin cap. Pulled from config.DEFAULT_BIN_CAPACITY so the
+        # working assumption ("~300 cards per bin before the Z-probe trips")
+        # is centralized. Per-session override via _cmd_set_bin_card_limit.
+        from config import DEFAULT_BIN_CAPACITY as _DEFAULT_BIN_CAPACITY
+        self.bin_card_limit = _DEFAULT_BIN_CAPACITY
 
         # Abort flag for long-running multi-phase commands (e.g. new
         # hardware setup). Set from outside the worker thread via
@@ -517,6 +521,9 @@ class SortWorker:
         gcode_control.connect_to_board()
         # Wire up bin fullness callback
         gcode_control.set_bin_fullness_callback(self._on_bin_fullness)
+        # Wire up post-probe callback so we can update the source-bin
+        # count estimate on every probe at the source X.
+        gcode_control.set_post_probe_callback(self._on_post_probe)
         if gcode_control.is_connected():
             self.state = 'idle'
             self.log("Connected to control board")
@@ -1405,7 +1412,12 @@ class SortWorker:
         from cards import extract_card_info, CARD_DATA_BY_ID
         from card_identify_hybrid import identify_card, is_card_back
         from foil_detect import detect_foil
-        from config import PHASH_DISTANCE_THRESHOLD, PHASH_CLOSE_MATCH_DIFF, EXCLUDED_SETS
+        from config import (
+            PHASH_DISTANCE_THRESHOLD,
+            PHASH_CLOSE_MATCH_DIFF,
+            EXCLUDED_SETS,
+            IDENTITY_LOW_CONFIDENCE_DISTANCE,
+        )
 
         sort_start = time.time()
 
@@ -1839,6 +1851,29 @@ class SortWorker:
                          "sending to bin 10")
                 logical_bin = 10
 
+            # Identity-confidence gate (autonomy ladder):
+            # If the hash distance is in the low-confidence band, we don't
+            # trust the matched card. Override routing to the sort_config's
+            # fallback_bin so the user can find these in one place; tag
+            # the scan as identity_low_confidence so the detection review
+            # queue (per plans/autonomy_ladder.md) seeds an 'identity'
+            # row for it. This override precedes wishlist/priority because
+            # we shouldn't trust a low-confidence name to match a wishlist
+            # entry either.
+            identity_low_conf = (
+                hash_distance is not None
+                and hash_distance >= IDENTITY_LOW_CONFIDENCE_DISTANCE
+            )
+            if identity_low_conf and self.sort_config_obj is not None:
+                fallback_bin = self.sort_config_obj.fallback_bin
+                self.log(
+                    f"LOW IDENTITY CONFIDENCE: '{card_name}' "
+                    f"(hash_distance={hash_distance:.1f} >= "
+                    f"{IDENTITY_LOW_CONFIDENCE_DISTANCE}) -> "
+                    f"fallback bin {fallback_bin}"
+                )
+                logical_bin = fallback_bin
+
             # Wishlist override
             if self.wishlist_bin is not None:
                 try:
@@ -1910,6 +1945,10 @@ class SortWorker:
                 'frame_effects': card_info.get('FrameEffects', []),
                 'colors': card_info.get('Colors', []),
                 'types': card_info.get('Types', []),
+                # Identity-confidence flag for the UI to show a badge
+                # ("low confidence — review later"). Drives the
+                # detection review queue's 'identity' variable.
+                'identity_low_confidence': bool(identity_low_conf),
                 'cmc': card_info.get('CMC', 0),
                 'price': card_info.get('Price', 'N/A'),
                 'rarity': card_info.get('Rarity', '?'),
@@ -1999,6 +2038,14 @@ class SortWorker:
 
         self._increment_bin_count(physical_bin)
         self.last_drop_x = bin_locs.get(physical_bin, staging_x)
+
+        # If this drop just exhausted the overflow chain for the routed
+        # logical bin, pause and prompt the user to empty a bin instead
+        # of silently overflowing the same physical bin forever. The card
+        # we just dropped is still counted; the *next* cycle is the one
+        # that won't run.
+        if self._is_chain_exhausted(logical_bin):
+            self._pause_for_bin_full(logical_bin, physical_bin=physical_bin)
 
         # Track sort timing
         sort_duration = time.time() - sort_start
@@ -2626,6 +2673,45 @@ class SortWorker:
         last_bin = chain[-1] if chain else logical_bin
         return last_bin
 
+    def _is_chain_exhausted(self, logical_bin):
+        """Return True if every bin in the overflow chain for this logical
+        bin is currently marked full. Drives the bin-full-prompt flow per
+        plans/autonomy_ladder.md and plans/sort_flow_stages.md."""
+        if logical_bin is None:
+            return False
+        chain = self.overflow_map.get(logical_bin, [logical_bin])
+        return bool(chain) and all(b in self.bins_full for b in chain)
+
+    def _pause_for_bin_full(self, logical_bin, physical_bin=None):
+        """Pause the session and emit a bin_full_prompt so the UI can ask
+        the user to empty a bin and resume. Called *after* the current
+        card has been dropped (in the "least-bad" already-full bin) — the
+        next sort cycle will not run because state == 'paused'.
+
+        The prompt's `chain` is the full overflow chain (in evaluation
+        order) so the UI can show "you need to empty one of these" rather
+        than just naming a single bin. `last_dropped` is the bin we just
+        deposited the current card into."""
+        chain = self.overflow_map.get(logical_bin, [logical_bin])
+        if self.state == 'sorting':
+            self.state = 'paused'
+        # Leave continuous_sorting as-is. After the user empties a bin
+        # (which removes it from bins_full), Resume → _cmd_resume re-arms
+        # the loop automatically. If they Resume without emptying, the
+        # next cycle will route + drop again and immediately re-pause —
+        # which is correct feedback, not a bug.
+        self.log(
+            f"Bin chain exhausted for logical bin {logical_bin} "
+            f"({chain}) — session paused, waiting for the user to empty "
+            f"a bin before resuming."
+        )
+        self.emit('bin_full_prompt', {
+            'logical_bin': int(logical_bin) if logical_bin is not None else None,
+            'chain': [int(b) for b in chain],
+            'last_dropped': int(physical_bin) if physical_bin is not None else None,
+            'bins_full': sorted(int(b) for b in self.bins_full),
+        })
+
     def _increment_bin_count(self, physical_bin):
         """
         Increment the card count for a physical bin after a successful drop.
@@ -2951,12 +3037,24 @@ class SortWorker:
         had_session = pre.get('had_session', False) and self.tracker is not None
 
         if had_session:
+            # Restore continuous_sorting from the pre-estop snapshot.
+            # emergency_stop() forced it False to prevent auto-resume the
+            # instant state flips, but the user's Reset & Re-home click is
+            # their explicit confirmation that the machine is safe to
+            # resume — and the upcoming Resume click is a second
+            # confirmation. Without this restoration the user's Resume
+            # produces 'sorting' state with continuous_sorting=False, no
+            # detect_and_sort is enqueued, and the machine sits silent
+            # while the (out-of-sync) Continuous button's visual state
+            # still says "on" — a known confusing-as-broken bug.
+            self.continuous_sorting = bool(pre.get('continuous', False))
+
             # Session survived (tracker was NOT ended during e-stop).
             # Land in 'paused' so the user must explicitly Resume to
             # continue sorting. This mirrors normal pause/resume UX.
             self.state = 'paused'
             self.log("Reset complete — session preserved, in paused state. "
-                     "Press Resume or Detect to continue sorting.")
+                     "Press Resume to continue sorting.")
             self.emit('session_paused', {
                 'reason': 'emergency_stop_recovered',
                 'resumable': True,
@@ -2964,6 +3062,7 @@ class SortWorker:
             self.emit('estop_reset_complete', {
                 'resumed': True,
                 'state': 'paused',
+                'continuous_will_resume': self.continuous_sorting,
             })
         else:
             # No active session — straight to idle so Start Session
@@ -2977,6 +3076,354 @@ class SortWorker:
 
         # Clear the snapshot so a subsequent e-stop starts fresh.
         self._pre_estop_state = None
+
+    # --- Power-loss / unclean-shutdown recovery ---
+    #
+    # A "stale" session is one in the collection_db sessions table whose
+    # end_time IS NULL — meaning the app exited (crash, power loss, kill)
+    # while a sort was in progress, and we never got to call end_session().
+    # Without intervention these accumulate indefinitely; the UI gets
+    # noisier the more the user sorts. We surface them at startup and let
+    # the user decide what to do.
+    #
+    # This iteration ships detect + discard. Full Resume (rehydrate the
+    # tracker + sort_config_obj + bin counts and put the worker into
+    # 'paused' so the user can press Resume) lands in Phase 4 alongside
+    # the staged Sort tab rebuild. See plans/sort_flow_stages.md.
+
+    def _cmd_check_stale_session(self, **kwargs):
+        """Run on startup. Query the collection_db for any session that
+        didn't end cleanly; if found, emit `stale_session_detected` so
+        the frontend can prompt the user."""
+        try:
+            import collection_db
+            conn = collection_db.get_connection()
+            try:
+                stale = collection_db.find_stale_sessions(conn)
+            finally:
+                conn.close()
+        except Exception as e:
+            self.log(f"Stale-session check failed: {e}")
+            return
+
+        if not stale:
+            return
+
+        # Most recent stale session is the one most likely worth showing.
+        # Older stale sessions are listed too so the user can see how
+        # many have piled up.
+        primary = stale[0]
+        self.log(f"Found {len(stale)} unfinished session(s); most recent = "
+                 f"#{primary['id']} ({primary['scan_count']} scans, started "
+                 f"{primary['start_time']})")
+        self.emit('stale_session_detected', {
+            'count': len(stale),
+            'primary': primary,
+            'all': stale,
+        })
+
+    def _cmd_discard_stale_session(self, session_id=None, **kwargs):
+        """Mark a stale session as ended without resuming it. Stamps
+        end_time so it stops being detected on subsequent startups.
+        Total/recognized/unrecognized are computed from scan_history
+        so the historical record stays accurate."""
+        if session_id is None:
+            self.log("discard_stale_session: missing session_id")
+            return
+        try:
+            import collection_db
+            conn = collection_db.get_connection()
+            try:
+                # Compute final counts from scan_history rather than trusting
+                # any in-memory state (there is none — the original session
+                # ended without end_session() being called).
+                total = conn.execute(
+                    "SELECT COUNT(*) FROM scan_history WHERE session_id = ?",
+                    (int(session_id),)
+                ).fetchone()[0]
+                recognized = conn.execute(
+                    "SELECT COUNT(*) FROM scan_history "
+                    "WHERE session_id = ? AND recognized = 1",
+                    (int(session_id),)
+                ).fetchone()[0]
+                collection_db.end_session(
+                    conn, int(session_id),
+                    total_scans=int(total),
+                    recognized=int(recognized),
+                    unrecognized=int(total) - int(recognized),
+                )
+            finally:
+                conn.close()
+        except Exception as e:
+            self.log(f"discard_stale_session failed: {e}")
+            self.emit('error', {'message': f'Could not discard session: {e}'})
+            return
+
+        self.log(f"Discarded stale session #{session_id}")
+        self.emit('stale_session_discarded', {'session_id': int(session_id)})
+
+    # --- Hardware self-test ---
+    #
+    # Sequential diagnostic: serial connection, X home, Z home, source-bin
+    # probe, camera capture. Each step emits a `self_test_step` event with
+    # {step, status: pass|fail|skip, detail}. The whole run finishes with
+    # `self_test_complete`. Designed for "first run on new hardware" and
+    # "did anything break since yesterday" sanity checks. Pre-condition:
+    # state in (idle, paused) — we don't run during a sort.
+
+    def _self_test_emit_step(self, step, status, detail=''):
+        self.log(f"[self-test] {step}: {status} — {detail}" if detail
+                 else f"[self-test] {step}: {status}")
+        self.emit('self_test_step', {
+            'step': step, 'status': status, 'detail': detail,
+        })
+
+    def _cmd_run_self_test(self, **kwargs):
+        """Run the hardware self-test sequence."""
+        # Allow disconnected (the first test IS the serial connection),
+        # idle, and paused. Disallow sorting (would race with the
+        # session's motion) and estopped (motion is halted).
+        if self.state in ('sorting', 'estopped'):
+            self.emit('error', {
+                'message': f'Cannot run diagnostics while state={self.state}; '
+                           f'stop the session first.'
+            })
+            return
+
+        import gcode_control
+        import time as _time
+        results = {'pass': 0, 'fail': 0, 'skip': 0}
+
+        def record(step, status, detail=''):
+            results[status] = results.get(status, 0) + 1
+            self._self_test_emit_step(step, status, detail)
+
+        self.emit('self_test_started', {})
+        self.log("Running hardware self-test…")
+
+        # 1. Serial connection
+        if gcode_control.is_connected():
+            record('Serial connection', 'pass',
+                   f'Connected on {gcode_control.SERIAL_PORT}.')
+        else:
+            record('Serial connection', 'fail',
+                   f'Not connected to {gcode_control.SERIAL_PORT}. '
+                   f'Click Connect (Hardware card) and re-run.')
+            # Without serial, the rest of the tests can't meaningfully run.
+            self.emit('self_test_complete', results)
+            return
+
+        # 2. Home X
+        try:
+            gcode_control.home_x()
+            record('Home X', 'pass', 'Homed to X=0.')
+        except Exception as e:
+            record('Home X', 'fail', f'Homing X raised: {e}')
+
+        # 3. Home Z
+        try:
+            gcode_control.home_z()
+            record('Home Z', 'pass', f'Homed to Z={gcode_control.Z_MAX}.')
+        except Exception as e:
+            record('Home Z', 'fail', f'Homing Z raised: {e}')
+
+        # 4. Source-bin probe (verifies probe sensor + Z-down motion)
+        try:
+            bin_locs = gcode_control.get_bin_locations() or {}
+            source_x = bin_locs.get(0, gcode_control.X_SOURCE_BIN)
+            # Invalidate cache so we get a real probe, not a fast-approach.
+            gcode_control.invalidate_probe_cache_for_x(source_x)
+            z_clear = gcode_control._z_travel_height()
+            gcode_control._send_and_wait(
+                f"G0 Z{z_clear} F{gcode_control.Z_FEEDRATE}")
+            gcode_control._send_and_wait("M400")
+            gcode_control._send_and_wait(
+                f"G0 X{source_x} F{gcode_control.X_FEEDRATE}")
+            gcode_control._send_and_wait("M400")
+            gcode_control._probe_with_cache(source_x)
+            probed_z = gcode_control.get_cached_probe_z(source_x)
+            if probed_z is None:
+                record('Source bin probe', 'fail',
+                       'Probe completed but Z position unreadable. '
+                       'Check probe wiring or Marlin configuration.')
+            else:
+                record('Source bin probe', 'pass',
+                       f'Probe contacted at Z={probed_z:.2f} mm.')
+        except Exception as e:
+            record('Source bin probe', 'fail', f'Probe raised: {e}')
+
+        # 5. Camera capture
+        cam = kwargs.get('camera')
+        if cam is None:
+            try:
+                from web_camera import camera as _cam
+                cam = _cam
+            except Exception:
+                cam = None
+        if cam is None:
+            record('Camera capture', 'skip',
+                   'No camera handle available in this context.')
+        else:
+            try:
+                frame = None
+                if hasattr(cam, 'get_frame'):
+                    frame = cam.get_frame()
+                elif hasattr(cam, 'read'):
+                    ok, frame = cam.read()
+                    if not ok:
+                        frame = None
+                if frame is None:
+                    record('Camera capture', 'fail',
+                           'Camera returned no frame. Check that the '
+                           'camera is started (Setup → Camera → Start).')
+                else:
+                    h = getattr(frame, 'shape', [None, None])[0]
+                    w = getattr(frame, 'shape', [None, None, None])[1] \
+                        if hasattr(frame, 'shape') else None
+                    detail = (f'Frame captured ({w}×{h}).'
+                              if w and h else 'Frame captured.')
+                    record('Camera capture', 'pass', detail)
+            except Exception as e:
+                record('Camera capture', 'fail', f'Camera raised: {e}')
+
+        self.log(f"Self-test complete: {results['pass']} passed, "
+                 f"{results['fail']} failed, "
+                 f"{results.get('skip', 0)} skipped.")
+        self.emit('self_test_complete', results)
+
+    # --- Source-bin estimated count from probe ---
+    #
+    # Every time the source bin is probed (during pick_from_position with
+    # X = source_x), the post-probe callback below fires. We compare the
+    # probed Z to a calibrated empty-bin reference Z and divide by card
+    # thickness to get an estimated remaining-card count. The Sort tab's
+    # Running stage will surface this number so the user knows how much
+    # longer their stack will take.
+    #
+    # Calibration is a separate one-shot command — user empties the
+    # source bin, presses "Calibrate empty source", machine probes, the
+    # resulting Z is persisted to disk so it survives restarts.
+
+    def _on_post_probe(self, x_position, probed_z):
+        """gcode_control post-probe callback. Filters for source-bin
+        probes and emits a count estimate when applicable."""
+        try:
+            import gcode_control
+            bin_locs = gcode_control.get_bin_locations() or {}
+            source_x = bin_locs.get(0, gcode_control.X_SOURCE_BIN)
+        except Exception:
+            return
+        # Tolerate small float jitter in stored bin X
+        if abs(float(x_position) - float(source_x)) > 0.5:
+            return  # not a source-bin probe
+        empty_z = self._load_empty_source_z()
+        estimate = self._estimate_source_count(probed_z, empty_z)
+        self.emit('source_bin_count_update', {
+            'probed_z': float(probed_z),
+            'empty_z': empty_z,
+            'estimated_count': estimate,
+            'calibrated': empty_z is not None,
+        })
+
+    @staticmethod
+    def _estimate_source_count(probed_z, empty_z):
+        """Pure helper: compute estimated remaining cards in the source
+        bin. Returns None if no empty-Z reference is available.
+        Clamps to 0 if probed_z is below empty_z (sensor jitter or the
+        bin moved since calibration)."""
+        from config import CARD_THICKNESS_MM
+        if empty_z is None:
+            return None
+        if CARD_THICKNESS_MM <= 0:
+            return None
+        delta = float(probed_z) - float(empty_z)
+        if delta < 0:
+            return 0
+        return int(round(delta / CARD_THICKNESS_MM))
+
+    def _load_empty_source_z(self):
+        """Load the persisted empty-source-bin reference Z. Returns None
+        if not yet calibrated."""
+        from config import EMPTY_SOURCE_BIN_REF_PATH
+        try:
+            with open(EMPTY_SOURCE_BIN_REF_PATH, 'r', encoding='utf-8') as f:
+                import json as _json
+                data = _json.load(f)
+            z = data.get('empty_z')
+            return float(z) if z is not None else None
+        except FileNotFoundError:
+            return None
+        except Exception as e:
+            print(f"[worker] Could not read empty_source_z.json: {e}")
+            return None
+
+    def _save_empty_source_z(self, z):
+        """Persist the empty-source-bin reference Z to disk."""
+        from config import EMPTY_SOURCE_BIN_REF_PATH
+        from datetime import datetime as _dt
+        import json as _json
+        payload = {
+            'empty_z': float(z),
+            'calibrated_at': _dt.now().isoformat(),
+        }
+        with open(EMPTY_SOURCE_BIN_REF_PATH, 'w', encoding='utf-8') as f:
+            _json.dump(payload, f, indent=2)
+
+    def _cmd_calibrate_empty_source_bin(self, **kwargs):
+        """Drive to the source bin, probe with an empty bin, persist
+        the resulting Z as the reference for future count estimates.
+        Pre-conditions: hardware connected, machine homed, source bin
+        empty (the user is responsible for verifying). The probe itself
+        triggers the post-probe callback which would emit a stale count
+        — we explicitly re-emit a fresh update with the new reference
+        after the calibration completes."""
+        import gcode_control
+        if not gcode_control.is_connected():
+            self.emit('error', {'message': 'Cannot calibrate — machine not connected'})
+            return
+        if self.state not in ('idle', 'paused'):
+            self.emit('error', {
+                'message': f"Cannot calibrate while state={self.state}; "
+                           f"end the session first."
+            })
+            return
+
+        self.log("Calibrating empty source bin — driving to source X and probing…")
+        try:
+            bin_locs = gcode_control.get_bin_locations() or {}
+            source_x = bin_locs.get(0, gcode_control.X_SOURCE_BIN)
+            # Invalidate cached probe so the probe runs full-travel
+            # (an old cached value would short-circuit and we'd record
+            # the wrong height).
+            gcode_control.invalidate_probe_cache_for_x(source_x)
+            # Move to the source X at clear height, then probe down.
+            z_clear = gcode_control._z_travel_height()
+            gcode_control._send_and_wait(f"G0 Z{z_clear} F{gcode_control.Z_FEEDRATE}")
+            gcode_control._send_and_wait("M400")
+            gcode_control._send_and_wait(f"G0 X{source_x} F{gcode_control.X_FEEDRATE}")
+            gcode_control._send_and_wait("M400")
+            gcode_control._probe_with_cache(source_x)
+            empty_z = gcode_control.get_cached_probe_z(source_x)
+            if empty_z is None:
+                self.emit('error', {
+                    'message': 'Probe did not return a Z value — calibration aborted.'
+                })
+                return
+            self._save_empty_source_z(empty_z)
+            self.log(f"Empty-source reference Z = {empty_z:.2f} mm "
+                     f"(saved to empty_source_z.json)")
+            self.emit('source_bin_calibrated', {'empty_z': float(empty_z)})
+            # Re-emit a count update with the fresh reference so any
+            # listeners refresh their display.
+            self.emit('source_bin_count_update', {
+                'probed_z': float(empty_z),
+                'empty_z': float(empty_z),
+                'estimated_count': 0,
+                'calibrated': True,
+            })
+        except Exception as e:
+            self.log(f"Source-bin calibration error: {e}")
+            self.emit('error', {'message': f'Source-bin calibration failed: {e}'})
 
     # --- ArUco Calibration Commands ---
 
