@@ -31,6 +31,13 @@ socket.on('sorter_state', (data) => {
     }
 });
 
+// Track the last hardware_status so we can distinguish a true
+// connect→disconnect transition from the initial page-load state
+// (which is always "disconnected" until the first event resolves).
+// Without this guard the user would see the diagnostics toast every
+// time they reload the page, which is noise.
+let _lastHardwareConnected = null;
+
 socket.on('hardware_status', (data) => {
     const badge = document.getElementById('connection-badge');
     const hw = document.getElementById('hw-status');
@@ -43,6 +50,18 @@ socket.on('hardware_status', (data) => {
         badge.textContent = 'Disconnected';
         hw.textContent = 'Disconnected';
     }
+
+    // Connection just dropped — surface a toast pointing the user at
+    // the diagnostics tool. Also addLog so it's visible in the
+    // activity log alongside the badge change.
+    if (_lastHardwareConnected === true && !data.connected) {
+        addLog('Hardware disconnected — try Setup → Run diagnostics.');
+        if (typeof showError === 'function') {
+            showError('not_connected',
+                      'The Cardomancer controller stopped responding.');
+        }
+    }
+    _lastHardwareConnected = !!data.connected;
 });
 
 socket.on('estop_triggered', () => {
@@ -70,6 +89,14 @@ socket.on('bin_full_prompt', (data) => {
     if (typeof showBinFullBanner === 'function') {
         showBinFullBanner(data);
     }
+});
+
+// Source-bin estimated count from probe (Sort tab "Source bin" card).
+socket.on('source_bin_count_update', (data) => {
+    if (typeof onSourceBinCountUpdate === 'function') onSourceBinCountUpdate(data);
+});
+socket.on('source_bin_calibrated', () => {
+    if (typeof onSourceBinCalibrated === 'function') onSourceBinCalibrated();
 });
 
 // Hardware self-test events (Setup → Run diagnostics).
@@ -132,16 +159,25 @@ socket.on('card_detected', (data) => {
             .join('');
         const layoutBadge = data.layout && data.layout !== 'normal'
             ? ` <span class="badge bg-warning text-dark">${data.layout}</span>` : '';
+        // Low-confidence identity badge: backend gates uncertain matches
+        // to the fallback bin and tags the scan for the detection
+        // review queue. Surfacing it on the live card panel so the
+        // user can spot review-worthy scans in real time and not just
+        // after the fact in the queue.
+        const lowConfBadge = data.identity_low_confidence
+            ? ' <span class="badge bg-danger" title="Hash distance is in the low-confidence band — sent to fallback bin and queued for review.">? Low confidence</span>'
+            : '';
         const cn = data.collector_number ? ` #${data.collector_number}` : '';
         panel.innerHTML = `
-            <h5>${data.name}${borderBadge}${frameBadge}${frameEffectsBadges}${foilBadge}${layoutBadge}</h5>
+            <h5>${data.name}${borderBadge}${frameBadge}${frameEffectsBadges}${foilBadge}${layoutBadge}${lowConfBadge}</h5>
             <p class="mb-1">Set: <strong>${data.set}${cn}</strong> | Colors: <strong>${(data.colors || []).join('')}</strong></p>
             <p class="mb-1">Type: ${(data.types || []).join(' ')} | CMC: ${data.cmc}</p>
             <p class="mb-1">Price: ${data.price} | Rarity: ${data.rarity}</p>
             <p class="mb-0">Bin: <strong>${data.bin}</strong> | Method: <em>${data.method}</em></p>
         `;
         const foilTag = data.is_foil ? ' [FOIL]' : '';
-        addLog(`Detected: ${data.name}${cn}${foilTag} -> Bin ${data.bin} (${data.method})`);
+        const lowConfTag = data.identity_low_confidence ? ' [LOW CONF]' : '';
+        addLog(`Detected: ${data.name}${cn}${foilTag}${lowConfTag} -> Bin ${data.bin} (${data.method})`);
     } else {
         panel.innerHTML = `<p class="text-danger">Unrecognized card -> Bin ${data.bin || 10}</p>`;
         addLog(`Unrecognized card -> Bin ${data.bin || 10}`);

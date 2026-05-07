@@ -586,11 +586,22 @@
                                 <p class="text-muted">No active session</p>
                             </div>
                         </div>
-                        <!-- Stack estimate -->
+                        <!-- Stack estimate (source-bin count from probe vs. empty reference) -->
                         <div class="card mt-2">
-                            <div class="card-header">Stack Estimate</div>
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span>Source bin</span>
+                                <button class="btn btn-sm btn-link p-0"
+                                        onclick="apiPost('/api/source-bin/calibrate-empty')"
+                                        title="Empty the source bin first, then click to record the empty-bin reference depth.">
+                                    Calibrate empty
+                                </button>
+                            </div>
                             <div class="card-body" id="stack-estimate-panel">
-                                <p class="text-muted">No data</p>
+                                <p class="text-muted small mb-0">
+                                    No data yet &mdash; pick a card or
+                                    calibrate the empty source bin to start
+                                    the count.
+                                </p>
                             </div>
                         </div>
                     </div>

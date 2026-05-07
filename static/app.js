@@ -44,6 +44,12 @@ document.addEventListener('DOMContentLoaded', () => {
             loadBinConfigList();
             loadOverflowConfig();
             startCameraFeed('session-camera-feed');
+            // Paint the Source-bin gauge from cached state (if any)
+            // so the user sees the most recent number on tab open
+            // without waiting for the next probe.
+            if (typeof _refreshStackEstimateFromApi === 'function') {
+                _refreshStackEstimateFromApi();
+            }
         });
     }
 

@@ -417,6 +417,92 @@ function onBinFullCleared() {
 }
 
 // =========================================================================
+// Source-bin stack estimate
+// =========================================================================
+// Driven by:
+//  - on Sort-tab show: GET /api/source-bin/state (initial paint from
+//    cached probe height, if any)
+//  - source_bin_count_update socket events: updated whenever the
+//    source bin is probed during pickup
+//  - source_bin_calibrated socket event: refresh the panel with the
+//    fresh empty-Z reference
+
+const _STACK_PANEL_PLACEHOLDER = `
+    <p class="text-muted small mb-0">
+        No data yet &mdash; pick a card or calibrate the empty source
+        bin to start the count.
+    </p>`;
+
+function _renderStackEstimate(data) {
+    const panel = document.getElementById('stack-estimate-panel');
+    if (!panel) return;
+    if (!data) {
+        panel.innerHTML = _STACK_PANEL_PLACEHOLDER;
+        return;
+    }
+    const calibrated = !!data.calibrated;
+    const probedZ = data.probed_z;
+    const emptyZ = data.empty_z;
+    const count = data.estimated_count;
+
+    if (!calibrated) {
+        panel.innerHTML = `
+            <p class="small mb-1"><strong>Not calibrated yet.</strong></p>
+            <p class="text-muted small mb-0">
+                Empty the source bin, then click <em>Calibrate empty</em>
+                above. After that the count updates on every pickup.
+            </p>`;
+        return;
+    }
+    if (count === null || count === undefined || probedZ === null || probedZ === undefined) {
+        panel.innerHTML = `
+            <p class="small mb-1">Calibrated, no probe yet.</p>
+            <p class="text-muted small mb-0">
+                Pick a card from the source bin to populate the estimate.
+            </p>`;
+        return;
+    }
+    // Render: big number + a tiny progress-style bar that visualizes
+    // delta / a reasonable upper bound (use 300 as a soft full mark
+    // since that's our default working capacity per config.DEFAULT_BIN_CAPACITY).
+    const softMax = 300;
+    const pct = Math.min(100, Math.max(0, Math.round((count / softMax) * 100)));
+    panel.innerHTML = `
+        <div class="d-flex justify-content-between align-items-baseline mb-1">
+            <span class="fw-semibold" style="font-size:1.4rem">~${count}</span>
+            <span class="text-muted small">card${count === 1 ? '' : 's'} remaining</span>
+        </div>
+        <div class="progress" style="height:6px;" title="Estimated stack height vs. ${softMax}-card soft max">
+            <div class="progress-bar" role="progressbar"
+                 style="width:${pct}%; background-color: var(--accent-blue);"></div>
+        </div>
+        <p class="text-muted small mb-0 mt-1">
+            Probe Z = ${probedZ.toFixed(1)} mm · empty Z = ${emptyZ.toFixed(1)} mm
+        </p>`;
+}
+
+async function _refreshStackEstimateFromApi() {
+    try {
+        const data = await apiGet('/api/source-bin/state');
+        // apiGet returns the raw JSON; guard against {error} responses.
+        if (data && typeof data === 'object' && !data.error) {
+            _renderStackEstimate(data);
+        }
+    } catch (_) {
+        /* keep placeholder */
+    }
+}
+
+function onSourceBinCountUpdate(data) {
+    _renderStackEstimate(data);
+}
+
+function onSourceBinCalibrated() {
+    // Calibration completed — re-fetch the state for a fresh render.
+    _refreshStackEstimateFromApi();
+}
+
+// =========================================================================
 // Hardware self-test (Setup tab)
 // =========================================================================
 
