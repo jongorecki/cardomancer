@@ -374,9 +374,14 @@ function _ensureStaleSessionBanner() {
     bar.className = 'alert alert-warning d-none mb-0 rounded-0';
     bar.style.borderRadius = '0';
     bar.innerHTML = `
-        <div class="container-fluid d-flex align-items-center gap-3">
+        <div class="container-fluid d-flex align-items-center gap-3 flex-wrap">
             <strong>Unfinished session detected</strong>
             <span id="stale-session-summary" class="flex-grow-1 small"></span>
+            <button id="btn-resume-stale-session" class="btn btn-sm btn-success"
+                    onclick="resumeStaleSession()"
+                    title="Rehydrate the session and pause — click Resume to actually start sorting again.">
+                Resume
+            </button>
             <button id="btn-discard-stale-session" class="btn btn-sm btn-warning"
                     onclick="discardStaleSession()">Mark as ended</button>
             <button class="btn btn-sm btn-link"
@@ -419,6 +424,23 @@ async function discardStaleSession() {
     // the banner. If it didn't fire (network error etc.), apiPost already
     // surfaced the toast — just leave the banner up so the user can retry.
     return r;
+}
+
+// Phase 4 pt 5 — resume rather than discard. Hits the rehydration
+// endpoint; the worker rebuilds tracker + sort_config_obj and lands
+// in 'paused', emitting stale_session_resumed which the handler
+// below hides the banner on. The user then clicks the existing
+// Resume button (in the live readout) to actually start motion.
+async function resumeStaleSession() {
+    if (!_stalePrimary) return;
+    const id = _stalePrimary.id;
+    return await apiPost('/api/session/resume-stale', { session_id: id });
+}
+
+function onStaleSessionResumed(data) {
+    addLog(`Resumed stale session #${data.session_id} (${data.scan_count} prior scans). Press Resume to continue sorting.`);
+    dismissStaleSessionBanner();
+    _stalePrimary = null;
 }
 
 function onStaleSessionDiscarded(data) {

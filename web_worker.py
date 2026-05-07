@@ -3162,6 +3162,155 @@ class SortWorker:
         self.log(f"Discarded stale session #{session_id}")
         self.emit('stale_session_discarded', {'session_id': int(session_id)})
 
+    def _cmd_resume_stale_session(self, session_id=None, **kwargs):
+        """Phase 4 part 5 — full power-loss-resume rehydration.
+
+        Rebuilds the worker's tracker + sort_config_obj for a session
+        that was active when the app exited. Sets state to 'paused'
+        so the user must explicitly click Resume to start motion.
+
+        Pre-conditions:
+          - state in (idle, disconnected) — no active session.
+          - The session's config_name points to a still-existing file
+            in sort_configs/. Sessions started with inline config_lines
+            cannot be resumed (we never persisted the lines); the user
+            must discard those and start fresh.
+        """
+        if session_id is None:
+            self.log("resume_stale_session: missing session_id")
+            return
+        if self.state in ('sorting', 'paused', 'estopped'):
+            self.emit('error', {
+                'message': f'Cannot resume — session already in flight '
+                           f'(state={self.state}).'
+            })
+            return
+
+        # 1. Pull the session metadata to find the config name.
+        try:
+            import collection_db
+            conn = collection_db.get_connection()
+            try:
+                meta = collection_db.get_session_metadata(conn, int(session_id))
+            finally:
+                conn.close()
+        except Exception as e:
+            self.log(f"resume_stale_session: metadata lookup failed: {e}")
+            self.emit('error', {'message': f'Could not load session #{session_id}: {e}'})
+            return
+        if meta is None:
+            self.emit('error', {
+                'message': f'Session #{session_id} not found.'
+            })
+            return
+        if meta.get('end_time') is not None:
+            self.emit('error', {
+                'message': f'Session #{session_id} already ended at '
+                           f'{meta["end_time"]}.'
+            })
+            return
+
+        # 2. Rebuild sort_config_obj. Only saved-preset sessions can
+        #    resume; inline-config sessions don't have their query text
+        #    persisted anywhere on disk.
+        config_name = (meta.get('config_name') or '').strip()
+        if not config_name:
+            self.emit('error', {
+                'message': f'Session #{session_id} was started from inline '
+                           f'configuration that wasn\'t saved. Resume is '
+                           f'not supported for inline sessions; discard '
+                           f'and start a new session instead.'
+            })
+            return
+
+        try:
+            from sort_config import SortConfig
+            from sorting import set_sort_config
+            from config import SORT_CONFIGS_DIR
+            import os as _os
+            filepath = config_name
+            if not _os.path.isabs(filepath):
+                filepath = _os.path.join(SORT_CONFIGS_DIR, filepath)
+            if not _os.path.exists(filepath):
+                self.emit('error', {
+                    'message': (f"Sort preset '{config_name}' no longer "
+                                f"exists; cannot resume session "
+                                f"#{session_id}.")
+                })
+                return
+            sort_cfg = SortConfig.from_file(filepath)
+            self.sort_config_obj = sort_cfg
+            self.sort_mode = (meta.get('sort_mode') or 'custom_file')
+            set_sort_config(sort_cfg)
+        except Exception as e:
+            self.log(f"resume_stale_session: config rebuild failed: {e}")
+            self.emit('error', {
+                'message': f'Could not rebuild sort config: {e}'
+            })
+            return
+
+        # 3. Rehydrate the tracker against the existing session row.
+        try:
+            from scan_tracker import ScanTracker
+            self.tracker = ScanTracker()
+            ok = self.tracker.resume_session(int(session_id))
+            if not ok:
+                self.tracker = None
+                self.emit('error', {
+                    'message': f'Could not rehydrate tracker for session '
+                               f'#{session_id}.'
+                })
+                return
+        except Exception as e:
+            self.log(f"resume_stale_session: tracker rehydrate failed: {e}")
+            self.emit('error', {
+                'message': f'Could not rehydrate tracker: {e}'
+            })
+            return
+
+        # 4. Restore worker bookkeeping from the rehydrated tracker.
+        try:
+            import collection_db as _cdb
+            conn = _cdb.get_connection()
+            try:
+                bin_counts = _cdb.get_session_bin_counts(conn, int(session_id))
+            finally:
+                conn.close()
+            self.bin_card_counts = {int(k): int(v) for k, v in bin_counts.items()}
+            # Mark any bin already at/over the limit as full so the
+            # autonomy-ladder bin-full-prompt fires correctly on the
+            # next drop into a known-saturated bin.
+            self.bins_full = {
+                b for b, c in self.bin_card_counts.items()
+                if c >= self.bin_card_limit
+            }
+            self.scan_count = sum(self.bin_card_counts.values())
+        except Exception as e:
+            self.log(f"resume_stale_session: bookkeeping restore failed: {e}")
+            # Non-fatal — user can still resume; counts will rebuild on
+            # the next bin update.
+
+        # 5. Land in 'paused' so the user explicitly Resume's the loop.
+        self.state = 'paused'
+        self.continuous_sorting = False
+        self.last_card_info = None
+        self.last_card_bin = None
+        self.last_card_method = None
+        self.undo_available = False
+
+        self.log(f"Resumed session #{session_id}: "
+                 f"{self.scan_count} prior scans, "
+                 f"config={config_name}.")
+        self.emit('stale_session_resumed', {
+            'session_id': int(session_id),
+            'scan_count': self.scan_count,
+            'config_name': config_name,
+        })
+        self.emit('session_paused', {
+            'reason': 'resumed_from_unclean_shutdown',
+            'resumable': True,
+        })
+
     # --- Hardware self-test ---
     #
     # Sequential diagnostic: serial connection, X home, Z home, source-bin

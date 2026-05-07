@@ -83,6 +83,15 @@ socket.on('stale_session_discarded', (data) => {
     }
 });
 
+// Phase 4 pt 5 — full power-loss-resume rehydration completed.
+// Banner hides; the worker is in 'paused', the existing UI Resume
+// button picks up from there.
+socket.on('stale_session_resumed', (data) => {
+    if (typeof onStaleSessionResumed === 'function') {
+        onStaleSessionResumed(data);
+    }
+});
+
 // Bin chain exhausted — session paused per autonomy ladder rule
 // "machine never stops unless it has to."
 socket.on('bin_full_prompt', (data) => {
