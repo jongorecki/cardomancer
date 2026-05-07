@@ -5043,6 +5043,19 @@ def main():
     # Start the worker thread
     worker.start()
 
+    # Auto-connect to the hardware on boot. Failure is non-fatal —
+    # gcode_control.connect_to_board() handles missing/busy serial
+    # ports gracefully, and the UI shows Disconnected so the user can
+    # retry from Setup. This is the precondition for the autonomy
+    # ladder's "auto-home with confirm on first connect" prompt
+    # (plans/autonomy_ladder.md). Opt out by setting
+    # CARD_SORTER_NO_AUTO_CONNECT=1 in the environment.
+    if os.environ.get('CARD_SORTER_NO_AUTO_CONNECT', '').strip() in ('', '0', 'false', 'False'):
+        print("[server] Auto-connecting to hardware (set CARD_SORTER_NO_AUTO_CONNECT=1 to disable)")
+        worker.enqueue('connect')
+    else:
+        print("[server] Auto-connect disabled via CARD_SORTER_NO_AUTO_CONNECT")
+
     # Start the enrichment refresh scheduler. Failure here is non-fatal
     # — the core sorting flow does not depend on enrichment.
     try:
