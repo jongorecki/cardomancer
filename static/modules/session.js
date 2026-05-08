@@ -95,7 +95,16 @@ function updateBinContentsPanel(cardsPerBin, binDetailsData, binFullness) {
         .sort((a, b) => parseInt(a[0]) - parseInt(b[0]));
 
     if (entries.length === 0) {
-        panel.innerHTML = '<p class="text-muted small mb-0">No cards sorted yet.</p>';
+        if (typeof renderEmptyState === 'function') {
+            renderEmptyState(panel, {
+                sigil: 'bin',
+                title: 'No cards sorted yet.',
+                body: 'Drop a stack on the staging platform and start a session to see bins fill up here.',
+                variant: 'compact',
+            });
+        } else {
+            panel.innerHTML = '<p class="text-muted small mb-0">No cards sorted yet.</p>';
+        }
         drawMotionCanvas();
         drawBinLayoutCanvas();
         return;

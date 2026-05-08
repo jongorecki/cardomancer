@@ -285,8 +285,8 @@ class TestSyntheticOldLightingSignalDirection(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestScoreFormulaRegression(unittest.TestCase):
-    """Pin the 5-feature Level-2 confidence formula (2026-04-23 retune
-    on 70 foils + 375 nonfoils). Each fixture row is a realistic
+    """Pin the 5-feature Level-5 confidence formula (2026-05-07 retune
+    on 278 foils + 1371 nonfoils). Each fixture row is a realistic
     (dbf, dms, dnc, dss, dle) tuple and the score the formula must
     produce.
 
@@ -298,12 +298,12 @@ class TestScoreFormulaRegression(unittest.TestCase):
     def test_pinned_weights_and_bias(self):
         """Pin each coefficient exactly — any change requires updating
         this test deliberately."""
-        self.assertAlmostEqual(W_DELTA_BRIGHT_FRAC,       -20.6193, places=4)
-        self.assertAlmostEqual(W_DELTA_MEAN_S,             +0.08017, places=5)
-        self.assertAlmostEqual(W_DELTA_N_BRIGHT_CLUSTERS,  -0.01779, places=5)
-        self.assertAlmostEqual(W_DELTA_STD_S_BRIGHT,       -0.02388, places=5)
-        self.assertAlmostEqual(W_DELTA_LAPLACIAN_ENERGY,   -0.00585, places=5)
-        self.assertAlmostEqual(FOIL_BIAS,                  -0.5425,  places=4)
+        self.assertAlmostEqual(W_DELTA_BRIGHT_FRAC,       -33.205799, places=4)
+        self.assertAlmostEqual(W_DELTA_MEAN_S,             +0.136196, places=5)
+        self.assertAlmostEqual(W_DELTA_N_BRIGHT_CLUSTERS,  -0.025161, places=5)
+        self.assertAlmostEqual(W_DELTA_STD_S_BRIGHT,       -0.049887, places=5)
+        self.assertAlmostEqual(W_DELTA_LAPLACIAN_ENERGY,   -0.011208, places=5)
+        self.assertAlmostEqual(FOIL_BIAS,                  -1.208786,  places=4)
         self.assertAlmostEqual(FOIL_CONFIDENCE_THRESHOLD,  +0.75,    places=4)
 
     def test_dhr_no_longer_imported(self):
@@ -321,22 +321,22 @@ class TestScoreFormulaRegression(unittest.TestCase):
         # (dbf, dms, dnc, dss, dle, expected_confidence, label)
         cases = [
             # Zero deltas -> just the bias
-            (0.0,    0.0,    0,   0.0,    0.0,   -0.5425, "zero deltas"),
+            (0.0,    0.0,    0,   0.0,    0.0,   -1.2088, "zero deltas"),
             # Strong nonfoil: bright scan, smooth bright structure
-            (+0.230, -8.0,  +30, -10.0, -150.0, -5.3437, "strong nonfoil"),
+            (+0.230, -8.0,  +30, -10.0, -150.0, -8.5104, "strong nonfoil"),
             # Typical nonfoil (close to class means)
-            (+0.145, +0.9,   +5,  -3.0,  -90.0, -2.9510, "typical nonfoil"),
+            (+0.145, +0.9,   +5,  -3.0,  -90.0, -4.8685, "typical nonfoil"),
             # Mid-range foil (Astelli-Reclaimer-style: dms strong, fewer
             # clusters, higher residual sat std). Just above +0.75
             # threshold so fires as foil.
-            (-0.20,  -40.0, -65, +20.0,  -75.0, +1.4921, "mid foil"),
+            (-0.20,  -40.0, -65, +20.0,  -75.0, +1.4629, "mid foil"),
             # Strong foil — multiple signals all align
-            (-0.10,  +50.0, -80, +25.0,  -50.0, +6.6466, "strong foil"),
+            (-0.10,  +50.0, -80, +25.0,  -50.0, +10.2477, "strong foil"),
             # Old-physics foil (Mountain mom #280) — expected MISS even
             # under the new model: this card's physics still don't match
             # the new-lighting profile (basic-land bright sky failure
             # mode). Pin it so we'd notice if a future retune catches it.
-            (+0.13,  -12.0, -29,  +7.0,  -45.0, -3.5730, "old-physics foil"),
+            (+0.13,  -12.0, -29,  +7.0,  -45.0, -6.2751, "old-physics foil"),
         ]
         for dbf, dms, dnc, dss, dle, expected, label in cases:
             score = (FOIL_BIAS

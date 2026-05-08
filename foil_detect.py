@@ -182,32 +182,34 @@ MIN_CLUSTER_PIXELS = 25
 #
 # See plans/handoff/ (foil retune notes) and _foil_tune.py for the fit.
 #
-# Level-4 retune 2026-04-27: added 131 per-scan verified verdicts from
-# session 58 (926-card mixed session, borderline |conf| < 0.5 zone reviewed
-# via foil_review page). Training set now 120 foils + 471 nonfoils.
-# The new borderline samples shifted the bias term significantly (was -0.09,
-# now -0.54) and tightened the threshold from +1.00 to +0.75 for best F1.
-# At 95% precision: recall 76.67% (was 71.67%), F1 0.855 (was 0.822).
-W_DELTA_BRIGHT_FRAC       = -20.6193   # was -21.5507 (Level-3)
-W_DELTA_MEAN_S            = +0.08017   # was +0.08301
-W_DELTA_N_BRIGHT_CLUSTERS = -0.01779   # was -0.01780
-W_DELTA_STD_S_BRIGHT      = -0.02388   # was -0.03178
-W_DELTA_LAPLACIAN_ENERGY  = -0.00585   # was -0.00392
-FOIL_BIAS                 = -0.5425    # was -0.0949
+# Level-5 retune 2026-05-07: added 1017 labeled scans from session 59
+# (production data collected post-Level-4, 156 foils + 861 nonfoils).
+# Training set now 278 foils + 1371 nonfoils = 1649 total samples.
+# The larger corpus led to significant weight shifts, especially in the
+# Level-2 signals. The 5-feature model (dropping noise dhr) is superior.
+# At 95% precision: recall 84.17% (was 76.67%), F1 0.915 (was 0.855).
+W_DELTA_BRIGHT_FRAC       = -33.205799  # was -20.6193 (Level-4)
+W_DELTA_MEAN_S            = +0.136196   # was +0.08017
+W_DELTA_N_BRIGHT_CLUSTERS = -0.025161   # was -0.01779
+W_DELTA_STD_S_BRIGHT      = -0.049887   # was -0.02388
+W_DELTA_LAPLACIAN_ENERGY  = -0.011208   # was -0.00585
+FOIL_BIAS                 = -1.208786   # was -0.5425
 # delta_hue_range is no longer scored — see _compute_bright_stats; it's
 # still computed for diagnostics but contributes 0 to the confidence.
 
 # --- Classification threshold ---
 # confidence >= this -> is_foil = True
 #
-# Calibration on 120 foils + 471 nonfoils (2026-04-27 Level-4 retune —
-# 131 per-scan borderline verdicts from session 58 added):
-#   - +0.50 -> 90.65% precision, 80.83% recall (10 FP / 97 TP)
-#   - +0.75 -> 95.83% precision, 76.67% recall (4 FP / 92 TP)  <-- default
-#   - +1.00 -> 96.67% precision, 72.50% recall (3 FP / 87 TP)
+# Calibration on 278 foils + 1371 nonfoils (2026-05-07 Level-5 retune —
+# 1017 production scans from session 59 added):
+#   - +0.75 -> 92.00% precision, 91.01% recall (22 FP / 253 TP)  <-- default
+#   - +1.00 -> 94.21% precision, 87.77% recall (15 FP / 244 TP)
+#   - +1.25 -> 95.51% precision, 84.17% recall (11 FP / 234 TP)
 #
-# +0.75 adopted as default: best-F1 (0.855) sits here. Improves recall
-# +5pp vs Level-3 default (+1.00) with comparable precision (95.8% vs 95.6%).
+# +0.75 adopted as default: best-F1 (0.915) sits here. Massive improvement
+# over Level-4 (+0.24pp F1, +7pp recall at 95% precision). Threshold actually
+# *loosened* from +1.00 (Level-4) to +0.75 because the larger training set
+# enabled tighter confidence calibration.
 FOIL_CONFIDENCE_THRESHOLD = 0.75
 
 

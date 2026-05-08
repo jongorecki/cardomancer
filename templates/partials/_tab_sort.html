@@ -117,7 +117,7 @@
                                     <span id="sort-config-dirty-badge" class="badge bg-warning text-dark ms-2"
                                           style="display:none;">modified</span>
                                 </span>
-                                <small class="text-muted" id="sort-config-collapse-hint">click to show/hide</small>
+                                <small class="text-muted" id="sort-config-collapse-hint">Click to show/hide</small>
                             </div>
                             <div id="sort-config-collapse" class="collapse show">
                                 <div class="card-body">
@@ -457,14 +457,14 @@
                             <div class="card-body">
                                 <div class="d-flex gap-2 mb-2">
                                     <select class="form-select form-select-sm" id="bin-config-select">
-                                        <option value="">-- Select a saved config --</option>
+                                        <option value="">Select a saved config…</option>
                                     </select>
                                     <button class="btn btn-primary btn-sm" onclick="loadBinConfig()">Load</button>
                                     <button class="btn btn-outline-danger btn-sm" onclick="deleteBinConfig()">Delete</button>
                                 </div>
                                 <div class="d-flex gap-2">
-                                    <input type="text" class="form-control form-control-sm" id="bin-config-name" placeholder="Config name...">
-                                    <button class="btn btn-outline-success btn-sm" style="white-space:nowrap;" onclick="saveBinConfig()">Save Current</button>
+                                    <input type="text" class="form-control form-control-sm" id="bin-config-name" placeholder="Config name…">
+                                    <button class="btn btn-outline-success btn-sm" style="white-space:nowrap;" onclick="saveBinConfig()">Save current</button>
                                 </div>
                             </div>
                         </div>
@@ -553,7 +553,7 @@
                                         <label class="form-label small mb-0">Destination box (optional)</label>
                                         <select class="form-select form-select-sm"
                                                 id="storage-box-select">
-                                            <option value="">-- not set --</option>
+                                            <option value="">Not set</option>
                                             <option value="box-a">Box A — bulk commons</option>
                                             <option value="box-b">Box B — bulk uncommons</option>
                                             <option value="box-c">Box C — rares / foils</option>
@@ -584,7 +584,7 @@
                                     <div class="col-sm-6">
                                         <label class="form-label small mb-0">Source box</label>
                                         <select class="form-select form-select-sm" id="resort-source-select">
-                                            <option value="">-- choose source box --</option>
+                                            <option value="">Choose source box…</option>
                                             <option value="box-a">Box A — bulk commons</option>
                                             <option value="box-b">Box B — bulk uncommons</option>
                                             <option value="box-c">Box C — rares / foils</option>
@@ -605,7 +605,7 @@
                                         <select class="form-select form-select-sm"
                                                 id="dashboard-sort-preset-select"
                                                 onchange="onDashboardSortPresetSelect()">
-                                            <option value="">-- loading --</option>
+                                            <option value="">Loading…</option>
                                         </select>
                                     </div>
                                     <div class="col-sm-4 text-end">
@@ -672,7 +672,7 @@
                         <div class="card">
                             <div class="card-header">Last Card Detected</div>
                             <div class="card-body" id="last-card-info">
-                                <p class="text-muted">No card detected yet</p>
+                                <p class="text-muted">No card detected yet.</p>
                             </div>
                         </div>
                         <!-- Live card info overlay (Phase 4 item 4.19) -->
@@ -686,7 +686,12 @@
                         <div class="card mt-2">
                             <div class="card-header">Session Stats</div>
                             <div class="card-body" id="session-stats-panel">
-                                <p class="text-muted">No active session</p>
+                                <div class="cm-empty-state cm-empty-compact">
+                                    <img class="cm-empty-sigil"
+                                         src="/static/branding/sigils/sigil-stars.svg"
+                                         alt="" width="48" height="48" aria-hidden="true">
+                                    <div class="cm-empty-title">No active session.</div>
+                                </div>
                             </div>
                         </div>
                         <!-- Stack estimate (source-bin count from probe vs. empty reference) -->
@@ -695,15 +700,14 @@
                                 <span>Source bin</span>
                                 <button class="btn btn-sm btn-link p-0"
                                         onclick="apiPost('/api/source-bin/calibrate-empty')"
-                                        title="Empty the source bin first, then click to record the empty-bin reference depth.">
+                                        title="Empty the source bin, then click to record the empty-bin reference depth.">
                                     Calibrate empty
                                 </button>
                             </div>
                             <div class="card-body" id="stack-estimate-panel">
                                 <p class="text-muted small mb-0">
-                                    No data yet &mdash; pick a card or
-                                    calibrate the empty source bin to start
-                                    the count.
+                                    No data yet. Pick a card or calibrate
+                                    the empty source bin to start the count.
                                 </p>
                             </div>
                         </div>
@@ -716,7 +720,7 @@
                                 <button class="btn btn-outline-secondary btn-sm py-0 px-1" onclick="toggleAllBinDetails()" title="Expand/collapse all">&#9776;</button>
                             </div>
                             <div class="card-body p-2" id="session-bin-contents" style="max-height:600px; overflow-y:auto;">
-                                <p class="text-muted small">No active session</p>
+                                <p class="text-muted small">No active session.</p>
                             </div>
                         </div>
                     </div>
@@ -746,7 +750,15 @@
                         <div class="card">
                             <div class="card-header">Quick Stats</div>
                             <div class="card-body" id="dashboard-stats">
-                                <p class="text-muted">No active session. Start a sort above.</p>
+                                <div class="cm-empty-state cm-empty-compact">
+                                    <img class="cm-empty-sigil"
+                                         src="/static/branding/sigils/sigil-spiral.svg"
+                                         alt="" width="48" height="48" aria-hidden="true">
+                                    <div class="cm-empty-title">No active session.</div>
+                                    <p class="cm-empty-body small text-muted mb-0">
+                                        Start a sort above to see throughput here.
+                                    </p>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -762,7 +774,7 @@
                         <div class="card">
                             <div class="card-header">Test Scan</div>
                             <div class="card-body">
-                                <p class="text-muted small mb-2">Pick, identify, and drop cards into one bin. No sorting — just tests detection.</p>
+                                <p class="text-muted small mb-2">Pick, identify, and drop cards into one bin. Tests detection without sorting.</p>
                                 <div class="d-flex gap-2 align-items-center mb-2">
                                     <div class="input-group input-group-sm" style="max-width:140px;">
                                         <span class="input-group-text">Cards</span>

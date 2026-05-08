@@ -163,6 +163,12 @@ FIELD_ALIASES = {
     "edhrec-top": "edhrec_top",
     "edhrec_top": "edhrec_top",
     "edhrectop": "edhrec_top",
+    # Sister predicate sourced from the edhtop16 cEDH tournament data.
+    "edhtop16-top": "edhtop16_top",
+    "edhtop16_top": "edhtop16_top",
+    "edhtop16top": "edhtop16_top",
+    "cedh-top": "edhtop16_top",
+    "cedh_top": "edhtop16_top",
 }
 
 
@@ -260,13 +266,14 @@ def tokenize(query_string):
             continue
 
         # Try to parse as field:value or field>=value etc.
-        # Field names may contain hyphens or underscores after the first
-        # alpha (e.g. `edhrec-top`, `set_type`) so users aren't forced
-        # into squashed names like `edhrectop`.
+        # Field names start with a letter, then allow letters, digits,
+        # hyphens, and underscores. Digits are needed for source-versioned
+        # names like `edhtop16-top`; hyphens / underscores are needed for
+        # readable multi-word names like `edhrec-top` and `set_type`.
         field_match = re.match(
-            r'^([a-zA-Z][a-zA-Z_-]*)'  # field name (alpha-led, may include - or _)
-            r'([:=]|[<>]=?|!=)'        # operator
-            r'(.+)$',                  # value
+            r'^([a-zA-Z][a-zA-Z0-9_-]*)'  # field name
+            r'([:=]|[<>]=?|!=)'           # operator
+            r'(.+)$',                     # value
             word
         )
         if field_match:
@@ -647,9 +654,26 @@ def _eval_field_query(fq, card_data, otag_cache=None, enrichment_data=None):
         return val.lower() in oracle_text
 
     # --- Name ---
+    # `:` and `=` keep the long-standing substring-containment semantics
+    # (`name:sol` matches Sol Ring, Soldevi Excavations, etc.). Comparison
+    # operators do lexicographic string compare instead — useful for
+    # alphabetical bin partitioning, e.g.:
+    #     bin1: name<m       — A through L
+    #     bin2: name>=m      — M through Z
+    # Comparison is case-insensitive (both sides lowercased) so users
+    # don't have to think about it.
     if field == 'name':
         name = (card_data.get('name') or '').lower()
-        return val.lower() in name
+        if op in (':', '='):
+            return val.lower() in name
+        if op in ('<', '<=', '>', '>=', '!='):
+            v = val.lower()
+            if op == '<':  return name <  v
+            if op == '<=': return name <= v
+            if op == '>':  return name >  v
+            if op == '>=': return name >= v
+            if op == '!=': return name != v
+        return False
 
     # --- Keywords ---
     if field == 'keyword':
@@ -728,6 +752,22 @@ def _eval_field_query(fq, card_data, otag_cache=None, enrichment_data=None):
         # The bare colon (`edhrec-top:1000`) reads as "in the top 1000"
         # which is rank <= 1000. Other operators pass through to _compare
         # so users can do rank>500, rank<100, etc.
+        cmp_op = '<=' if op in (':', '=') else op
+        return _compare(rank, cmp_op, val)
+
+    # --- Enrichment: EDHTop16 (cEDH tournament) global rank ---
+    # Same shape as edhrec_top but sourced from the edhtop16 enrichment
+    # source's six-month tournament dataset. Useful for routing cEDH
+    # staples narrowly (e.g. `edhtop16-top:50` for the deepest cEDH
+    # mainstays). Cards with no rank in the source aren't matched —
+    # they're either not in the tournament corpus or the source hasn't
+    # refreshed yet.
+    if field == 'edhtop16_top':
+        if enrichment_data is None:
+            return False
+        rank = enrichment_data.get("edhtop16_top_rank")
+        if rank is None:
+            return False
         cmp_op = '<=' if op in (':', '=') else op
         return _compare(rank, cmp_op, val)
 

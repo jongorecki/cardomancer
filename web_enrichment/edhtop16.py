@@ -170,11 +170,18 @@ class EDHTop16Source(EnrichmentSource):
         _emit_progress(emit, 3, 4,
                        f"Writing {len(rows)} cEDH staples to DB …")
 
+        # Global rankings for the `edhtop16-top:N` query predicate.
+        # Sourced from the same card_counts as the staples write — every
+        # card the source saw, ranked by inclusion%, regardless of
+        # whether it crossed the staple threshold.
+        rank_rows = self._compute_rankings(card_counts, total_entries)
+
         conn = enrichment_db.get_connection()
         rows_changed = 0
         coverage_pct = 0.0
         try:
             rows_changed = self._write(conn, rows)
+            rows_changed += self._write_rankings(conn, rank_rows)
             total_stored = conn.execute(
                 "SELECT COUNT(*) FROM staples WHERE source='edhtop16'"
             ).fetchone()[0]
@@ -377,6 +384,58 @@ class EDHTop16Source(EnrichmentSource):
                 rows,
             )
         return len(rows)
+
+    # -- Global rankings (Phase 3 follow-on, edhtop16-top:N predicate) -------
+
+    @staticmethod
+    def _compute_rankings(card_counts: dict[str, int],
+                          total_entries: int) -> list[dict]:
+        """Build a global cEDH ranking from per-card tournament-deck counts.
+
+        score = deck_count / total_entries (the inclusion percentage in
+        the six-month tournament corpus). Sort DESC, deterministic
+        tiebreak on oracle_id, assign ranks 1..N.
+
+        Cards seen in zero tournament decks aren't ranked — same
+        contract as edhrec-top.
+        """
+        ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        denom = max(1, int(total_entries or 0))
+        scored = []
+        for oid, count in card_counts.items():
+            if not oid or not count:
+                continue
+            scored.append((oid, count / denom))
+        scored.sort(key=lambda kv: (-kv[1], kv[0]))
+        return [
+            {
+                "oracle_id": oid,
+                "source": "edhtop16",
+                "rank": rank,
+                "score": float(score),
+                "last_updated": ts,
+            }
+            for rank, (oid, score) in enumerate(scored, start=1)
+        ]
+
+    @staticmethod
+    def _write_rankings(conn, rank_rows: list[dict]) -> int:
+        """Atomically replace this source's rank rows. Other sources'
+        rows (notably edhrec) stay untouched."""
+        if not rank_rows:
+            return 0
+        with conn:
+            conn.execute(
+                "DELETE FROM card_rankings WHERE source = 'edhtop16'"
+            )
+            conn.executemany(
+                """INSERT INTO card_rankings
+                       (oracle_id, source, rank, score, last_updated)
+                   VALUES (:oracle_id, :source, :rank, :score,
+                           :last_updated)""",
+                rank_rows,
+            )
+        return len(rank_rows)
 
 
 def _is_basic_land(type_line: str) -> bool:
