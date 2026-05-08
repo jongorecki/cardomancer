@@ -1,10 +1,13 @@
-"""Re-fit foil_detect weights using session 51 foils + session 44 nonfoils + session 58 mixed verdicts.
+"""Re-fit foil_detect weights using labeled session data.
 
-Session 51: 58 scans, all confirmed foil under new lighting (user-labeled).
-Session 44: 401 scans under SAME new lighting, user confirmed "same lighting".
-    Treated as nonfoil here (foil rate in a casual collection is ~3-5% so label
-    noise is small). Will flag extreme-signal session 44 rows at the end so the
-    user can check whether any are actually foil (and should be relabeled).
+Session 59: 156 confirmed foils + 861 confirmed nonfoils (2026-05-07 retune).
+    New large labeled corpus post-Level-4 retune (2026-04-27).
+
+Prior sessions kept for historical comparison:
+  Session 51: 58 confirmed foils under new lighting
+  Session 55: 46 confirmed foils (subset of 51)
+  Session 44: 401 scans (with 12 relabeled foils)
+  Session 58: 926-card mixed (131 user-reviewed borderline verdicts)
 
 Output:
   - Printed distributions for both classes
@@ -55,6 +58,12 @@ SESSION_44_RELABEL_AS_FOIL = {32, 105, 44, 23, 188, 25, 144, 52, 82, 1,
 SESSION_MIXED = 58
 SESSION_MIXED_DIR = r"D:\Card_Sorter\Scripts\scan_logs\session_20260424_132954\card_crops"
 SESSION_MIXED_VERDICTS = r"D:\Card_Sorter\Scripts\foil_verdicts.csv"
+
+# Session 59 (2026-05-06 production) — large corpus of 1017 labeled scans
+# collected post-Level-4 retune (156 foils + 861 nonfoils). Labels come from
+# the is_foil column in scan_history table, freshly labeled in production.
+SESSION_59 = 59
+SESSION_59_DIR = r"D:\Card_Sorter\Scripts\scan_logs\session_20260428_131551\card_crops"
 
 # ---------------------------------------------------------------------------
 
@@ -189,6 +198,34 @@ s58_nonfoil = [r for r in s58 if r["label"] == 0]
 print(f"  {len(s58)} scorable samples: {len(s58_foil)} foils + {len(s58_nonfoil)} nonfoils")
 foil    = foil    + s58_foil
 nonfoil = nonfoil + s58_nonfoil
+
+# Load session 59 (new large corpus with database labels)
+print("Collecting session 59 signals (production labeled data, 2026-05-06)...")
+s59 = collect_signals(SESSION_59, SESSION_59_DIR, label=None)  # will split by is_foil
+# Separate by label from database
+c = sqlite3.connect(r"D:\Card_Sorter\Scripts\collection.db")
+cur = c.cursor()
+cur.execute("""
+    SELECT scan_num, is_foil FROM scan_history WHERE session_id = ?
+""", (SESSION_59,))
+s59_labels = {row[0]: row[1] for row in cur.fetchall()}
+c.close()
+
+s59_foil = []
+s59_nonfoil = []
+for sample in s59:
+    label = s59_labels.get(sample["scan"])
+    if label == 1:
+        sample["label"] = 1
+        s59_foil.append(sample)
+    elif label == 0:
+        sample["label"] = 0
+        s59_nonfoil.append(sample)
+    # Skip samples without a label (label is None)
+
+print(f"  {len(s59_foil) + len(s59_nonfoil)} scorable samples: {len(s59_foil)} foils + {len(s59_nonfoil)} nonfoils")
+foil    = foil    + s59_foil
+nonfoil = nonfoil + s59_nonfoil
 
 print(f"Total training set: {len(foil)} foils + {len(nonfoil)} nonfoils")
 
