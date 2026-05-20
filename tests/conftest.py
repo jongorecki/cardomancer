@@ -79,3 +79,30 @@ def isolate_env(monkeypatch):
         "TCGPLAYER_CLIENT_SECRET",
     ):
         monkeypatch.delenv(key, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _enable_flask_testing():
+    """Mark the Flask app as TESTING for the lifetime of every test.
+
+    The _csrf_origin_check before_request hook in web_server.py bypasses
+    its Origin/Referer check when app.config['TESTING'] is truthy.
+    Without this, every client.post() in the integration tests would
+    eat a 403 because the test client doesn't set Origin/Referer or
+    X-Requested-With. The CSRF middleware has its own dedicated test
+    file that toggles TESTING off explicitly to exercise the rejection
+    paths.
+    """
+    # Import lazily so importing web_server's heavy dependencies isn't
+    # forced on tests that don't touch the Flask app.
+    try:
+        import web_server
+    except Exception:
+        yield
+        return
+    prev = web_server.app.config.get('TESTING', False)
+    web_server.app.config['TESTING'] = True
+    try:
+        yield
+    finally:
+        web_server.app.config['TESTING'] = prev

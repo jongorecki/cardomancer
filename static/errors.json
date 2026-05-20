@@ -208,6 +208,13 @@
     "severity": "warning"
   },
 
+  "csrf_failed": {
+    "title": "Request blocked for safety",
+    "what_happened": "Cardomancer received a request that didn't appear to come from its own UI. This usually means the page is stale or a different tab tried to talk to the kiosk.",
+    "what_to_try": "Reload the page and try again. If you see this repeatedly, mention this code (csrf_failed) in a support note.",
+    "severity": "warning"
+  },
+
   "_default": {
     "title": "Something went wrong",
     "what_happened": "Cardomancer hit an error it doesn't have a friendly explanation for yet.",

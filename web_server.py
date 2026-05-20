@@ -182,8 +182,161 @@ _setup_logging()
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'card-sorter-secret'
+
+
+# ---------------------------------------------------------------------------
+# SECRET_KEY — used by Flask sessions and CSRF token signing.
+# ---------------------------------------------------------------------------
+# Priority order:
+#   1. $CARDOMANCER_SECRET_KEY environment variable (ops-controlled).
+#   2. ~/.cardomancer_secret_key file generated on first run (per-install
+#      persistent random key).
+#   3. Falls back to in-process random key if disk write fails (sessions
+#      survive within a single process but are invalidated on restart).
+#
+# Anything is better than the prior hardcoded 'card-sorter-secret' which
+# is identical across every install and recoverable from the repo.
+def _load_or_create_secret_key():
+    env_key = os.environ.get('CARDOMANCER_SECRET_KEY')
+    if env_key:
+        return env_key
+    key_path = os.path.join(os.path.expanduser('~'),
+                            '.cardomancer_secret_key')
+    try:
+        if os.path.isfile(key_path):
+            with open(key_path, 'r', encoding='utf-8') as f:
+                stored = f.read().strip()
+            if stored:
+                return stored
+        import secrets
+        new_key = secrets.token_hex(32)
+        try:
+            with open(key_path, 'w', encoding='utf-8') as f:
+                f.write(new_key)
+            # Best-effort chmod 600 so other users on the box can't read.
+            try:
+                os.chmod(key_path, 0o600)
+            except Exception:
+                pass
+            logger.info("Generated new SECRET_KEY at %s", key_path)
+        except Exception:
+            logger.warning("Could not persist SECRET_KEY to %s; "
+                           "using ephemeral key for this process", key_path)
+        return new_key
+    except Exception:
+        # Last-resort fallback. Sessions/cookies will be invalidated
+        # on restart but the app still boots.
+        import secrets
+        return secrets.token_hex(32)
+
+
+app.config['SECRET_KEY'] = _load_or_create_secret_key()
+
+# Session cookie hardening. SameSite=Lax (not Strict) so the cookie
+# still rides on top-level GET navigations from external links (the
+# kiosk operator clicking a bookmark) while blocking the cross-site
+# POST that CSRF needs. HTTPOnly so JS can't read the cookie value.
+# Secure stays False because Cardomancer ships on LAN HTTP by default;
+# operators on HTTPS can flip this via env var.
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SECURE'] = (
+    os.environ.get('CARDOMANCER_HTTPS') == '1'
+)
+
 socketio = SocketIO(app, async_mode='threading', cors_allowed_origins='*')
+
+
+# ---------------------------------------------------------------------------
+# CSRF protection — Origin/Referer check on state-changing requests.
+# ---------------------------------------------------------------------------
+# We don't currently have user accounts to attack via cross-site request
+# forgery, but the kiosk model means an operator may have other tabs
+# open while the Cardomancer UI is also open in the browser. A malicious
+# site in another tab could otherwise POST to /api/sort/start or /api/
+# estop and Cardomancer would obey. This middleware blocks that.
+#
+# Strategy: on POST/PUT/DELETE/PATCH, require either:
+#   - the request was issued by our own JS (it sets
+#     X-Requested-With: XMLHttpRequest, which cross-origin browser
+#     requests cannot set without a CORS preflight that we never
+#     answer), OR
+#   - the Origin or Referer header matches the request host (so a
+#     classic form POST from our own UI still works even without the
+#     header).
+#
+# Socket.IO traffic is exempt — it uses a long-lived connection that
+# the upstream auth handler already gates.
+
+_CSRF_SAFE_METHODS = {'GET', 'HEAD', 'OPTIONS'}
+# Endpoints that legitimately accept cross-origin POSTs and so opt out
+# of the Origin check. Keep this list short and audited.
+_CSRF_EXEMPT_PATHS = {
+    '/socket.io/',  # SocketIO has its own connection-level gating
+}
+
+
+def _is_csrf_exempt(path: str) -> bool:
+    """Allow any path prefixed with one of the exempt entries."""
+    return any(path.startswith(p) for p in _CSRF_EXEMPT_PATHS)
+
+
+def _same_origin(header_value: str, host_url: str) -> bool:
+    """True if `header_value` (an Origin or Referer URL) targets the
+    same scheme + host as `host_url` (Flask's request.host_url)."""
+    if not header_value or not host_url:
+        return False
+    # request.host_url includes the trailing slash and scheme; trim
+    # it down to scheme://host[:port] for prefix matching.
+    base = host_url.rstrip('/')
+    return header_value == base or header_value.startswith(base + '/')
+
+
+@app.before_request
+def _csrf_origin_check():
+    """Reject state-changing requests whose Origin/Referer doesn't
+    match the kiosk's own host."""
+    # Bypass when the Flask test client is driving — pytest fixtures
+    # don't set Origin / Referer / X-Requested-With by default, and
+    # forcing every test to wire them up would yield no real coverage
+    # signal. The TESTING flag is set by the test fixture.
+    if app.config.get('TESTING'):
+        return None
+    method = request.method.upper()
+    if method in _CSRF_SAFE_METHODS:
+        return None
+    if _is_csrf_exempt(request.path):
+        return None
+
+    # 1. Custom-header fingerprint: only same-origin JS can set this
+    #    (cross-origin browsers need a CORS preflight that we don't
+    #    serve, so this header reliably proves the request came from
+    #    our own UI). This is the cheap fast path.
+    xrw = request.headers.get('X-Requested-With', '')
+    if xrw == 'XMLHttpRequest':
+        return None
+
+    # 2. Origin / Referer match. Origin is set by browsers on POST
+    #    even in modern browsers; Referer is set when the user
+    #    navigates from our own page. Both are spoof-resistant by
+    #    same-origin policy.
+    origin = request.headers.get('Origin', '')
+    referer = request.headers.get('Referer', '')
+    if _same_origin(origin, request.host_url):
+        return None
+    if _same_origin(referer, request.host_url):
+        return None
+
+    logger.warning(
+        "CSRF: rejected %s %s — origin=%r referer=%r xrw=%r",
+        method, request.path, origin, referer, xrw,
+    )
+    return jsonify({
+        'error': 'csrf_failed',
+        'message': ('This request was blocked because it did not '
+                    'come from the Cardomancer UI. Reload the page '
+                    'and try again.'),
+    }), 403
 
 # Wire up emit callbacks
 worker.set_emit(lambda event, data: socketio.emit(event, data))
