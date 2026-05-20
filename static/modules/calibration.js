@@ -366,7 +366,12 @@ async function loadSourceBinsStatus() {
         const data = await apiGet('/api/calibration/source-bins');
         const panel = document.getElementById('source-bins-status');
         if (!data.source_bins || data.source_bins.length === 0) {
-            panel.innerHTML = '<p class="small text-muted">No calibration data</p>';
+            renderEmptyState(panel, {
+                sigil: 'bin',
+                title: 'No calibration data yet.',
+                body: 'Run the ArUco sweep to detect source bins.',
+                variant: 'compact',
+            });
             return;
         }
         let html = '';

@@ -59,14 +59,21 @@
                         <div class="card">
                             <div class="card-header">Hardware</div>
                             <div class="card-body">
-                                <p>Serial Port: <strong>COM3</strong> | Status: <span id="hw-status">Disconnected</span></p>
+                                <p class="small mb-2">
+                                    Serial port: <strong>COM3</strong>
+                                    &middot; Status: <span id="hw-status">Disconnected</span>
+                                </p>
                                 <div class="btn-group">
                                     <button class="btn btn-success btn-sm" onclick="apiPost('/api/connect')">Connect</button>
                                     <button class="btn btn-secondary btn-sm" onclick="apiPost('/api/disconnect')">Disconnect</button>
                                 </div>
                                 <hr>
+                                <p class="small text-muted mb-2">
+                                    Home the axes after every power cycle so motion
+                                    coordinates are anchored to the endstops.
+                                </p>
                                 <div class="btn-group">
-                                    <button class="btn btn-outline-primary btn-sm" onclick="apiPost('/api/home')">Home All</button>
+                                    <button class="btn btn-outline-primary btn-sm" onclick="apiPost('/api/home')">Home all</button>
                                     <button class="btn btn-outline-primary btn-sm" onclick="apiPost('/api/home/x')">Home X</button>
                                     <button class="btn btn-outline-primary btn-sm" onclick="apiPost('/api/home/z')">Home Z</button>
                                 </div>
@@ -77,10 +84,13 @@
                         <div class="card">
                             <div class="card-header">Camera</div>
                             <div class="card-body">
-                                <p>Status: <span id="cam-status">Inactive</span> | FPS: <span id="cam-fps">--</span></p>
+                                <p class="small mb-2">
+                                    Status: <span id="cam-status">Inactive</span>
+                                    &middot; FPS: <span id="cam-fps">--</span>
+                                </p>
                                 <div class="btn-group">
-                                    <button class="btn btn-success btn-sm" onclick="apiPost('/api/camera/start')">Start Camera</button>
-                                    <button class="btn btn-secondary btn-sm" onclick="apiPost('/api/camera/stop')">Stop Camera</button>
+                                    <button class="btn btn-success btn-sm" onclick="apiPost('/api/camera/start')">Start camera</button>
+                                    <button class="btn btn-secondary btn-sm" onclick="apiPost('/api/camera/stop')">Stop camera</button>
                                 </div>
                                 <div class="mt-2">
                                     <img id="dashboard-preview" src="" class="img-fluid" style="max-height:200px; display:none;">
@@ -256,7 +266,15 @@
                                 <div class="mb-2">
                                     <label class="form-label small">Source Bins Status</label>
                                     <div id="source-bins-status">
-                                        <p class="small text-muted">No calibration data</p>
+                                        <div class="cm-empty-state cm-empty-compact">
+                                            <img class="cm-empty-sigil"
+                                                 src="/static/branding/sigils/sigil-bin.svg"
+                                                 alt="" width="40" height="40" aria-hidden="true">
+                                            <div class="cm-empty-title">No calibration data yet.</div>
+                                            <p class="cm-empty-body small text-muted mb-0">
+                                                Run the ArUco sweep to detect source bins.
+                                            </p>
+                                        </div>
                                     </div>
                                 </div>
                                 <hr>
@@ -372,9 +390,16 @@
                                     future detector tuning can use them as ground truth.
                                 </p>
                                 <div id="detection-review-body">
-                                    <p class="text-muted text-center py-4" id="detection-review-empty">
-                                        Nothing to review in this queue.
-                                    </p>
+                                    <div class="cm-empty-state cm-empty-compact" id="detection-review-empty">
+                                        <img class="cm-empty-sigil"
+                                             src="/static/branding/sigils/sigil-eye.svg"
+                                             alt="" width="48" height="48" aria-hidden="true">
+                                        <div class="cm-empty-title">Nothing to review in this queue.</div>
+                                        <p class="cm-empty-body small text-muted mb-0">
+                                            Items appear here once detector confidence
+                                            falls below the review threshold.
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -415,16 +440,20 @@
                             <div class="card">
                                 <div class="card-header">Test Run (Simulation)</div>
                                 <div class="card-body">
-                                    <p class="small text-muted">Simulate sorting random cards without hardware. Uses the sort mode configured on the Sort Session tab.</p>
+                                    <p class="small text-muted">
+                                        Simulates sorting random cards without engaging hardware.
+                                        Uses the sort mode configured on the Sort tab &mdash; useful
+                                        for sanity-checking a bin layout before a real run.
+                                    </p>
                                     <div class="mb-2">
-                                        <label class="form-label">Number of Cards</label>
+                                        <label class="form-label">Number of cards</label>
                                         <input type="number" class="form-control form-control-sm" id="sim-card-count" value="10" min="1" max="1000">
                                     </div>
                                     <div class="mb-2">
-                                        <span class="form-label">Sort Mode:</span>
+                                        <span class="form-label">Sort mode:</span>
                                         <strong id="sim-mode-display">Color</strong>
                                     </div>
-                                    <button class="btn btn-primary btn-sm" onclick="startSimulation()">Run Simulation</button>
+                                    <button class="btn btn-primary btn-sm" onclick="startSimulation()">Run simulation</button>
                                     <button class="btn btn-secondary btn-sm" onclick="apiPost('/api/sim/stop')">Stop</button>
                                     <div id="sim-progress" class="mt-2 small"></div>
                                 </div>
@@ -432,7 +461,15 @@
                             <div class="card mt-2">
                                 <div class="card-header">Simulation Results</div>
                                 <div class="card-body p-2" id="sim-results" style="max-height:300px; overflow-y:auto;">
-                                    <p class="text-muted small">No results yet</p>
+                                    <div class="cm-empty-state cm-empty-compact">
+                                        <img class="cm-empty-sigil"
+                                             src="/static/branding/sigils/sigil-spiral.svg"
+                                             alt="" width="40" height="40" aria-hidden="true">
+                                        <div class="cm-empty-title">No results yet.</div>
+                                        <p class="cm-empty-body small text-muted mb-0">
+                                            Run a simulation to see per-card outcomes.
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
                         </div>

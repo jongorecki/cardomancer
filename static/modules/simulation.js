@@ -13,7 +13,7 @@ function startSimulation() {
     const payload = { card_count: count, config_lines };
 
     apiPost('/api/sim/test-run', payload);
-    document.getElementById('sim-results').innerHTML = '<p class="text-muted small">Running...</p>';
+    renderSkeleton('sim-results', { rows: 4 });
     document.getElementById('sim-progress').textContent = `0/${count} cards sorted`;
     // Start polling as fallback for SocketIO events
     _startSimPolling();
@@ -68,7 +68,12 @@ function _stopSimPolling() {
 function _renderSimResults(results) {
     const panel = document.getElementById('sim-results');
     if (!results.length) {
-        panel.innerHTML = '<p class="text-muted small">No results</p>';
+        renderEmptyState(panel, {
+            sigil: 'spiral',
+            title: 'No results yet.',
+            body: 'Run a simulation to see per-card outcomes.',
+            variant: 'compact',
+        });
         return;
     }
     let html = '<table class="table table-sm"><thead><tr><th>Card</th><th>Set</th><th>Bin</th></tr></thead><tbody>';
