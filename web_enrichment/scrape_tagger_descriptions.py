@@ -129,8 +129,9 @@ STORAGE_STATE_PATH = TMP_DIR / "scryfall_storage_state.json"
 # changes their markup. Tried in order; the first one that returns
 # non-empty text wins.
 DESCRIPTION_SELECTORS = [
-    # TODO: fill in via --inspect on a known tag. Common candidates
-    # to try first:
+    # First-pass selectors based on common Tagger markup. If Tagger
+    # changes their templates, re-run `--inspect <tag-slug>` to find
+    # the new node and prepend the new selector here.
     'div[data-testid="tag-description"]',
     'section.tag-description',
     'div.tag-description',

@@ -1,7 +1,8 @@
 {
   "_meta": {
-    "version": 1,
-    "doc": "User-facing error catalog. Add an entry for any error code returned by the backend so the frontend can show a friendly toast instead of a raw code. Severity drives the visual treatment: 'info' (blue), 'warning' (yellow), 'error' (red). Unknown codes fall back to the raw message; that's a signal to add an entry here."
+    "version": 2,
+    "doc": "User-facing error catalog. Add an entry for any error code returned by the backend so the frontend can show a friendly toast instead of a raw code. Severity drives the visual treatment: 'info' (blue), 'warning' (yellow), 'error' (red). Unknown codes fall back to the raw message; that's a signal to add an entry here.",
+    "coverage_notes": "v2 added: worker_busy, not_sorting, no_dest_bin, bin_not_calibrated, bundle_failed, name_required, bad_name, not_found, load_failed, no_saved_setup, no_setup, aborted, at_limit. Aspirational entries (kept but not yet raised by any code path): no_frame_available, homing_failed, config_not_found — wire these in when the corresponding failure mode becomes a real backend response."
   },
 
   "network": {
@@ -114,6 +115,97 @@
     "what_happened": "Cardomancer needed a session ID to complete this action but didn't get one.",
     "what_to_try": "Reload the page and try again. If this keeps happening, mention this code (missing_session_id) in your support note.",
     "severity": "error"
+  },
+
+  "worker_busy": {
+    "title": "Cardomancer is busy",
+    "what_happened": "The worker is already handling another action and won't accept a new one until it finishes.",
+    "what_to_try": "Wait for the current operation to complete, then retry.",
+    "severity": "info"
+  },
+
+  "not_sorting": {
+    "title": "Not currently sorting",
+    "what_happened": "This action only makes sense during an active sort session, and Cardomancer isn't sorting right now.",
+    "what_to_try": "Start a sort from the Sort tab first.",
+    "severity": "info"
+  },
+
+  "no_dest_bin": {
+    "title": "No destination bin matched",
+    "what_happened": "The identified card didn't match any of your bin queries, and no overflow bin is configured.",
+    "what_to_try": "Add an overflow bin (e.g. a bin with query \"*\") to your sort preset, or extend the existing queries to cover the gap.",
+    "severity": "warning"
+  },
+
+  "bin_not_calibrated": {
+    "title": "Bin position not calibrated",
+    "what_happened": "Cardomancer doesn't have an X position recorded for that bin yet.",
+    "what_to_try": "Run the ArUco calibration sweep from Setup so every active bin has a position.",
+    "severity": "warning"
+  },
+
+  "bundle_failed": {
+    "title": "Support bundle could not be built",
+    "what_happened": "Cardomancer hit an error while collecting logs and config for the support bundle.",
+    "what_to_try": "Try again. If it keeps failing, copy the technical details below and grab the most recent log file from logs/card_sorter.log manually.",
+    "severity": "error"
+  },
+
+  "name_required": {
+    "title": "Name is required",
+    "what_happened": "Cardomancer needed a name for that save and didn't get one.",
+    "what_to_try": "Type a name in the field and try again.",
+    "severity": "info"
+  },
+
+  "bad_name": {
+    "title": "Name contains invalid characters",
+    "what_happened": "Names are limited to letters, digits, spaces, and the usual punctuation. One of the characters you used isn't allowed.",
+    "what_to_try": "Try a simpler name — letters, digits, hyphens, underscores.",
+    "severity": "info"
+  },
+
+  "not_found": {
+    "title": "Item not found",
+    "what_happened": "Cardomancer looked for that item by name but couldn't find a match.",
+    "what_to_try": "Refresh the list and try again. If it should be there, mention this in a support note.",
+    "severity": "warning"
+  },
+
+  "load_failed": {
+    "title": "Could not load that setup",
+    "what_happened": "Cardomancer found the saved setup file but couldn't read it cleanly.",
+    "what_to_try": "Try a different saved setup, or re-run calibration to create a fresh one.",
+    "severity": "error"
+  },
+
+  "no_saved_setup": {
+    "title": "No saved setup yet",
+    "what_happened": "Cardomancer doesn't have a saved hardware setup to reload — nothing has been saved on this machine.",
+    "what_to_try": "Run the ArUco calibration first; the result is auto-saved as the \"last setup\".",
+    "severity": "info"
+  },
+
+  "no_setup": {
+    "title": "No hardware setup loaded",
+    "what_happened": "There's no calibrated hardware setup in memory, so Cardomancer can't save one.",
+    "what_to_try": "Run the ArUco calibration first, then save the result.",
+    "severity": "warning"
+  },
+
+  "aborted": {
+    "title": "Action was cancelled",
+    "what_happened": "Someone (or something) aborted this operation mid-flight.",
+    "what_to_try": "Run it again if you didn't mean to cancel.",
+    "severity": "info"
+  },
+
+  "at_limit": {
+    "title": "Tuning step would exceed safe range",
+    "what_happened": "That step would push the drop height past its safe minimum or maximum.",
+    "what_to_try": "Use a smaller step, or save the current value and re-tune from a different starting point.",
+    "severity": "warning"
   },
 
   "_default": {
