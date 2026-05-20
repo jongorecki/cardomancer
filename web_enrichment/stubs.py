@@ -124,13 +124,13 @@ class CardKingdomBuylistStub(_StubSource):
         )
 
 
-class ScryfallPricesStub(_StubSource):
-    def __init__(self):
-        super().__init__(
-            "prices",
-            "Daily price refresh from Scryfall bulk.",
-        )
-
+# NOTE: The Scryfall price/bulk refresh is intentionally NOT exposed
+# as an EnrichmentSource. It's an operator-triggered slow rebuild
+# (downloads ~150MB of card data, optionally images + hashes), not a
+# regular cron-style refresh. It lives under the "Card data" card in
+# the Settings modal instead, wired through /api/database/* endpoints.
+# Keeping it out of the scheduler avoids the misleading "prices"
+# entry in the Data & Sources panel.
 
 ALL_STUBS: dict[str, type[_StubSource]] = {
     "tagger":     TaggerStub,
@@ -138,5 +138,4 @@ ALL_STUBS: dict[str, type[_StubSource]] = {
     "edhtop16":   EDHTop16Stub,
     "spellbook":  SpellbookStub,
     "buylist_ck": CardKingdomBuylistStub,
-    "prices":     ScryfallPricesStub,
 }

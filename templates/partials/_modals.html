@@ -1,66 +1,10 @@
-            <!-- ============================================================ -->
-            <!-- DATABASE MODAL (opened from Dashboard "Database…" button) -->
-            <!-- ============================================================ -->
-            <div class="modal fade" id="database-modal" tabindex="-1" aria-hidden="true">
-              <div class="modal-dialog modal-xl modal-dialog-scrollable">
-                <div class="modal-content">
-                  <div class="modal-header">
-                    <h5 class="modal-title">Database</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                  </div>
-                  <div class="modal-body">
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="card">
-                            <div class="card-header">Current Database</div>
-                            <div class="card-body" id="db-info">
-                                <div class="cm-skeleton">
-                                    <div class="cm-skeleton-line" style="width:85%"></div>
-                                    <div class="cm-skeleton-line" style="width:70%"></div>
-                                    <div class="cm-skeleton-line" style="width:92%"></div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="card">
-                            <div class="card-header">Update Database</div>
-                            <div class="card-body">
-                                <button class="btn btn-primary btn-sm" onclick="checkDbUpdate()">Check for Updates</button>
-                                <div id="db-update-check" class="mt-2 small"></div>
-                                <hr>
-                                <button class="btn btn-success btn-sm"
-                                        onclick="apiPost('/api/database/refresh-prices')"
-                                        id="btn-db-refresh-prices"
-                                        title="Download latest bulk data and refresh prices only. Fast (~1 min) — skips image download and hash regeneration.">
-                                    Refresh Prices Only
-                                </button>
-                                <button class="btn btn-warning btn-sm"
-                                        onclick="apiPost('/api/database/update')"
-                                        id="btn-db-update"
-                                        title="Download bulk data, download new images, regenerate both hash DBs. Slow (30+ min) — only needed when new sets release.">
-                                    Run Full Update
-                                </button>
-                                <button class="btn btn-secondary btn-sm" onclick="apiPost('/api/database/update/stop')">Cancel</button>
-                                <div class="small text-muted mt-2">
-                                    <strong>Refresh Prices Only</strong> downloads the latest Scryfall bulk data and reloads card info (name, set, prices, text). Skips image download + hash regen. Fast &mdash; use this when prices are stale.
-                                    <br>
-                                    <strong>Run Full Update</strong> also downloads new card images and rebuilds both hash databases. Slow &mdash; only needed when new sets have been released.
-                                </div>
-                                <div id="db-update-progress" class="mt-2">
-                                    <div class="progress" style="display:none;">
-                                        <div id="db-progress-bar" class="progress-bar" role="progressbar" style="width:0%"></div>
-                                    </div>
-                                    <p class="small mt-1" id="db-progress-message"></p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                  </div><!-- /.modal-body -->
-                </div><!-- /.modal-content -->
-              </div><!-- /.modal-dialog -->
-            </div><!-- /#database-modal -->
+            <!-- The standalone #database-modal was folded into the      -->
+            <!-- Settings modal's "Card data (Scryfall)" card so every    -->
+            <!-- remote-data action lives in one place. The same          -->
+            <!-- elements (#db-info, #db-update-check, #db-progress-*,    -->
+            <!-- #btn-db-refresh-prices, #btn-db-update) now live there;  -->
+            <!-- loadDbInfo() / checkDbUpdate() / socket progress handlers -->
+            <!-- continue to work unchanged.                              -->
             <!-- ============================================================ -->
             <!-- CALIBRATION WIZARD MODAL (Phase 4 item 4.22)                 -->
             <!-- Orchestrates existing calibration endpoints in a 7-step flow -->

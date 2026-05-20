@@ -39,7 +39,6 @@ from config import SCRIPT_DIR, SORT_CONFIGS_DIR, SORTING_MODES, SCAN_LOGS_DIR
 import enrichment_db
 from web_enrichment.repo import EnrichmentRepo
 from web_enrichment.scheduler import RefreshScheduler
-from web_enrichment.stubs import ALL_STUBS
 from web_enrichment.spellbook import SpellbookSource
 from web_enrichment.edhrec import EDHRECSource
 from web_enrichment.edhtop16 import EDHTop16Source
@@ -384,15 +383,13 @@ try:
 except Exception as _ck_err:
     logging.error("Could not register buylist_ck source: %s", _ck_err)
 
-# Remaining stub sources (prices only — buylist_ck is now real)
-_STUB_ONLY = {"prices"}
-for _stub_name, _stub_cls in ALL_STUBS.items():
-    if _stub_name in _STUB_ONLY:
-        try:
-            enrichment_scheduler.register(_stub_cls(), cron="daily")
-        except Exception as _stub_err:
-            logging.error("Could not register stub source %s: %s",
-                          _stub_name, _stub_err)
+# Note: every prior "stub" source now has a real implementation registered
+# above. The Scryfall bulk + prices refresh path is wired through the
+# /api/database/* endpoints (see db_updater + the Card data card in the
+# Settings modal) rather than through the enrichment scheduler, because
+# it's an operator-triggered slow rebuild rather than a daily cron job.
+# Keeping it out of the scheduler avoids the misleading "prices" entry
+# in the Data & Sources panel that used to do nothing.
 
 
 # =========================================================================

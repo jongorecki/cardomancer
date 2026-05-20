@@ -55,20 +55,76 @@
                     </div>
 
                     <!-- ============================================== -->
-                    <!-- Database                                       -->
+                    <!-- Card data (Scryfall) — merged in from the      -->
+                    <!-- former standalone #database-modal. Surfaces    -->
+                    <!-- current database stats + price/full-rebuild    -->
+                    <!-- actions next to the other data sources so      -->
+                    <!-- everything that pulls remote data lives in     -->
+                    <!-- one place.                                     -->
                     <!-- ============================================== -->
                     <div class="card mb-3">
-                        <div class="card-header">Database</div>
+                        <div class="card-header">Card data (Scryfall)</div>
                         <div class="card-body">
                             <p class="small text-muted mb-2">
-                                Inspect the local Scryfall card database, refresh
-                                prices, or rebuild perceptual hashes.
+                                The local Scryfall card database powers
+                                card lookup, the art-hash recognizer, and
+                                the DINOv2 embedding matcher.
                             </p>
-                            <button class="btn btn-outline-secondary"
-                                    data-bs-toggle="modal"
-                                    data-bs-target="#database-modal">
-                                Open card database&hellip;
-                            </button>
+                            <div class="row g-3">
+                                <!-- Current stats -->
+                                <div class="col-md-6">
+                                    <h3 class="h6 mb-2">Current database</h3>
+                                    <div id="db-info" class="small">
+                                        <div class="cm-skeleton">
+                                            <div class="cm-skeleton-line" style="width:85%"></div>
+                                            <div class="cm-skeleton-line" style="width:70%"></div>
+                                            <div class="cm-skeleton-line" style="width:92%"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- Update actions -->
+                                <div class="col-md-6">
+                                    <h3 class="h6 mb-2">Update</h3>
+                                    <div class="d-flex flex-wrap gap-2 mb-2">
+                                        <button class="btn btn-outline-primary btn-sm"
+                                                onclick="checkDbUpdate()">
+                                            Check for updates
+                                        </button>
+                                        <button class="btn btn-success btn-sm"
+                                                onclick="apiPost('/api/database/refresh-prices')"
+                                                id="btn-db-refresh-prices"
+                                                title="Download the latest Scryfall bulk data and refresh prices only. Fast (~1 min). Skips image download and hash regeneration.">
+                                            Refresh prices
+                                        </button>
+                                        <button class="btn btn-warning btn-sm"
+                                                onclick="apiPost('/api/database/update')"
+                                                id="btn-db-update"
+                                                title="Download bulk data, download new images, rebuild the pHash + DINOv2 embedding databases. Slow (30+ min) — only needed when new sets release.">
+                                            Run full update
+                                        </button>
+                                        <button class="btn btn-outline-secondary btn-sm"
+                                                onclick="apiPost('/api/database/update/stop')">
+                                            Cancel
+                                        </button>
+                                    </div>
+                                    <div id="db-update-check" class="small mb-2"></div>
+                                    <p class="small text-muted mb-2">
+                                        <strong>Refresh prices</strong> downloads the latest
+                                        Scryfall bulk data and reloads card info. Fast &mdash;
+                                        use this when prices are stale.
+                                        <br>
+                                        <strong>Run full update</strong> additionally downloads
+                                        new card images and rebuilds the hash and embedding
+                                        databases. Slow &mdash; only needed when new sets release.
+                                    </p>
+                                    <div id="db-update-progress">
+                                        <div class="progress" style="display:none;">
+                                            <div id="db-progress-bar" class="progress-bar" role="progressbar" style="width:0%"></div>
+                                        </div>
+                                        <p class="small mt-1" id="db-progress-message"></p>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 

@@ -29,8 +29,18 @@ document.addEventListener('DOMContentLoaded', () => {
     // Add Card autocomplete
     _initAddCardAutocomplete();
 
-    document.querySelector('a[href="#tab-database"]')?.addEventListener('shown.bs.tab', () => {
+    // Database stats live inside the Settings modal under the "Card data
+    // (Scryfall)" card. Refresh them whenever the operator opens Settings
+    // (rather than on every page load — the call hits disk + counts
+    // images, which is non-trivial). Also refresh whenever a db update
+    // job finishes; that hookup lives in modules/socket.js.
+    document.getElementById('settings-modal')?.addEventListener('shown.bs.modal', () => {
         loadDbInfo();
+        // The other source of remote-data refresh status lives in the
+        // same panel; reload that too so the operator sees fresh state.
+        if (typeof loadEnrichmentSources === 'function') {
+            loadEnrichmentSources();
+        }
     });
 
     // Sort tab: refresh bin data and start the staging camera feed so the
