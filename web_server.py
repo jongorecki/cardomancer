@@ -247,7 +247,19 @@ for _stub_name, _stub_cls in ALL_STUBS.items():
 @app.route('/')
 def index():
     from config import APP_NAME
-    return render_template('index.html', app_name=APP_NAME)
+    from support_bundle import _git_head_sha
+    # Try to surface the current git short SHA in the About modal so the
+    # user (and any support bundle reader) can pin down which build is
+    # running. Falls back to "dev" when the worktree isn't a git checkout
+    # or when reading HEAD fails for any reason — defensive because this
+    # render path must never 500.
+    try:
+        version = _git_head_sha(SCRIPT_DIR) or 'dev'
+    except Exception:
+        version = 'dev'
+    return render_template(
+        'index.html', app_name=APP_NAME, app_version=version,
+    )
 
 
 # =========================================================================

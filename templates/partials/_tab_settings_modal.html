@@ -40,7 +40,12 @@
                                 Phase 1+.
                             </p>
                             <div id="enrichment-sources" class="small">
-                                <em class="text-muted">Loading&hellip;</em>
+                                <div class="cm-skeleton">
+                                    <div class="cm-skeleton-line" style="width:85%"></div>
+                                    <div class="cm-skeleton-line" style="width:70%"></div>
+                                    <div class="cm-skeleton-line" style="width:92%"></div>
+                                    <div class="cm-skeleton-line" style="width:60%"></div>
+                                </div>
                             </div>
                             <button class="btn btn-sm btn-outline-secondary mt-2"
                                     onclick="loadEnrichmentSources()">
@@ -92,15 +97,16 @@
 
                     <!-- ============================================== -->
                     <!-- Version / About                                -->
-                    <!-- TODO: wire #app-version to the real build tag  -->
-                    <!--       (e.g. git short SHA from a Flask jinja   -->
-                    <!--       context processor) when versioning lands. -->
+                    <!-- app_version is the git short SHA when this is  -->
+                    <!-- a git checkout, "dev" otherwise. Threaded in    -->
+                    <!-- via the index render context.                  -->
                     <!-- ============================================== -->
                     <div class="card">
                         <div class="card-header">About</div>
                         <div class="card-body">
                             <p class="small mb-0">
-                                {{ app_name }} &mdash; version: <span id="app-version">dev</span>
+                                {{ app_name }} &mdash; version:
+                                <code id="app-version">{{ app_version }}</code>
                             </p>
                         </div>
                     </div>

@@ -16,7 +16,17 @@ async function loadCollectionStats() {
             <p class="mb-0">Total value: <strong>$${(data.total_value || 0).toFixed(2)}</strong></p>
         `;
     } catch (e) {
-        document.getElementById('collection-stats').innerHTML = '<p class="text-muted">No database found</p>';
+        if (typeof renderEmptyState === 'function') {
+            renderEmptyState('collection-stats', {
+                sigil: 'card',
+                title: 'No database yet.',
+                body: 'Run a sort session to start logging cards into the collection.',
+                variant: 'compact',
+            });
+        } else {
+            document.getElementById('collection-stats').innerHTML =
+                '<p class="text-muted">No database found</p>';
+        }
     }
 }
 
