@@ -41,7 +41,7 @@ class ScanTracker:
         self._db_session_id = None
 
     def start_session(self, sort_mode=None, config_name=None, bin_count=None,
-                      extra_meta=None, notes=None):
+                      extra_meta=None, notes=None, config_text=None):
         """
         Start a new tracking session.
 
@@ -85,6 +85,7 @@ class ScanTracker:
             config_name=config_name,
             bin_count=bin_count,
             notes=notes,
+            config_text=config_text,
         )
 
         self.scans = []

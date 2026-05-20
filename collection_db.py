@@ -224,6 +224,16 @@ def _create_tables(conn):
         conn.execute("ALTER TABLE scan_history ADD COLUMN frame_effects TEXT")
         conn.commit()
 
+    # Migration: add config_text column to sessions table so the
+    # power-loss-resume flow can rehydrate sessions that were started
+    # from inline config_lines (no saved preset file). Before this
+    # column existed, only sessions with a config_name were resumable.
+    try:
+        conn.execute("SELECT config_text FROM sessions LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE sessions ADD COLUMN config_text TEXT")
+        conn.commit()
+
     conn.commit()
 
 
@@ -232,14 +242,23 @@ def _create_tables(conn):
 # ---------------------------------------------------------------------------
 
 def start_session(conn, sort_mode=None, config_name=None, bin_count=None,
-                  notes=None):
-    """Create a new session record. Returns the session_id."""
+                  notes=None, config_text=None):
+    """Create a new session record. Returns the session_id.
+
+    config_text is the raw multi-line config text that was used to
+    build the sort. Populated when start_session is driven from an
+    inline config (config_lines in web_worker); empty / None when
+    the session loads a saved preset by name (config_name carries
+    the filename instead). Stored so the power-loss-resume flow can
+    rehydrate inline-config sessions without needing the lines to
+    be on disk anywhere else.
+    """
     cursor = conn.execute(
         """INSERT INTO sessions (start_time, sort_mode, config_name,
-                                bin_count, notes)
-           VALUES (?, ?, ?, ?, ?)""",
+                                bin_count, notes, config_text)
+           VALUES (?, ?, ?, ?, ?, ?)""",
         (datetime.now().isoformat(), sort_mode, config_name,
-         bin_count, notes)
+         bin_count, notes, config_text)
     )
     conn.commit()
     session_id = cursor.lastrowid
@@ -304,7 +323,8 @@ def get_session_metadata(conn, session_id):
     """
     row = conn.execute(
         """SELECT id, start_time, end_time, sort_mode, config_name,
-                  bin_count, total_scans, recognized, unrecognized, notes
+                  bin_count, total_scans, recognized, unrecognized, notes,
+                  config_text
            FROM sessions WHERE id = ?""",
         (session_id,)
     ).fetchone()

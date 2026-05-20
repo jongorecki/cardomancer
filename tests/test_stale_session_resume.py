@@ -230,12 +230,74 @@ class ResumeWorkerCommandTests(unittest.TestCase):
         self.assertIsNotNone(err)
         self.assertIn('already in flight', err['message'])
 
-    def test_resume_with_missing_config_name_errors(self):
+    def test_resume_with_missing_config_name_and_no_text_errors(self):
+        """Sessions with neither config_name nor config_text can't be
+        resumed — both fields would have to be empty (i.e. pre-Phase-4-
+        followon sessions started inline before the config_text column
+        existed)."""
         sid = self._stale_session(config_name='')
         self.worker._cmd_resume_stale_session(session_id=sid)
         err = self._last_event('error')
         self.assertIsNotNone(err)
-        self.assertIn('inline configuration', err['message'].lower())
+        self.assertIn('no saved preset', err['message'].lower())
+
+    def test_resume_with_inline_config_text_succeeds(self):
+        """An inline-config session (no config_name, but config_text
+        populated by the Phase-4-followon plumbing) should rehydrate
+        successfully — the persisted lines are enough to rebuild the
+        SortConfig without any preset file on disk."""
+        inline_text = "\n".join([
+            "bins: 10",
+            "fallback: 10",
+            "bin1: c:r",
+            "bin2: c:u",
+            "bin3: c:b",
+        ])
+        sid = self.cdb.start_session(
+            self.conn, sort_mode='custom_file', config_name='',
+            bin_count=10, config_text=inline_text,
+        )
+        for i in range(3):
+            self.conn.execute(
+                """INSERT INTO scan_history
+                   (session_id, scan_num, timestamp, name, recognized, bin)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (sid, i, datetime.now().isoformat(),
+                 f'C{i}', 1, (i % 2) + 1)
+            )
+        self.conn.commit()
+
+        self.worker._state = 'idle'
+        self.worker._cmd_resume_stale_session(session_id=sid)
+
+        err = self._last_event('error')
+        self.assertIsNone(err, f"unexpected error: {err}")
+        resumed = self._last_event('stale_session_resumed')
+        self.assertIsNotNone(resumed)
+        self.assertEqual(resumed['session_id'], sid)
+        self.assertEqual(self.worker._state, 'paused')
+        self.assertIsNotNone(self.worker.sort_config_obj)
+        self.assertEqual(self.worker.sort_config_obj.bin_count, 10)
+
+    def test_resume_falls_back_to_text_when_preset_file_missing(self):
+        """If a session loaded a preset file at start time and that
+        file has been deleted since, but config_text was persisted as
+        a side-effect of the same plumbing change, the resume should
+        fall back to the lines instead of erroring."""
+        inline_text = "bins: 5\nfallback: 5\nbin1: c:w"
+        sid = self.cdb.start_session(
+            self.conn, sort_mode='custom_file',
+            config_name='deleted_preset_that_no_longer_exists.txt',
+            bin_count=5, config_text=inline_text,
+        )
+        self.conn.commit()
+        self.worker._state = 'idle'
+        self.worker._cmd_resume_stale_session(session_id=sid)
+        err = self._last_event('error')
+        self.assertIsNone(err, f"unexpected error: {err}")
+        resumed = self._last_event('stale_session_resumed')
+        self.assertIsNotNone(resumed)
+        self.assertEqual(self.worker._state, 'paused')
 
     def test_resume_with_missing_config_file_errors(self):
         sid = self._stale_session(config_name='nonexistent_preset.txt')

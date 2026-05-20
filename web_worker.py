@@ -1251,6 +1251,18 @@ class SortWorker:
         # Start tracker
         self.tracker = ScanTracker()
         config_name = config_file if config_file else None
+        # Capture the inline config_lines if this session was started from
+        # one (vs. a saved preset name). Persisted on the session row so
+        # the power-loss-resume flow can rehydrate the SortConfig even
+        # when no preset file exists for it. None when the session loads
+        # a named preset — config_name carries the file path instead.
+        if config_lines is not None:
+            if isinstance(config_lines, str):
+                _config_text = config_lines
+            else:
+                _config_text = '\n'.join(str(line) for line in config_lines)
+        else:
+            _config_text = None
         import gcode_control
         # Use sort config bin count if custom, otherwise use current hardware bin count
         if self.sort_config_obj:
@@ -1263,6 +1275,7 @@ class SortWorker:
             config_name=config_name,
             bin_count=bin_count,
             notes=notes,
+            config_text=_config_text,
         )
 
         self.state = 'sorting'
@@ -3210,35 +3223,58 @@ class SortWorker:
             })
             return
 
-        # 2. Rebuild sort_config_obj. Only saved-preset sessions can
-        #    resume; inline-config sessions don't have their query text
-        #    persisted anywhere on disk.
+        # 2. Rebuild sort_config_obj. Try config_name (a saved preset
+        #    file) first, fall back to config_text (the raw lines, only
+        #    populated for sessions that were started from inline
+        #    config). Sessions started before the config_text migration
+        #    (no name AND no text) still can't be resumed.
         config_name = (meta.get('config_name') or '').strip()
-        if not config_name:
-            self.emit('error', {
-                'message': f'Session #{session_id} was started from inline '
-                           f'configuration that wasn\'t saved. Resume is '
-                           f'not supported for inline sessions; discard '
-                           f'and start a new session instead.'
-            })
-            return
-
+        config_text = meta.get('config_text') or ''
         try:
             from sort_config import SortConfig
             from sorting import set_sort_config
-            from config import SORT_CONFIGS_DIR
-            import os as _os
-            filepath = config_name
-            if not _os.path.isabs(filepath):
-                filepath = _os.path.join(SORT_CONFIGS_DIR, filepath)
-            if not _os.path.exists(filepath):
+            if config_name:
+                from config import SORT_CONFIGS_DIR
+                import os as _os
+                filepath = config_name
+                if not _os.path.isabs(filepath):
+                    filepath = _os.path.join(SORT_CONFIGS_DIR, filepath)
+                if not _os.path.exists(filepath):
+                    # Saved preset got deleted between sessions. Fall
+                    # back to config_text if we have it; otherwise
+                    # bail with a useful message.
+                    if config_text.strip():
+                        self.log(
+                            f"resume_stale_session: preset '{config_name}' "
+                            f"missing on disk — falling back to the inline "
+                            f"config_text stored on the session row.")
+                        sort_cfg = SortConfig.from_lines(
+                            config_text.splitlines())
+                    else:
+                        self.emit('error', {
+                            'message': (f"Sort preset '{config_name}' no "
+                                        f"longer exists; cannot resume "
+                                        f"session #{session_id}.")
+                        })
+                        return
+                else:
+                    sort_cfg = SortConfig.from_file(filepath)
+            elif config_text.strip():
+                # Inline-config session, no preset name. Rebuild from
+                # the persisted lines (added in the Phase 4 follow-on
+                # commit that introduced sessions.config_text).
+                self.log(
+                    f"resume_stale_session: rebuilding from inline "
+                    f"config_text persisted with session #{session_id}.")
+                sort_cfg = SortConfig.from_lines(config_text.splitlines())
+            else:
                 self.emit('error', {
-                    'message': (f"Sort preset '{config_name}' no longer "
-                                f"exists; cannot resume session "
-                                f"#{session_id}.")
+                    'message': (f"Session #{session_id} has no saved preset "
+                                f"and no persisted config text — resume "
+                                f"not supported. Discard and start a new "
+                                f"session instead.")
                 })
                 return
-            sort_cfg = SortConfig.from_file(filepath)
             self.sort_config_obj = sort_cfg
             self.sort_mode = (meta.get('sort_mode') or 'custom_file')
             set_sort_config(sort_cfg)
