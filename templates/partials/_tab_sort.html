@@ -27,7 +27,14 @@
                                         style="font-family: var(--font-display); font-weight: 700; font-size: 1.6rem; color: var(--text-primary);">
                                         Session complete
                                     </h2>
-                                    <small class="text-muted" id="post-sort-end-reason"></small>
+                                    <div class="d-flex align-items-baseline gap-3">
+                                        <small class="text-muted" id="post-sort-end-reason"></small>
+                                        <a href="#" class="small text-muted"
+                                           onclick="event.preventDefault(); openPastSessionsModal();"
+                                           title="See recent session history">
+                                            View past sessions
+                                        </a>
+                                    </div>
                                 </div>
                                 <div class="row text-center mb-3">
                                     <div class="col-md-4">

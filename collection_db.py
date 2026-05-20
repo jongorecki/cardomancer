@@ -532,11 +532,23 @@ def get_duplicates(conn, min_quantity=2):
     return [dict(r) for r in rows]
 
 
-def get_session_history(conn):
-    """Get all sessions."""
-    rows = conn.execute(
-        "SELECT * FROM sessions ORDER BY start_time DESC"
-    ).fetchall()
+def get_session_history(conn, limit=None):
+    """Get sessions ordered most-recent-first.
+
+    `limit=None` returns all sessions (legacy behavior — keeps existing
+    callers working). Pass an int to cap the result for callers that
+    just want a recent slice (e.g. the past-sessions modal in the
+    post-sort hero).
+    """
+    if limit is None:
+        rows = conn.execute(
+            "SELECT * FROM sessions ORDER BY start_time DESC"
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM sessions ORDER BY start_time DESC LIMIT ?",
+            (int(limit),),
+        ).fetchall()
     return [dict(r) for r in rows]
 
 

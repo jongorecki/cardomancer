@@ -1968,10 +1968,17 @@ def api_collection_filter():
 
 @app.route('/api/collection/sessions')
 def api_collection_sessions():
+    """List sessions, most-recent-first.
+
+    Optional `?limit=N` caps the response. Used by the Sort tab's
+    post-sort "View past sessions" modal, which typically pulls 25.
+    """
     import collection_db
+    limit_arg = request.args.get('limit')
+    limit = int(limit_arg) if limit_arg else None
     conn = collection_db.get_connection()
     try:
-        sessions = collection_db.get_session_history(conn)
+        sessions = collection_db.get_session_history(conn, limit=limit)
         return jsonify({'sessions': sessions})
     finally:
         conn.close()
