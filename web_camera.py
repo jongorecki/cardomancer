@@ -102,8 +102,8 @@ class CameraManager:
         for cb in list(self._health_listeners):
             try:
                 cb(old, new_health)
-            except Exception as e:
-                logger.error(f"health listener error: {e}")
+            except Exception:
+                logger.exception("health listener error")
 
     @property
     def is_active(self):
@@ -405,8 +405,8 @@ class CameraManager:
             try:
                 if self.rotate is not None:
                     frame = cv2.rotate(frame, self.rotate)
-            except Exception as e:
-                logger.error(f"rotate exception: {e}")
+            except Exception:
+                logger.exception("rotate exception")
                 continue
 
             now = time.time()
@@ -732,8 +732,8 @@ class CameraManager:
                     pass
             except GeneratorExit:
                 return
-            except Exception as e:
-                logger.error(f"mjpeg generator error: {e}")
+            except Exception:
+                logger.exception("mjpeg generator error")
             time.sleep(interval)
 
     def generate_mjpeg_with_aruco(self, quality=70, max_fps=10):

@@ -325,8 +325,8 @@ def set_machine_positions(source_x=None, detection_x=None, staging_x=None,
             X_CAMERA_POSITION = float(new_cam_x)
             logger.info(f"Camera view carriage X = {X_CAMERA_POSITION} "
                         f"(staging {X_STAGING_POSITION} - offset {_camera_x_offset})")
-        except Exception as e:
-            logger.error(f"Failed to update X_CAMERA_POSITION: {e}")
+        except Exception:
+            logger.exception("Failed to update X_CAMERA_POSITION")
     if staging_width is not None:
         STAGING_WIDTH = float(staging_width)
         logger.info(f"Staging width = {STAGING_WIDTH}")
@@ -373,11 +373,22 @@ _GCODE_LOG_PATH = os.path.join(_GCODE_LOG_DIR, 'gcode_trace.log')
 _gcode_log_fh   = None   # open file handle; None until first use
 
 
+# Child logger used for the serial I/O trace stream. Routing trace output
+# through the standard logging tree (`gcode_control.trace`) lets ops dial
+# verbosity per-module without touching code, and keeps the trace under the
+# same handler set as the rest of the app.
+_trace_logger = logger.getChild('trace')
+
+
 def _gcode_trace(msg: str):
-    """Write msg to gcode_trace.log AND stdout (force-flushed).
+    """Write msg to gcode_trace.log AND through the logger.
 
     Called from every send/receive path so the log captures a complete
-    record of all serial I/O regardless of Python buffering state.
+    record of all serial I/O regardless of Python buffering state. The
+    dedicated `gcode_trace.log` file is preserved (line-buffered) so the
+    trace is still readable as a single contiguous stream even when other
+    log output is interleaved; the child logger gets the same line so any
+    handlers attached at the app level see it too.
     """
     global _gcode_log_fh
     # Ensure log directory exists
@@ -393,9 +404,15 @@ def _gcode_trace(msg: str):
 
     ts = time.strftime('%H:%M:%S')
     line = f'[{ts}] {msg}'
-    # stdout — force flush so it appears immediately in terminal/journal
-    print(line, flush=True)
-    # file log
+    # Route through the child logger so any global handlers (stdout,
+    # rotating file, support-bundle aggregator) see the trace too.
+    # Logged at INFO so it matches the prior `print(..., flush=True)`
+    # behaviour where every line landed in the main log file via the
+    # stdout-to-logger tee. Quiet the trace at runtime with:
+    #     logging.getLogger('gcode_control.trace').setLevel(logging.WARNING)
+    _trace_logger.info(line)
+    # file log — kept independent so the trace file stays contiguous and
+    # human-readable regardless of root logger formatting / level.
     if _gcode_log_fh is not None:
         try:
             _gcode_log_fh.write(line + '\n')
@@ -474,8 +491,8 @@ def _handle_serial_error(context, exc):
     if _serial_error_callback is not None:
         try:
             _serial_error_callback(_last_serial_error)
-        except Exception as cb_err:
-            logger.error(f"serial error callback failed: {cb_err}")
+        except Exception:
+            logger.exception("serial error callback failed")
 
 
 def connect_to_board():

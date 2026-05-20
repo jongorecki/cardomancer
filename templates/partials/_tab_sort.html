@@ -747,7 +747,12 @@
                                 <button class="btn btn-outline-secondary btn-sm py-0 px-1" onclick="toggleAllBinDetails()" title="Expand/collapse all">&#9776;</button>
                             </div>
                             <div class="card-body p-2" id="session-bin-contents" style="max-height:600px; overflow-y:auto;">
-                                <p class="text-muted small">No active session.</p>
+                                <div class="cm-empty-state cm-empty-compact">
+                                    <img class="cm-empty-sigil"
+                                         src="/static/branding/sigils/sigil-bin.svg"
+                                         alt="" width="40" height="40" aria-hidden="true">
+                                    <div class="cm-empty-title">No active session.</div>
+                                </div>
                             </div>
                         </div>
                     </div>

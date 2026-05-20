@@ -450,8 +450,8 @@ class SortWorker:
                 # next command doesn't start from a half-finished move.
                 try:
                     self._auto_safety_reset(command, e)
-                except Exception as reset_err:
-                    logger.error(f"safety-reset failed: {reset_err}")
+                except Exception:
+                    logger.exception("safety-reset failed")
 
     def _auto_safety_reset(self, failed_command, exc):
         """
@@ -496,8 +496,8 @@ class SortWorker:
                 self.emit('session_paused', {
                     'reason': f'auto-paused after error: {exc}',
                 })
-        except Exception as e:
-            logger.error(f"_auto_safety_reset error: {e}")
+        except Exception:
+            logger.exception("_auto_safety_reset error")
 
     def _emergency_safety_reset(self, reason):
         """
