@@ -2,6 +2,36 @@
 // =========================================================================
 // API helpers
 // =========================================================================
+//
+// CSRF defence: every non-GET request must carry
+// `X-Requested-With: XMLHttpRequest`. The Flask `_csrf_origin_check`
+// before_request hook in web_server.py accepts that header as proof
+// the request originated from our own JS (cross-origin browsers
+// can't set custom headers without a CORS preflight we don't serve).
+//
+// We monkey-patch `window.fetch` once at module load so legacy call
+// sites that hand-roll `fetch('/api/...', { method: 'POST' })` get
+// the header automatically — saving us from grepping every fetch
+// call in the static/ tree.
+(function _installCsrfFetchShim() {
+    if (window._cmFetchShimmed) return;
+    const _origFetch = window.fetch.bind(window);
+    window.fetch = function (input, init) {
+        const opts = init || {};
+        const method = (opts.method || 'GET').toUpperCase();
+        // Only inject on state-changing methods. Leave GET/HEAD/
+        // OPTIONS alone so caches and preflight responses behave.
+        if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+            const headers = new Headers(opts.headers || {});
+            if (!headers.has('X-Requested-With')) {
+                headers.set('X-Requested-With', 'XMLHttpRequest');
+            }
+            opts.headers = headers;
+        }
+        return _origFetch(input, opts);
+    };
+    window._cmFetchShimmed = true;
+})();
 
 async function apiGet(url) {
     const resp = await fetch(url);
@@ -13,7 +43,10 @@ async function apiPost(url, data) {
     try {
         resp = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
             body: data ? JSON.stringify(data) : '{}',
         });
     } catch (netErr) {
