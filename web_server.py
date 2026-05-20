@@ -179,6 +179,8 @@ def _setup_logging():
 
 _setup_logging()
 
+logger = logging.getLogger(__name__)
+
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'card-sorter-secret'
 socketio = SocketIO(app, async_mode='threading', cors_allowed_origins='*')
@@ -415,7 +417,7 @@ def _auto_save_bin_config():
         with open(default_path, 'w') as f:
             json.dump(config, f, indent=2)
     except Exception as e:
-        print(f"[config] Warning: failed to auto-save bin config: {e}")
+        logger.warning(f"failed to auto-save bin config: {e}")
 
 
 @app.route('/api/bins/config', methods=['POST'])
@@ -1472,7 +1474,7 @@ def _get_card_name_index():
             'cmc': c.get('cmc'),
         })
     _card_name_index = index
-    print(f"[web_server] Card name index built: {len(index)} unique names")
+    logger.info(f"Card name index built: {len(index)} unique names")
     return index
 
 
@@ -1808,7 +1810,7 @@ def _bulk_fetch_enrichment(enr_conn, oracle_ids):
                 chunk,
             ).fetchall()
         except Exception as e:
-            print(f"[_bulk_fetch_enrichment] batch failed: {e}")
+            logger.warning(f"_bulk_fetch_enrichment batch failed: {e}")
             continue
 
         for oid in chunk:
@@ -1884,7 +1886,7 @@ def api_collection_filter():
             try:
                 enr_conn = enrichment_db.get_connection()
             except Exception as exc:
-                print(f"[collection/filter] enrichment.db unavailable: {exc}")
+                logger.warning(f"collection/filter: enrichment.db unavailable: {exc}")
                 enr_conn = None
 
             # Bulk-fetch enrichment for every oracle_id in the result set
@@ -1929,7 +1931,7 @@ def api_collection_filter():
                     parse_error = str(exc)
                     break
                 except Exception as exc:
-                    print(f"[collection/filter] eval error: {exc}")
+                    logger.warning(f"collection/filter: eval error: {exc}")
                     continue
 
                 if matched:
@@ -2745,7 +2747,7 @@ def _update_scan_csv_row(session_id, scan_num, new_name, new_set,
         os.replace(tmp_path, csv_path)
         return True
     except Exception as e:
-        print(f"[review] Failed to update scans.csv: {e}")
+        logger.error(f"review: Failed to update scans.csv: {e}")
         return False
 
 
@@ -2939,11 +2941,11 @@ def api_calibration_cancel():
         from web_calibration import calibrator
         calibrator.cancel()
     except Exception as e:
-        print(f"[server] calibrator.cancel() error: {e}")
+        logger.warning(f"calibrator.cancel() error: {e}")
     try:
         worker.request_abort('calibration cancelled via API')
     except Exception as e:
-        print(f"[server] worker.request_abort() error: {e}")
+        logger.warning(f"worker.request_abort() error: {e}")
     return jsonify({'cancelled': True})
 
 
@@ -4222,7 +4224,7 @@ def handle_connect():
                 'all': stale,
             })
     except Exception as e:
-        print(f"[server] stale-session check on connect failed: {e}")
+        logger.warning(f"stale-session check on connect failed: {e}")
 
 
 # =========================================================================
@@ -4401,18 +4403,18 @@ def _load_default_bin_config():
                 gcode_control.set_bin_locations(data['locations'])
                 count = max((int(k) for k in data['locations'] if int(k) > 0),
                             default=0)
-                print(f"  Loaded default bin config: {count} bins "
-                      f"(per-bin locations)")
+                logger.info(f"Loaded default bin config: {count} bins "
+                            f"(per-bin locations)")
             else:
                 count = data.get('bin_count', 10)
                 start_x = data.get('start_x', 100)
                 spacing = data.get('spacing', 100)
                 gcode_control.configure_bins(count, start_x=start_x,
                                              spacing=spacing)
-                print(f"  Loaded default bin config: {count} bins, "
-                      f"start={start_x}mm, spacing={spacing}mm")
+                logger.info(f"Loaded default bin config: {count} bins, "
+                            f"start={start_x}mm, spacing={spacing}mm")
         except Exception as e:
-            print(f"  Warning: failed to load default bin config: {e}")
+            logger.warning(f"failed to load default bin config: {e}")
 
 
 # =========================================================================
@@ -4691,7 +4693,7 @@ def _graceful_shutdown(reason='shutdown'):
     if _shutting_down:
         return
     _shutting_down = True
-    print(f"[server] Graceful shutdown initiated ({reason})")
+    logger.info(f"Graceful shutdown initiated ({reason})")
 
     # 1. Trigger an emergency stop if we're mid-motion so pumps/motors
     #    drop immediately even if the worker is stuck in a command.
@@ -4701,9 +4703,9 @@ def _graceful_shutdown(reason='shutdown'):
             try:
                 gcode_control.ser.write(b'M106 P0 S0\n')
                 gcode_control.ser.write(b'M106 P1 S0\n')
-                print("[server] Pumps killed")
+                logger.info("Pumps killed")
             except Exception as e:
-                print(f"[server] pump-off failed: {e}")
+                logger.warning(f"pump-off failed: {e}")
     except Exception:
         pass
 
@@ -4712,9 +4714,9 @@ def _graceful_shutdown(reason='shutdown'):
         if getattr(worker, 'tracker', None) is not None:
             try:
                 worker.tracker.end_session()
-                print("[server] Active session ended")
+                logger.info("Active session ended")
             except Exception as e:
-                print(f"[server] session end failed: {e}")
+                logger.warning(f"session end failed: {e}")
             worker.tracker = None
     except Exception:
         pass
@@ -4723,39 +4725,39 @@ def _graceful_shutdown(reason='shutdown'):
     try:
         if camera.is_active:
             camera.stop()
-            print("[server] Camera stopped")
+            logger.info("Camera stopped")
     except Exception as e:
-        print(f"[server] camera.stop failed: {e}")
+        logger.warning(f"camera.stop failed: {e}")
 
     # 4. Stop the worker thread (drains queue, joins).
     try:
         worker.stop()
-        print("[server] Worker stopped")
+        logger.info("Worker stopped")
     except Exception as e:
-        print(f"[server] worker.stop failed: {e}")
+        logger.warning(f"worker.stop failed: {e}")
 
     # 5. Disconnect serial and flush gcode trace log.
     try:
         import gcode_control
         if gcode_control.is_connected():
             gcode_control.close_connection()
-            print("[server] Serial disconnected")
+            logger.info("Serial disconnected")
         gcode_control.close_gcode_log()
     except Exception as e:
-        print(f"[server] disconnect failed: {e}")
+        logger.warning(f"disconnect failed: {e}")
 
     # 6. Stop the enrichment scheduler.
     try:
         enrichment_scheduler.shutdown()
-        print("[server] Enrichment scheduler stopped")
+        logger.info("Enrichment scheduler stopped")
     except Exception as e:
-        print(f"[server] enrichment scheduler shutdown failed: {e}")
+        logger.warning(f"enrichment scheduler shutdown failed: {e}")
 
-    print("[server] Shutdown complete")
+    logger.info("Shutdown complete")
 
 
 def _signal_handler(signum, frame):
-    print(f"[server] Received signal {signum}")
+    logger.info(f"Received signal {signum}")
     _graceful_shutdown(reason=f'signal {signum}')
     sys.exit(0)
 
@@ -4928,7 +4930,7 @@ def main():
         signal.signal(signal.SIGTERM, _signal_handler)
     except (ValueError, AttributeError) as e:
         # Windows / non-main-thread limitations
-        print(f"[server] signal handler install partial: {e}")
+        logger.warning(f"signal handler install partial: {e}")
 
     # Camera health listener — auto-pause the sort if the camera
     # ACTUALLY stays dead mid-session. We can't recognize cards
@@ -4963,15 +4965,15 @@ def main():
         # Re-check state at fire time so a late-arriving recovery wins.
         with _health_pause_lock:
             if camera.health == 'ok':
-                print(f"[server] Camera recovered before grace expired "
-                      f"— not pausing")
+                logger.info(f"Camera recovered before grace expired "
+                            f"— not pausing")
                 _cancel_pause_timer()
                 return
             if worker.state != 'sorting':
                 _cancel_pause_timer()
                 return
-            print(f"[server] Camera still {camera.health} after "
-                  f"{GRACE_SECONDS:.0f}s grace — auto-pausing sort")
+            logger.warning(f"Camera still {camera.health} after "
+                           f"{GRACE_SECONDS:.0f}s grace — auto-pausing sort")
             try:
                 worker.request_abort('camera freeze')
                 worker.enqueue('pause')
@@ -4982,7 +4984,7 @@ def main():
                                 f'and resume.'),
                 })
             except Exception as e:
-                print(f"[server] auto-pause failed: {e}")
+                logger.error(f"auto-pause failed: {e}")
             _cancel_pause_timer()
 
     def _on_camera_health(old, new):
@@ -4998,8 +5000,8 @@ def main():
             if new == 'ok':
                 # Healthy again — cancel any pending auto-pause.
                 if _health_pause_state['timer'] is not None:
-                    print(f"[server] Camera recovered ({old}->ok) "
-                          f"— cancelling auto-pause timer")
+                    logger.info(f"Camera recovered ({old}->ok) "
+                                f"— cancelling auto-pause timer")
                 _cancel_pause_timer()
                 return
 
@@ -5021,13 +5023,13 @@ def main():
             timer.daemon = True
             _health_pause_state['timer'] = timer
             timer.start()
-            print(f"[server] Camera health {old}->{new} during sort — "
-                  f"starting {GRACE_SECONDS:.0f}s grace window before "
-                  f"auto-pause")
+            logger.warning(f"Camera health {old}->{new} during sort — "
+                           f"starting {GRACE_SECONDS:.0f}s grace window before "
+                           f"auto-pause")
     try:
         camera.add_health_listener(_on_camera_health)
     except Exception as e:
-        print(f"[server] could not install camera health listener: {e}")
+        logger.warning(f"could not install camera health listener: {e}")
 
     # Wire serial error callback so serial dropouts auto-notify the UI.
     try:
@@ -5049,7 +5051,7 @@ def main():
                 pass
         gcode_control.set_serial_error_callback(_on_serial_error)
     except Exception as e:
-        print(f"[server] could not install serial error callback: {e}")
+        logger.warning(f"could not install serial error callback: {e}")
 
     # Load default bin config before starting
     _load_default_bin_config()
@@ -5061,11 +5063,11 @@ def main():
     try:
         restored = worker.load_last_setup()
         if restored:
-            print(f"[server] Restored last setup from disk: "
-                  f"{restored.get('dest_bin_count')} dest bins, "
-                  f"{restored.get('source_bin_count')} source bins")
+            logger.info(f"Restored last setup from disk: "
+                        f"{restored.get('dest_bin_count')} dest bins, "
+                        f"{restored.get('source_bin_count')} source bins")
     except Exception as e:
-        print(f"[server] load_last_setup failed: {e}")
+        logger.warning(f"load_last_setup failed: {e}")
 
     # Start the worker thread
     worker.start()
@@ -5078,10 +5080,10 @@ def main():
     # (plans/autonomy_ladder.md). Opt out by setting
     # CARD_SORTER_NO_AUTO_CONNECT=1 in the environment.
     if os.environ.get('CARD_SORTER_NO_AUTO_CONNECT', '').strip() in ('', '0', 'false', 'False'):
-        print("[server] Auto-connecting to hardware (set CARD_SORTER_NO_AUTO_CONNECT=1 to disable)")
+        logger.info("Auto-connecting to hardware (set CARD_SORTER_NO_AUTO_CONNECT=1 to disable)")
         worker.enqueue('connect')
     else:
-        print("[server] Auto-connect disabled via CARD_SORTER_NO_AUTO_CONNECT")
+        logger.info("Auto-connect disabled via CARD_SORTER_NO_AUTO_CONNECT")
 
     # Check for sessions that didn't end cleanly (power loss, crash).
     # If found, the worker emits `stale_session_detected` and the UI
@@ -5094,9 +5096,9 @@ def main():
     # — the core sorting flow does not depend on enrichment.
     try:
         enrichment_scheduler.start()
-        print("[server] Enrichment scheduler started")
+        logger.info("Enrichment scheduler started")
     except Exception as e:
-        print(f"[server] enrichment scheduler start failed: {e}")
+        logger.warning(f"enrichment scheduler start failed: {e}")
 
     # Run Flask with SocketIO
     socketio.run(app, host='0.0.0.0', port=5000,

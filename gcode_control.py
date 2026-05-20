@@ -10,10 +10,13 @@
 #   Z_MIN endstop = card/bin contact, Z_MAX endstop = home
 # --------------------------------------------------------------------------
 
+import logging
 import serial
 import time
 import os
 import sys
+
+logger = logging.getLogger(__name__)
 
 # =========================================================================
 # TUNABLE PARAMETERS — adjust these to match your physical setup
@@ -77,11 +80,11 @@ def set_drop_offset(value):
     try:
         v = float(value)
     except (TypeError, ValueError):
-        print(f"[gcode] set_drop_offset: invalid value {value!r}, ignoring")
+        logger.warning(f"set_drop_offset: invalid value {value!r}, ignoring")
         return False
     if v < _DROP_OFFSET_MIN or v > _DROP_OFFSET_MAX:
-        print(f"[gcode] set_drop_offset: {v} out of range "
-              f"[{_DROP_OFFSET_MIN}, {_DROP_OFFSET_MAX}], ignoring")
+        logger.warning(f"set_drop_offset: {v} out of range "
+                       f"[{_DROP_OFFSET_MIN}, {_DROP_OFFSET_MAX}], ignoring")
         return False
     Z_DROP_OFFSET = v
     try:
@@ -93,11 +96,11 @@ def set_drop_offset(value):
         }
         with open(_DROP_HEIGHT_PATH, 'w', encoding='utf-8') as fh:
             json.dump(payload, fh, indent=2)
-        print(f"[gcode] Z_DROP_OFFSET = {v} mm (saved to "
-              f"{os.path.basename(_DROP_HEIGHT_PATH)})")
+        logger.info(f"Z_DROP_OFFSET = {v} mm (saved to "
+                    f"{os.path.basename(_DROP_HEIGHT_PATH)})")
     except Exception as e:
-        print(f"[gcode] set_drop_offset: persisted in-memory but "
-              f"failed to write {_DROP_HEIGHT_PATH}: {e}")
+        logger.warning(f"set_drop_offset: persisted in-memory but "
+                       f"failed to write {_DROP_HEIGHT_PATH}: {e}")
     return True
 
 
@@ -117,14 +120,14 @@ def _load_drop_offset_from_disk():
         v = float(data.get('z_drop_offset'))
         if _DROP_OFFSET_MIN <= v <= _DROP_OFFSET_MAX:
             Z_DROP_OFFSET = v
-            print(f"[gcode] Loaded Z_DROP_OFFSET = {v} mm from "
-                  f"{os.path.basename(_DROP_HEIGHT_PATH)}")
+            logger.info(f"Loaded Z_DROP_OFFSET = {v} mm from "
+                        f"{os.path.basename(_DROP_HEIGHT_PATH)}")
         else:
-            print(f"[gcode] drop_height.json: value {v} out of range, "
-                  f"keeping default {Z_DROP_OFFSET}")
+            logger.warning(f"drop_height.json: value {v} out of range, "
+                           f"keeping default {Z_DROP_OFFSET}")
     except Exception as e:
-        print(f"[gcode] drop_height.json load failed ({e}); "
-              f"keeping default Z_DROP_OFFSET = {Z_DROP_OFFSET}")
+        logger.warning(f"drop_height.json load failed ({e}); "
+                       f"keeping default Z_DROP_OFFSET = {Z_DROP_OFFSET}")
 
 
 _load_drop_offset_from_disk()
@@ -172,7 +175,7 @@ def set_x_safe_max(value):
         # 2000mm gets no-op — the more-permissive ceiling stays.
         return
     X_SAFE_MAX = v
-    print(f"[gcode] X_SAFE_MAX: {old:.0f} -> {v:.0f}")
+    logger.info(f"X_SAFE_MAX: {old:.0f} -> {v:.0f}")
 
 
 def clamp_x(x):
@@ -180,13 +183,13 @@ def clamp_x(x):
     try:
         xf = float(x)
     except (TypeError, ValueError):
-        print(f"[gcode] clamp_x: invalid value {x!r}, defaulting to X_SAFE_MIN")
+        logger.warning(f"clamp_x: invalid value {x!r}, defaulting to X_SAFE_MIN")
         return X_SAFE_MIN
     if xf < X_SAFE_MIN:
-        print(f"[gcode] clamp_x: {xf} < {X_SAFE_MIN}, clamping")
+        logger.warning(f"clamp_x: {xf} < {X_SAFE_MIN}, clamping")
         return X_SAFE_MIN
     if xf > X_SAFE_MAX:
-        print(f"[gcode] clamp_x: {xf} > {X_SAFE_MAX}, clamping")
+        logger.warning(f"clamp_x: {xf} > {X_SAFE_MAX}, clamping")
         return X_SAFE_MAX
     return xf
 
@@ -196,13 +199,13 @@ def clamp_z(z):
     try:
         zf = float(z)
     except (TypeError, ValueError):
-        print(f"[gcode] clamp_z: invalid value {z!r}, defaulting to Z_SAFE_MAX")
+        logger.warning(f"clamp_z: invalid value {z!r}, defaulting to Z_SAFE_MAX")
         return Z_SAFE_MAX
     if zf < Z_SAFE_MIN:
-        print(f"[gcode] clamp_z: {zf} < {Z_SAFE_MIN}, clamping")
+        logger.warning(f"clamp_z: {zf} < {Z_SAFE_MIN}, clamping")
         return Z_SAFE_MIN
     if zf > Z_SAFE_MAX:
-        print(f"[gcode] clamp_z: {zf} > {Z_SAFE_MAX}, clamping")
+        logger.warning(f"clamp_z: {zf} > {Z_SAFE_MAX}, clamping")
         return Z_SAFE_MAX
     return zf
 
@@ -262,8 +265,8 @@ def configure_bins(bin_count, start_x=None, spacing=None):
     _active_bin_locations = {0: X_SOURCE_BIN}
     for i in range(1, bin_count + 1):
         _active_bin_locations[i] = start_x + (i - 1) * spacing
-    print(f"[gcode] Configured {bin_count} bins "
-          f"(X={start_x} to {start_x + (bin_count - 1) * spacing})")
+    logger.info(f"Configured {bin_count} bins "
+                f"(X={start_x} to {start_x + (bin_count - 1) * spacing})")
 
 
 def get_bin_locations():
@@ -277,7 +280,7 @@ def set_bin_locations(locations):
     """
     global _active_bin_locations
     _active_bin_locations = {int(k): float(v) for k, v in locations.items()}
-    print(f"[gcode] Set {len(_active_bin_locations)} bin locations manually")
+    logger.info(f"Set {len(_active_bin_locations)} bin locations manually")
 
 
 STAGING_WIDTH = 200.0              # Width of staging platform in mm
@@ -302,16 +305,16 @@ def set_machine_positions(source_x=None, detection_x=None, staging_x=None,
         # Also update bin 0 in active locations
         if _active_bin_locations is not None:
             _active_bin_locations[0] = X_SOURCE_BIN
-        print(f"[gcode] Source bin X = {X_SOURCE_BIN}")
+        logger.info(f"Source bin X = {X_SOURCE_BIN}")
     if detection_x is not None:
         X_DETECTION_POSITION = float(detection_x)
-        print(f"[gcode] Detection position X = {X_DETECTION_POSITION}")
+        logger.info(f"Detection position X = {X_DETECTION_POSITION}")
     if staging_x is not None:
         X_STAGING_POSITION = float(staging_x)
-        print(f"[gcode] Staging position X = {X_STAGING_POSITION}")
+        logger.info(f"Staging position X = {X_STAGING_POSITION}")
     if camera_x_offset is not None:
         _camera_x_offset = float(camera_x_offset)
-        print(f"[gcode] Camera X offset = {_camera_x_offset}")
+        logger.info(f"Camera X offset = {_camera_x_offset}")
     # Recompute the camera-over-staging carriage position whenever
     # either staging_x or camera_x_offset changes. The carriage must
     # move to (staging_x - camera_x_offset) to center the camera
@@ -320,13 +323,13 @@ def set_machine_positions(source_x=None, detection_x=None, staging_x=None,
         try:
             new_cam_x = max(0.0, X_STAGING_POSITION - _camera_x_offset)
             X_CAMERA_POSITION = float(new_cam_x)
-            print(f"[gcode] Camera view carriage X = {X_CAMERA_POSITION} "
-                  f"(staging {X_STAGING_POSITION} - offset {_camera_x_offset})")
+            logger.info(f"Camera view carriage X = {X_CAMERA_POSITION} "
+                        f"(staging {X_STAGING_POSITION} - offset {_camera_x_offset})")
         except Exception as e:
-            print(f"[gcode] Failed to update X_CAMERA_POSITION: {e}")
+            logger.error(f"Failed to update X_CAMERA_POSITION: {e}")
     if staging_width is not None:
         STAGING_WIDTH = float(staging_width)
-        print(f"[gcode] Staging width = {STAGING_WIDTH}")
+        logger.info(f"Staging width = {STAGING_WIDTH}")
 
 
 # Keep backward-compatible alias
@@ -458,7 +461,7 @@ def _handle_serial_error(context, exc):
     global ser, _serial_error_count, _last_serial_error
     _serial_error_count += 1
     _last_serial_error = f'{context}: {exc}'
-    print(f"[gcode] SERIAL ERROR ({context}): {exc}")
+    logger.error(f"SERIAL ERROR ({context}): {exc}")
     # Force-close the port so is_connected() reports False and no other
     # thread tries to re-use the dead socket.
     try:
@@ -472,7 +475,7 @@ def _handle_serial_error(context, exc):
         try:
             _serial_error_callback(_last_serial_error)
         except Exception as cb_err:
-            print(f"[gcode] serial error callback failed: {cb_err}")
+            logger.error(f"serial error callback failed: {cb_err}")
 
 
 def connect_to_board():
@@ -484,7 +487,7 @@ def connect_to_board():
         ser.flushInput()
         ser.flushOutput()
         _last_serial_error = None
-        print(f"[gcode] Connected to {SERIAL_PORT} at {BAUD_RATE} baud.")
+        logger.info(f"Connected to {SERIAL_PORT} at {BAUD_RATE} baud.")
         # Disable Marlin's software endstops. The firmware's X_MAX_POS
         # is 800mm but our rail actually travels further, and Marlin
         # SILENTLY clips any G0 X>800 to X=800 while still responding
@@ -505,12 +508,12 @@ def connect_to_board():
                 if not line:
                     break
                 _gcode_trace(f'[gcode] << {line}')
-            print("[gcode] Disabled Marlin software endstops (M211 S0) "
-                  "— X_SAFE_MAX is now the authoritative X bound.")
+            logger.info("Disabled Marlin software endstops (M211 S0) "
+                        "— X_SAFE_MAX is now the authoritative X bound.")
         except Exception as e:
-            print(f"[gcode] WARNING: could not disable software endstops: {e}")
+            logger.warning(f"could not disable software endstops: {e}")
     except serial.SerialException as e:
-        print(f"[gcode] ERROR: Could not open serial port {SERIAL_PORT}. {e}")
+        logger.error(f"Could not open serial port {SERIAL_PORT}. {e}")
         _last_serial_error = f'connect: {e}'
         ser = None
 
@@ -530,8 +533,8 @@ def close_connection():
         try:
             ser.close()
         except Exception as e:
-            print(f"[gcode] close error: {e}")
-        print("[gcode] Connection closed.")
+            logger.warning(f"close error: {e}")
+        logger.info("Connection closed.")
     ser = None
 
 
@@ -567,7 +570,7 @@ def _clamp_motion_command(command):
         else:
             return match.group(0)
         if abs(clamped - val) > 0.001:
-            print(f"[gcode] SAFETY CLAMP: {axis}{val} -> {axis}{clamped}")
+            logger.warning(f"SAFETY CLAMP: {axis}{val} -> {axis}{clamped}")
             return f'{axis}{clamped:g}'
         return match.group(0)
 
@@ -588,7 +591,7 @@ def _send_gcode(command):
     """
     global ser
     if not is_connected():
-        print("[gcode] WARNING: Not connected. Cannot send G-code.")
+        logger.warning("Not connected. Cannot send G-code.")
         return False
     # Defensive bounds clamp on absolute-mode motion commands.
     safe_command = _clamp_motion_command(command)
@@ -705,15 +708,15 @@ def verify_x_position(target_x, tolerance=0.5):
     """
     actual_x = _get_current_x()
     if actual_x is None:
-        print(f"[gcode] verify_x_position: no M114 response (target {target_x})")
+        logger.warning(f"verify_x_position: no M114 response (target {target_x})")
         return (None, False)
     delta = abs(actual_x - float(target_x))
     if delta > tolerance:
-        print(f"[gcode] *** FIRMWARE SILENT CLAMP DETECTED *** "
-              f"commanded X{target_x:.2f}, actually at X{actual_x:.2f} "
-              f"(Δ{delta:.2f}mm). Marlin X_MAX_POS likely = {actual_x:.0f}. "
-              f"Run M211 S0 to disable software endstops, or raise "
-              f"X_MAX_POS in firmware.")
+        logger.error(f"*** FIRMWARE SILENT CLAMP DETECTED *** "
+                     f"commanded X{target_x:.2f}, actually at X{actual_x:.2f} "
+                     f"(Δ{delta:.2f}mm). Marlin X_MAX_POS likely = {actual_x:.0f}. "
+                     f"Run M211 S0 to disable software endstops, or raise "
+                     f"X_MAX_POS in firmware.")
         return (actual_x, False)
     return (actual_x, True)
 
@@ -773,7 +776,7 @@ def _probe_with_cache(x_position):
                 _post_probe_callback(x_position, z_pos)
             except Exception as cb_err:
                 # Never let an observer break the probe path.
-                print(f"[gcode] post-probe callback error: {cb_err}")
+                logger.error(f"post-probe callback error: {cb_err}")
 
 
 def clear_probe_cache():
@@ -803,7 +806,7 @@ def home_all():
     _send_and_wait("G28 Z")
     _send_and_wait("G28 X")
     clear_probe_cache()
-    print("[gcode] Homed: Z=max (top), X=0")
+    logger.info("Homed: Z=max (top), X=0")
 
 
 def home_x():
@@ -826,7 +829,7 @@ def move_to_detection_position():
     _send_and_wait("M400")  # Z must finish before X moves
     _send_and_wait(f"G0 X{X_DETECTION_POSITION} F{X_FEEDRATE}")
     _send_and_wait("M400")
-    print("[gcode] At detection position")
+    logger.info("At detection position")
 
 
 # =========================================================================
@@ -923,7 +926,7 @@ def pick_and_drop(bin_number):
     Uses cached probe heights for fast approach.
     """
     if not is_connected():
-        print("[gcode] Not connected. Attempting to connect...")
+        logger.warning("Not connected. Attempting to connect...")
         connect_to_board()
 
     bin_locs = get_bin_locations()
@@ -1002,7 +1005,7 @@ def pick_from_source():
     _send_and_wait(f"G0 Z{z_clear} F{Z_FEEDRATE}")
     _send_and_wait("M400")
 
-    print(f"[gcode] Card picked up from source at X={source_x}")
+    logger.info(f"Card picked up from source at X={source_x}")
 
 
 def deliver_to_bin(bin_number):
@@ -1043,7 +1046,7 @@ def deliver_to_bin(bin_number):
     _send_and_wait(f"G0 X{X_DETECTION_POSITION} F{X_FEEDRATE}")
     _send_and_wait("M400")
 
-    print(f"[gcode] Card delivered to bin {bin_number}")
+    logger.info(f"Card delivered to bin {bin_number}")
 
 
 def return_to_detection_nonblocking():
@@ -1066,7 +1069,7 @@ def send_to_bin(bin_number, mode=None):
 
     Z always completes before X moves to avoid hitting bins.
     """
-    print(f"[gcode] Sorting card into Bin {bin_number}")
+    logger.info(f"Sorting card into Bin {bin_number}")
 
     pick_and_drop(bin_number)
 
@@ -1078,7 +1081,7 @@ def send_to_bin(bin_number, mode=None):
     _send_and_wait(f"G0 X{X_DETECTION_POSITION} F{X_FEEDRATE}")
     _send_and_wait("M400")
 
-    print(f"[gcode] Card delivered to bin {bin_number}")
+    logger.info(f"Card delivered to bin {bin_number}")
 
 
 def move_to_bin(bin_number):
@@ -1129,7 +1132,7 @@ def _z_bounce_at_contact(x_position):
         _send_and_wait("M400")
         _send_and_wait(f"G0 Z{contact_z} F{Z_BOUNCE_FEEDRATE}")
         _send_and_wait("M400")
-    print(f"[gcode] Z-bounce x{Z_BOUNCE_COUNT} completed at x={x_position}")
+    logger.info(f"Z-bounce x{Z_BOUNCE_COUNT} completed at x={x_position}")
 
 
 def pick_from_position(x_position, bounce: bool = False):
