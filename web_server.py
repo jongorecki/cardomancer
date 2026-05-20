@@ -1930,8 +1930,8 @@ def api_collection_filter():
                 except query_parser.QueryParseError as exc:
                     parse_error = str(exc)
                     break
-                except Exception as exc:
-                    logger.warning(f"collection/filter: eval error: {exc}")
+                except Exception:
+                    logger.warning("collection/filter: eval error", exc_info=True)
                     continue
 
                 if matched:
@@ -2746,8 +2746,8 @@ def _update_scan_csv_row(session_id, scan_num, new_name, new_set,
             writer.writerows(rows)
         os.replace(tmp_path, csv_path)
         return True
-    except Exception as e:
-        logger.error(f"review: Failed to update scans.csv: {e}")
+    except Exception:
+        logger.exception("review: Failed to update scans.csv")
         return False
 
 
@@ -4223,8 +4223,8 @@ def handle_connect():
                 'primary': stale[0],
                 'all': stale,
             })
-    except Exception as e:
-        logger.warning(f"stale-session check on connect failed: {e}")
+    except Exception:
+        logger.warning("stale-session check on connect failed", exc_info=True)
 
 
 # =========================================================================
@@ -4983,8 +4983,8 @@ def main():
                                 f'session auto-paused. Check camera '
                                 f'and resume.'),
                 })
-            except Exception as e:
-                logger.error(f"auto-pause failed: {e}")
+            except Exception:
+                logger.exception("auto-pause failed")
             _cancel_pause_timer()
 
     def _on_camera_health(old, new):
