@@ -27,7 +27,14 @@
                                         style="font-family: var(--font-display); font-weight: 700; font-size: 1.6rem; color: var(--text-primary);">
                                         Session complete
                                     </h2>
-                                    <small class="text-muted" id="post-sort-end-reason"></small>
+                                    <div class="d-flex align-items-baseline gap-3">
+                                        <small class="text-muted" id="post-sort-end-reason"></small>
+                                        <a href="#" class="small text-muted"
+                                           onclick="event.preventDefault(); openPastSessionsModal();"
+                                           title="See recent session history">
+                                            View past sessions
+                                        </a>
+                                    </div>
                                 </div>
                                 <div class="row text-center mb-3">
                                     <div class="col-md-4">
@@ -60,6 +67,22 @@
                                         Review uncertain cards
                                         <span id="post-sort-review-count" class="badge bg-warning text-dark ms-1" style="display:none;">0</span>
                                     </button>
+                                </div>
+
+                                <!-- Inline review queue for *this* session.
+                                     Populated by populatePostSortReviewQueue()
+                                     on session_ended. The "Review uncertain
+                                     cards" button above still routes to the
+                                     full Setup queue for historical review.
+                                -->
+                                <div id="post-sort-review-inline" class="mt-3"
+                                     style="display:none;">
+                                    <h6 class="text-muted small mb-2"
+                                        style="text-transform:uppercase; letter-spacing:0.06em;">
+                                        Cards to review from this session
+                                    </h6>
+                                    <ul id="post-sort-review-inline-list"
+                                        class="list-unstyled small mb-0"></ul>
                                 </div>
                             </div>
                         </div>
@@ -372,7 +395,11 @@
                                     session. Edit via the Sort Configuration card above.
                                 </p>
                                 <div id="dashboard-bin-routing">
-                                    <em class="text-muted small">Loading&hellip;</em>
+                                    <div class="cm-skeleton">
+                                        <div class="cm-skeleton-line" style="width:90%"></div>
+                                        <div class="cm-skeleton-line" style="width:75%"></div>
+                                        <div class="cm-skeleton-line" style="width:85%"></div>
+                                    </div>
                                 </div>
                             </div>
                         </div>

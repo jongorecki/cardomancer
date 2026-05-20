@@ -19,10 +19,13 @@
 # No background subtraction, no color segmentation.
 # ---------------------------------------------------------------------------
 
+import logging
 import os
 import json
 import cv2
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 # --- Card dimensions (must match Scryfall PNGs / hash DB) ---
 CARD_WIDTH = 745
@@ -52,10 +55,10 @@ def _load_staging_roi():
             _staging_roi = roi
             _staging_roi_area = float(cv2.contourArea(
                 roi.reshape(4, 1, 2).astype(np.int32)))
-            print(f"[card_detect] Staging ROI loaded "
-                  f"(area={_staging_roi_area:.0f}px)")
+            logger.info(f"Staging ROI loaded "
+                        f"(area={_staging_roi_area:.0f}px)")
     except (FileNotFoundError, json.JSONDecodeError, ValueError) as e:
-        print(f"[card_detect] No staging ROI: {e}")
+        logger.warning(f"No staging ROI: {e}")
 
 
 def invalidate_staging_roi():
@@ -260,8 +263,8 @@ def _find_card_contour(frame, debug=False):
                 # Skip outliers >15% above median (platform edge noise)
                 if len(candidates) > 1 and area > median_area * 1.15:
                     if debug:
-                        print(f"[detect] Skipping {ch_name} outlier: "
-                              f"area {area:.0f} >> median {median_area:.0f}")
+                        logger.debug(f"Skipping {ch_name} outlier: "
+                                     f"area {area:.0f} >> median {median_area:.0f}")
                     continue
                 # Largest non-outlier = outer card border
                 if area > best_area:
@@ -271,12 +274,12 @@ def _find_card_contour(frame, debug=False):
 
     if debug:
         if best_approx is not None:
-            print(f"[detect] Found card contour via {best_channel}, "
-                  f"area={best_area:.0f} "
-                  f"(min={min_area}, max={max_area})")
+            logger.debug(f"Found card contour via {best_channel}, "
+                         f"area={best_area:.0f} "
+                         f"(min={min_area}, max={max_area})")
         else:
-            print(f"[detect] No card contour found "
-                  f"(area range [{min_area}, {max_area}])")
+            logger.debug(f"No card contour found "
+                         f"(area range [{min_area}, {max_area}])")
 
     # Refine polygon outward: weak morph usually locks onto the inner
     # frame (high contrast); walk each side outward to snap to the real
@@ -348,7 +351,7 @@ def _find_best_card_in_edges(edges, min_area, max_area,
             continue
         if area > max_area:
             if debug:
-                print(f"[detect] Rejected: area {area:.0f} > max {max_area}")
+                logger.debug(f"Rejected: area {area:.0f} > max {max_area}")
             continue
 
         # Location filter: center must be on/near the staging platform
@@ -358,8 +361,8 @@ def _find_best_card_in_edges(edges, min_area, max_area,
             cy = M["m01"] / M["m00"]
             if not _is_inside_roi(cx, cy, margin=100):
                 if debug:
-                    print(f"[detect] Rejected: center ({cx:.0f},{cy:.0f}) "
-                          f"outside staging ROI")
+                    logger.debug(f"Rejected: center ({cx:.0f},{cy:.0f}) "
+                                 f"outside staging ROI")
                 continue
 
         # Solidity check: card area should be close to convex hull area.
@@ -373,7 +376,7 @@ def _find_best_card_in_edges(edges, min_area, max_area,
             solidity = area / hull_area
             if solidity < 0.65:
                 if debug:
-                    print(f"[detect] Rejected: solidity {solidity:.2f} < 0.65")
+                    logger.debug(f"Rejected: solidity {solidity:.2f} < 0.65")
                 continue
 
         # Shape filter: card-like aspect ratio via minAreaRect
@@ -384,8 +387,8 @@ def _find_best_card_in_edges(edges, min_area, max_area,
         ratio = max(rw, rh) / min(rw, rh)
         if abs(ratio - CARD_ASPECT_RATIO) / CARD_ASPECT_RATIO > 0.35:
             if debug:
-                print(f"[detect] Rejected: ratio {ratio:.2f} "
-                      f"vs expected {CARD_ASPECT_RATIO:.2f}")
+                logger.debug(f"Rejected: ratio {ratio:.2f} "
+                             f"vs expected {CARD_ASPECT_RATIO:.2f}")
             continue
 
         # Rectangularity check: contour area vs bounding box area.
@@ -397,8 +400,8 @@ def _find_best_card_in_edges(edges, min_area, max_area,
             rectangularity = area / box_area
             if rectangularity < 0.70:
                 if debug:
-                    print(f"[detect] Rejected: rectangularity "
-                          f"{rectangularity:.2f} < 0.70")
+                    logger.debug(f"Rejected: rectangularity "
+                                 f"{rectangularity:.2f} < 0.70")
                 continue
 
         # --- Polygon verification via approxPolyDP ---
@@ -519,8 +522,8 @@ def _refine_polygon_outward(frame, polygon, search_band=40, debug=False):
         if len(outer_points) < 8:
             # Not enough edge hits to fit a reliable line; keep original
             if debug:
-                print(f"[refine] Side {i}: only {len(outer_points)} "
-                      f"edge hits, keeping original line")
+                logger.debug(f"Side {i}: only {len(outer_points)} "
+                             f"edge hits, keeping original line")
             refined_lines.append((
                 float(side_unit[0]), float(side_unit[1]),
                 float(p0[0]), float(p0[1])))
@@ -532,8 +535,8 @@ def _refine_polygon_outward(frame, polygon, search_band=40, debug=False):
         refined_lines.append((
             float(vx[0]), float(vy[0]), float(x0[0]), float(y0[0])))
         if debug:
-            print(f"[refine] Side {i}: fit line from {len(outer_points)} "
-                  f"outer points")
+            logger.debug(f"Side {i}: fit line from {len(outer_points)} "
+                         f"outer points")
 
     # Intersect adjacent refined lines to get refined corners.
     # Corner i is intersection of side (i-1) and side i.
@@ -569,12 +572,12 @@ def _refine_polygon_outward(frame, polygon, search_band=40, debug=False):
 
     if ratio < 0.98 or ratio > 1.30:
         if debug:
-            print(f"[refine] Rejected refinement: area ratio {ratio:.3f} "
-                  f"(outside [0.98, 1.30])")
+            logger.debug(f"Rejected refinement: area ratio {ratio:.3f} "
+                         f"(outside [0.98, 1.30])")
         return polygon
 
     if debug:
-        print(f"[refine] Accepted: area ratio {ratio:.3f}")
+        logger.debug(f"Accepted: area ratio {ratio:.3f}")
 
     return refined.reshape(4, 1, 2).astype(np.float32)
 

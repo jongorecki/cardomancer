@@ -98,6 +98,139 @@ function renderPostSortSummary(data) {
     if (typeof loadDetectionReviewCounts === 'function') {
         try { loadDetectionReviewCounts(); } catch (_) {}
     }
+    // Populate the inline post-sort review preview from the recent-session
+    // endpoint. Doesn't block — runs in the background and replaces the
+    // placeholder when results arrive.
+    populatePostSortReviewQueue();
+}
+
+// Fetch + render the recent-session detection-review queue inside the
+// post-sort hero. Reuses the same data the Setup queue uses but
+// scoped to the just-ended session.
+// "View past sessions" modal — invoked from the post-sort hero's
+// header link. Pulls up to 25 recent sessions and renders a compact
+// table. Reuses the existing GET /api/collection/sessions route.
+async function openPastSessionsModal() {
+    const modalEl = document.getElementById('past-sessions-modal');
+    const body = document.getElementById('past-sessions-content');
+    if (!modalEl || !body) return;
+    if (typeof bootstrap !== 'undefined') {
+        new bootstrap.Modal(modalEl).show();
+    }
+    if (typeof renderSkeleton === 'function') {
+        renderSkeleton(body, { rows: 5 });
+    }
+    try {
+        const data = await apiGet('/api/collection/sessions?limit=25');
+        const sessions = (data && data.sessions) || [];
+        if (sessions.length === 0) {
+            if (typeof renderEmptyState === 'function') {
+                renderEmptyState(body, {
+                    sigil: 'spiral',
+                    title: 'No past sessions yet.',
+                    body: 'Run a sort session to start building history.',
+                });
+            } else {
+                body.innerHTML = '<p class="text-muted">No past sessions yet.</p>';
+            }
+            return;
+        }
+        const fmt = (iso) => {
+            if (!iso) return '<span class="text-muted">—</span>';
+            try {
+                return new Date(iso).toLocaleString();
+            } catch (_) { return iso; }
+        };
+        const rows = sessions.map(s => {
+            const dur = (s.start_time && s.end_time)
+                ? _humanDuration(s.start_time, s.end_time)
+                : '<span class="text-muted">in flight</span>';
+            const total = s.total_scans || 0;
+            const recognized = s.recognized || 0;
+            const unrecognized = s.unrecognized || 0;
+            const mode = escapeHtml(s.sort_mode || s.config_name || '—');
+            return `<tr>
+                <td class="small">#${s.id}</td>
+                <td class="small">${fmt(s.start_time)}</td>
+                <td class="small">${dur}</td>
+                <td class="small text-truncate" style="max-width:160px;"
+                    title="${escapeHtml(s.config_name || '')}">${mode}</td>
+                <td class="small text-end">${total}</td>
+                <td class="small text-end text-success">${recognized}</td>
+                <td class="small text-end text-warning">${unrecognized}</td>
+            </tr>`;
+        }).join('');
+        body.innerHTML = `
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Started</th>
+                            <th>Duration</th>
+                            <th>Preset</th>
+                            <th class="text-end">Cards</th>
+                            <th class="text-end">ID'd</th>
+                            <th class="text-end">Review</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>`;
+    } catch (e) {
+        if (typeof renderEmptyState === 'function') {
+            renderEmptyState(body, {
+                sigil: 'eye',
+                title: 'Could not load session history.',
+                body: 'Try again in a moment.',
+            });
+        }
+    }
+}
+
+function _humanDuration(startIso, endIso) {
+    try {
+        const ms = new Date(endIso).getTime() - new Date(startIso).getTime();
+        if (!isFinite(ms) || ms < 0) return '—';
+        const s = Math.round(ms / 1000);
+        if (s < 60) return `${s}s`;
+        const m = Math.floor(s / 60);
+        if (m < 60) return `${m}m ${s % 60}s`;
+        const h = Math.floor(m / 60);
+        return `${h}h ${m % 60}m`;
+    } catch (_) { return '—'; }
+}
+
+async function populatePostSortReviewQueue() {
+    const wrap = document.getElementById('post-sort-review-inline');
+    const list = document.getElementById('post-sort-review-inline-list');
+    if (!wrap || !list) return;
+    try {
+        const data = await apiGet('/api/detection-reviews/recent?limit=8');
+        const items = (data && data.items) || [];
+        if (items.length === 0) {
+            wrap.style.display = 'none';
+            return;
+        }
+        list.innerHTML = items.map(it => {
+            const variable = escapeHtml(it.variable || '?');
+            const name = escapeHtml(it.name || 'Unrecognized');
+            const setStr = it.set_code ? `<span class="text-muted ms-1">${escapeHtml(it.set_code.toUpperCase())}</span>` : '';
+            const cn = it.collector_number ? `<span class="text-muted">${escapeHtml('#' + it.collector_number)}</span>` : '';
+            const conf = (it.confidence !== null && it.confidence !== undefined)
+                ? `<span class="text-muted ms-2 small">conf ${Number(it.confidence).toFixed(2)}</span>`
+                : '';
+            return `<li class="d-flex align-items-center gap-2 py-1">
+                <span class="badge bg-secondary" style="font-size:0.65em">${variable}</span>
+                <strong>${name}</strong>
+                ${setStr}${cn}
+                ${conf}
+            </li>`;
+        }).join('');
+        wrap.style.display = '';
+    } catch (e) {
+        wrap.style.display = 'none';
+    }
 }
 
 // Post-sort action: launch another session with the same preset.

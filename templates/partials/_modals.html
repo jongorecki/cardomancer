@@ -14,7 +14,11 @@
                         <div class="card">
                             <div class="card-header">Current Database</div>
                             <div class="card-body" id="db-info">
-                                <p class="text-muted">Loading…</p>
+                                <div class="cm-skeleton">
+                                    <div class="cm-skeleton-line" style="width:85%"></div>
+                                    <div class="cm-skeleton-line" style="width:70%"></div>
+                                    <div class="cm-skeleton-line" style="width:92%"></div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -179,4 +183,36 @@
                 </div>
               </div>
             </div><!-- /#moxfield-text-modal -->
+
+            <!-- ============================================================ -->
+            <!-- PAST SESSIONS MODAL                                          -->
+            <!-- Triggered by the "View past sessions" link in the post-sort  -->
+            <!-- hero. Lists recent sessions with timestamps + end reasons +  -->
+            <!-- totals. Reuses the existing /api/collection/sessions route.  -->
+            <!-- ============================================================ -->
+            <div class="modal fade" id="past-sessions-modal" tabindex="-1" aria-hidden="true">
+              <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title">Past sessions</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                  </div>
+                  <div class="modal-body">
+                    <p class="small text-muted mb-3">
+                      Most-recent sessions first. Limited to the last 25 —
+                      use the Collection tab for the full history.
+                    </p>
+                    <div id="past-sessions-content">
+                      <div class="cm-skeleton">
+                        <div class="cm-skeleton-line" style="width:90%"></div>
+                        <div class="cm-skeleton-line" style="width:75%"></div>
+                        <div class="cm-skeleton-line" style="width:85%"></div>
+                        <div class="cm-skeleton-line" style="width:70%"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div><!-- /#past-sessions-modal -->
+
 {% include "partials/_tab_settings_modal.html" %}

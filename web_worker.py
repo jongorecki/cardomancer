@@ -10,6 +10,7 @@
 # Emergency stop bypasses the queue entirely.
 # ---------------------------------------------------------------------------
 
+import logging
 import os
 import queue
 import threading
@@ -19,6 +20,8 @@ import numpy as np
 from PIL import Image
 
 from web_motion_sim import motion_tracker
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -214,7 +217,7 @@ class SortWorker:
 
     def log(self, message):
         """Emit a log message."""
-        print(f"[worker] {message}")
+        logger.info(message)
         self.emit('log_message', {'message': message, 'timestamp': time.time()})
 
     def start(self):
@@ -385,9 +388,9 @@ class SortWorker:
                 restart_count += 1
                 import traceback
                 tb = traceback.format_exc()
-                print(f"[worker] CRITICAL: worker loop crashed ({outer_exc!r}) — "
-                      f"restart #{restart_count}")
-                print(tb)
+                logger.critical(f"worker loop crashed ({outer_exc!r}) — "
+                                f"restart #{restart_count}")
+                logger.critical(tb)
                 try:
                     self.emit('worker_crashed', {
                         'error': str(outer_exc),
@@ -405,7 +408,7 @@ class SortWorker:
                 # Short pause before restart to avoid tight crash loop.
                 time.sleep(1.0)
                 if restart_count >= 10:
-                    print("[worker] FATAL: too many restarts — giving up")
+                    logger.critical("FATAL: too many restarts — giving up")
                     try:
                         self.emit('worker_fatal', {
                             'message': 'worker crashed repeatedly, giving up',
@@ -437,7 +440,7 @@ class SortWorker:
                 import traceback
                 tb = traceback.format_exc()
                 self.log(f"Error executing '{command}': {e}")
-                print(tb)
+                logger.error(tb)
                 self.emit('error', {
                     'message': str(e),
                     'command': command,
@@ -448,7 +451,7 @@ class SortWorker:
                 try:
                     self._auto_safety_reset(command, e)
                 except Exception as reset_err:
-                    print(f"[worker] safety-reset failed: {reset_err}")
+                    logger.error(f"safety-reset failed: {reset_err}")
 
     def _auto_safety_reset(self, failed_command, exc):
         """
@@ -494,7 +497,7 @@ class SortWorker:
                     'reason': f'auto-paused after error: {exc}',
                 })
         except Exception as e:
-            print(f"[worker] _auto_safety_reset error: {e}")
+            logger.error(f"_auto_safety_reset error: {e}")
 
     def _emergency_safety_reset(self, reason):
         """
@@ -1251,6 +1254,18 @@ class SortWorker:
         # Start tracker
         self.tracker = ScanTracker()
         config_name = config_file if config_file else None
+        # Capture the inline config_lines if this session was started from
+        # one (vs. a saved preset name). Persisted on the session row so
+        # the power-loss-resume flow can rehydrate the SortConfig even
+        # when no preset file exists for it. None when the session loads
+        # a named preset — config_name carries the file path instead.
+        if config_lines is not None:
+            if isinstance(config_lines, str):
+                _config_text = config_lines
+            else:
+                _config_text = '\n'.join(str(line) for line in config_lines)
+        else:
+            _config_text = None
         import gcode_control
         # Use sort config bin count if custom, otherwise use current hardware bin count
         if self.sort_config_obj:
@@ -1263,6 +1278,7 @@ class SortWorker:
             config_name=config_name,
             bin_count=bin_count,
             notes=notes,
+            config_text=_config_text,
         )
 
         self.state = 'sorting'
@@ -2448,7 +2464,7 @@ class SortWorker:
             with open(path, 'r') as f:
                 payload = json.load(f)
         except Exception as e:
-            print(f"[worker] Failed to read last setup: {e}")
+            logger.warning(f"Failed to read last setup: {e}")
             return None
 
         import gcode_control
@@ -2469,7 +2485,7 @@ class SortWorker:
                                      if camera_x_offset is not None
                                      else None))
             except Exception as e:
-                print(f"[worker] staging restore error: {e}")
+                logger.warning(f"staging restore error: {e}")
 
         source_bins = payload.get('source_bins') or []
         if source_bins:
@@ -2480,7 +2496,7 @@ class SortWorker:
                     gcode_control.set_machine_positions(
                         source_x=float(primary['x']))
                 except Exception as e:
-                    print(f"[worker] source restore error: {e}")
+                    logger.warning(f"source restore error: {e}")
             self.source_bins = source_bins
 
         # Restore probe cache so the first sort doesn't have to re-probe
@@ -2499,7 +2515,7 @@ class SortWorker:
                         continue
                     gcode_control._probe_z_cache[float(x)] = float(z)
             except Exception as e:
-                print(f"[worker] probe cache restore error: {e}")
+                logger.warning(f"probe cache restore error: {e}")
 
         summary = {
             'locations': locations,
@@ -2510,11 +2526,11 @@ class SortWorker:
             'saved_at': payload.get('saved_at'),
             'name': payload.get('name'),
         }
-        print(f"[worker] Restored setup "
-              f"{('(' + summary['name'] + ') ') if summary.get('name') else ''}"
-              f"from {os.path.basename(path)}: "
-              f"{summary['dest_bin_count']} dest, "
-              f"{summary['source_bin_count']} source")
+        logger.info(f"Restored setup "
+                    f"{('(' + summary['name'] + ') ') if summary.get('name') else ''}"
+                    f"from {os.path.basename(path)}: "
+                    f"{summary['dest_bin_count']} dest, "
+                    f"{summary['source_bin_count']} source")
         return summary
 
     def _cleanup_old_scan_images(self):
@@ -2990,7 +3006,7 @@ class SortWorker:
                             break
                         decoded = line.decode('utf-8', errors='replace').strip()
                         if decoded:
-                            print(f"[worker] << {decoded}")
+                            logger.debug(f"<< {decoded}")
                 except Exception:
                     pass
 
@@ -3009,7 +3025,7 @@ class SortWorker:
                             break
                         decoded = line.decode('utf-8', errors='replace').strip()
                         if decoded:
-                            print(f"[worker] << {decoded}")
+                            logger.debug(f"<< {decoded}")
                 except Exception:
                     pass
             except Exception as e:
@@ -3210,35 +3226,58 @@ class SortWorker:
             })
             return
 
-        # 2. Rebuild sort_config_obj. Only saved-preset sessions can
-        #    resume; inline-config sessions don't have their query text
-        #    persisted anywhere on disk.
+        # 2. Rebuild sort_config_obj. Try config_name (a saved preset
+        #    file) first, fall back to config_text (the raw lines, only
+        #    populated for sessions that were started from inline
+        #    config). Sessions started before the config_text migration
+        #    (no name AND no text) still can't be resumed.
         config_name = (meta.get('config_name') or '').strip()
-        if not config_name:
-            self.emit('error', {
-                'message': f'Session #{session_id} was started from inline '
-                           f'configuration that wasn\'t saved. Resume is '
-                           f'not supported for inline sessions; discard '
-                           f'and start a new session instead.'
-            })
-            return
-
+        config_text = meta.get('config_text') or ''
         try:
             from sort_config import SortConfig
             from sorting import set_sort_config
-            from config import SORT_CONFIGS_DIR
-            import os as _os
-            filepath = config_name
-            if not _os.path.isabs(filepath):
-                filepath = _os.path.join(SORT_CONFIGS_DIR, filepath)
-            if not _os.path.exists(filepath):
+            if config_name:
+                from config import SORT_CONFIGS_DIR
+                import os as _os
+                filepath = config_name
+                if not _os.path.isabs(filepath):
+                    filepath = _os.path.join(SORT_CONFIGS_DIR, filepath)
+                if not _os.path.exists(filepath):
+                    # Saved preset got deleted between sessions. Fall
+                    # back to config_text if we have it; otherwise
+                    # bail with a useful message.
+                    if config_text.strip():
+                        self.log(
+                            f"resume_stale_session: preset '{config_name}' "
+                            f"missing on disk — falling back to the inline "
+                            f"config_text stored on the session row.")
+                        sort_cfg = SortConfig.from_lines(
+                            config_text.splitlines())
+                    else:
+                        self.emit('error', {
+                            'message': (f"Sort preset '{config_name}' no "
+                                        f"longer exists; cannot resume "
+                                        f"session #{session_id}.")
+                        })
+                        return
+                else:
+                    sort_cfg = SortConfig.from_file(filepath)
+            elif config_text.strip():
+                # Inline-config session, no preset name. Rebuild from
+                # the persisted lines (added in the Phase 4 follow-on
+                # commit that introduced sessions.config_text).
+                self.log(
+                    f"resume_stale_session: rebuilding from inline "
+                    f"config_text persisted with session #{session_id}.")
+                sort_cfg = SortConfig.from_lines(config_text.splitlines())
+            else:
                 self.emit('error', {
-                    'message': (f"Sort preset '{config_name}' no longer "
-                                f"exists; cannot resume session "
-                                f"#{session_id}.")
+                    'message': (f"Session #{session_id} has no saved preset "
+                                f"and no persisted config text — resume "
+                                f"not supported. Discard and start a new "
+                                f"session instead.")
                 })
                 return
-            sort_cfg = SortConfig.from_file(filepath)
             self.sort_config_obj = sort_cfg
             self.sort_mode = (meta.get('sort_mode') or 'custom_file')
             set_sort_config(sort_cfg)
@@ -3503,7 +3542,7 @@ class SortWorker:
         except FileNotFoundError:
             return None
         except Exception as e:
-            print(f"[worker] Could not read empty_source_z.json: {e}")
+            logger.warning(f"Could not read empty_source_z.json: {e}")
             return None
 
     def _save_empty_source_z(self, z):

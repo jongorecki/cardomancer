@@ -224,6 +224,16 @@ def _create_tables(conn):
         conn.execute("ALTER TABLE scan_history ADD COLUMN frame_effects TEXT")
         conn.commit()
 
+    # Migration: add config_text column to sessions table so the
+    # power-loss-resume flow can rehydrate sessions that were started
+    # from inline config_lines (no saved preset file). Before this
+    # column existed, only sessions with a config_name were resumable.
+    try:
+        conn.execute("SELECT config_text FROM sessions LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE sessions ADD COLUMN config_text TEXT")
+        conn.commit()
+
     conn.commit()
 
 
@@ -232,14 +242,23 @@ def _create_tables(conn):
 # ---------------------------------------------------------------------------
 
 def start_session(conn, sort_mode=None, config_name=None, bin_count=None,
-                  notes=None):
-    """Create a new session record. Returns the session_id."""
+                  notes=None, config_text=None):
+    """Create a new session record. Returns the session_id.
+
+    config_text is the raw multi-line config text that was used to
+    build the sort. Populated when start_session is driven from an
+    inline config (config_lines in web_worker); empty / None when
+    the session loads a saved preset by name (config_name carries
+    the filename instead). Stored so the power-loss-resume flow can
+    rehydrate inline-config sessions without needing the lines to
+    be on disk anywhere else.
+    """
     cursor = conn.execute(
         """INSERT INTO sessions (start_time, sort_mode, config_name,
-                                bin_count, notes)
-           VALUES (?, ?, ?, ?, ?)""",
+                                bin_count, notes, config_text)
+           VALUES (?, ?, ?, ?, ?, ?)""",
         (datetime.now().isoformat(), sort_mode, config_name,
-         bin_count, notes)
+         bin_count, notes, config_text)
     )
     conn.commit()
     session_id = cursor.lastrowid
@@ -304,7 +323,8 @@ def get_session_metadata(conn, session_id):
     """
     row = conn.execute(
         """SELECT id, start_time, end_time, sort_mode, config_name,
-                  bin_count, total_scans, recognized, unrecognized, notes
+                  bin_count, total_scans, recognized, unrecognized, notes,
+                  config_text
            FROM sessions WHERE id = ?""",
         (session_id,)
     ).fetchone()
@@ -532,11 +552,23 @@ def get_duplicates(conn, min_quantity=2):
     return [dict(r) for r in rows]
 
 
-def get_session_history(conn):
-    """Get all sessions."""
-    rows = conn.execute(
-        "SELECT * FROM sessions ORDER BY start_time DESC"
-    ).fetchall()
+def get_session_history(conn, limit=None):
+    """Get sessions ordered most-recent-first.
+
+    `limit=None` returns all sessions (legacy behavior — keeps existing
+    callers working). Pass an int to cap the result for callers that
+    just want a recent slice (e.g. the past-sessions modal in the
+    post-sort hero).
+    """
+    if limit is None:
+        rows = conn.execute(
+            "SELECT * FROM sessions ORDER BY start_time DESC"
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM sessions ORDER BY start_time DESC LIMIT ?",
+            (int(limit),),
+        ).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -1600,6 +1632,53 @@ def list_detection_reviews(conn, variable, include_reviewed=False, limit=200):
         LIMIT ?
     """
     rows = conn.execute(sql, params + [int(limit)]).fetchall()
+    return [dict(r) for r in rows]
+
+
+def list_recent_session_reviews(conn, limit=20):
+    """Return pending detection-review items from the *most recently
+    ended* session, across all variables. Used by the post-sort hero
+    in the Sort tab so the user can see what needs review without
+    switching to Setup.
+
+    Falls back to the most-recently-started session if there's no
+    cleanly-ended one (e.g. mid-session reload of the page) — both
+    behaviors are reasonable for the post-sort use case.
+
+    Returns a list of dicts shaped the same as list_detection_reviews
+    rows, plus 'variable' (since results span all variables).
+    """
+    # Most recent session — prefer ended, fall back to most-recent-started
+    row = conn.execute(
+        """SELECT id FROM sessions
+           WHERE end_time IS NOT NULL
+           ORDER BY end_time DESC LIMIT 1"""
+    ).fetchone()
+    if row is None:
+        row = conn.execute(
+            "SELECT id FROM sessions ORDER BY start_time DESC LIMIT 1"
+        ).fetchone()
+    if row is None:
+        return []
+    session_id = int(row['id'])
+
+    sql = """
+        SELECT dr.id, dr.scan_id, dr.variable, dr.detected_value,
+               dr.confidence, dr.verdict, dr.correction, dr.reviewed_at,
+               sh.scan_num, sh.name, sh.set_code, sh.collector_number,
+               sh.session_id, s.start_time as session_start_time
+        FROM detection_reviews dr
+        JOIN scan_history sh ON dr.scan_id = sh.id
+        LEFT JOIN sessions s ON sh.session_id = s.id
+        WHERE sh.session_id = ?
+          AND dr.verdict IS NULL
+        ORDER BY
+          CASE WHEN dr.confidence IS NULL THEN 0 ELSE 1 END ASC,
+          dr.confidence ASC,
+          dr.id ASC
+        LIMIT ?
+    """
+    rows = conn.execute(sql, (session_id, int(limit))).fetchall()
     return [dict(r) for r in rows]
 
 

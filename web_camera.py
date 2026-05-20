@@ -21,10 +21,13 @@
 #     itself is not thread-safe).
 # ---------------------------------------------------------------------------
 
+import logging
 import threading
 import time
 import cv2
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 class CameraManager:
@@ -100,7 +103,7 @@ class CameraManager:
             try:
                 cb(old, new_health)
             except Exception as e:
-                print(f"[camera] health listener error: {e}")
+                logger.error(f"health listener error: {e}")
 
     @property
     def is_active(self):
@@ -149,8 +152,8 @@ class CameraManager:
                 name='camera-watchdog')
             self._watchdog_thread.start()
 
-            print(f"[camera] Started on device {self.device_index} "
-                  f"(buffer_size=1, watchdog on)")
+            logger.info(f"Started on device {self.device_index} "
+                        f"(buffer_size=1, watchdog on)")
             return True
 
     def stop(self):
@@ -173,7 +176,7 @@ class CameraManager:
             with self._lock:
                 self._frame = None
             self._set_health('unknown')
-            print("[camera] Stopped")
+            logger.info("Stopped")
 
     # -------------------------------------------------------------------
     # Capture device management (open / release / reconnect)
@@ -214,7 +217,7 @@ class CameraManager:
                 except Exception:
                     pass
             except Exception as e:
-                print(f"[camera] {name} open exception: {e}")
+                logger.warning(f"{name} open exception: {e}")
             return None
 
         # DirectShow first — most stable for USB webcams on Windows.
@@ -227,7 +230,7 @@ class CameraManager:
         if cap is None or not cap.isOpened():
             self._last_error = (f'cv2.VideoCapture could not open device '
                                 f'(tried: {", ".join(backends_tried)})')
-            print(f"[camera] ERROR: {self._last_error}")
+            logger.error(self._last_error)
             if cap is not None:
                 try:
                     cap.release()
@@ -243,18 +246,18 @@ class CameraManager:
             cap.set(cv2.CAP_PROP_FOURCC,
                     cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'))
         except Exception as e:
-            print(f"[camera] could not set FOURCC=MJPG: {e}")
+            logger.warning(f"could not set FOURCC=MJPG: {e}")
 
         try:
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.TARGET_WIDTH)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.TARGET_HEIGHT)
         except Exception as e:
-            print(f"[camera] could not set resolution: {e}")
+            logger.warning(f"could not set resolution: {e}")
 
         try:
             cap.set(cv2.CAP_PROP_FPS, self.TARGET_FPS)
         except Exception as e:
-            print(f"[camera] could not set FPS: {e}")
+            logger.warning(f"could not set FPS: {e}")
 
         # Minimize internal buffering so get_frame() reflects the real
         # current view. Some backends silently ignore this.
@@ -279,8 +282,8 @@ class CameraManager:
             actual_fps = 0.0
             fourcc_str = '????'
 
-        print(f"[camera] opened ({backends_tried[-1]}) "
-              f"{actual_w}x{actual_h}@{actual_fps:.0f}fps fourcc={fourcc_str}")
+        logger.info(f"opened ({backends_tried[-1]}) "
+                    f"{actual_w}x{actual_h}@{actual_fps:.0f}fps fourcc={fourcc_str}")
 
         # --- Warm-up read loop: discard the first few frames so auto-exposure
         # has a chance to settle. Without this, the first frame the sweep
@@ -300,8 +303,8 @@ class CameraManager:
                 if warmup_failures > 10:
                     break
             time.sleep(0.05)
-        print(f"[camera] warmup: {warmup_reads} reads, "
-              f"{warmup_failures} failures")
+        logger.info(f"warmup: {warmup_reads} reads, "
+                    f"{warmup_failures} failures")
 
         self._cap = cap
         self._last_error = ''
@@ -315,7 +318,7 @@ class CameraManager:
             try:
                 cap.release()
             except Exception as e:
-                print(f"[camera] release error: {e}")
+                logger.warning(f"release error: {e}")
 
     def _reconnect(self, reason=''):
         """
@@ -333,7 +336,7 @@ class CameraManager:
             # in progress). Let that one finish — no point racing.
             return False
         try:
-            print(f"[camera] reconnecting ({reason})")
+            logger.warning(f"reconnecting ({reason})")
             self._set_health('dead')
             self._focus_locked = False  # Reset — new device needs fresh AF
             self._release_capture()
@@ -344,11 +347,11 @@ class CameraManager:
                     self._reconnect_count += 1
                     self._set_health('ok')
                     self._last_good_frame_time = time.time()
-                    print(f"[camera] reconnected on attempt {attempt + 1} "
-                          f"(total reconnects: {self._reconnect_count})")
+                    logger.info(f"reconnected on attempt {attempt + 1} "
+                                f"(total reconnects: {self._reconnect_count})")
                     return True
                 time.sleep(1.0 * (attempt + 1))
-            print("[camera] reconnect failed after 3 attempts")
+            logger.error("reconnect failed after 3 attempts")
             self._set_health('dead')
             return False
         finally:
@@ -380,14 +383,14 @@ class CameraManager:
             except Exception as e:
                 ret, frame = False, None
                 self._last_error = f'read exception: {e}'
-                print(f"[camera] read exception: {e}")
+                logger.error(f"read exception: {e}")
 
             if not ret or frame is None:
                 consecutive_failures += 1
                 self._read_failures += 1
                 if consecutive_failures == 1:
                     # First hit — don't panic yet, just log once.
-                    print(f"[camera] read failure (failures={self._read_failures})")
+                    logger.warning(f"read failure (failures={self._read_failures})")
                 if consecutive_failures >= self.RECONNECT_AFTER_FAILURES:
                     self._reconnect(
                         f'{consecutive_failures} consecutive read failures')
@@ -403,7 +406,7 @@ class CameraManager:
                 if self.rotate is not None:
                     frame = cv2.rotate(frame, self.rotate)
             except Exception as e:
-                print(f"[camera] rotate exception: {e}")
+                logger.error(f"rotate exception: {e}")
                 continue
 
             now = time.time()
@@ -430,8 +433,8 @@ class CameraManager:
                     self._last_error = (f'low fps {self._fps:.1f} '
                                         f'(target {self.TARGET_FPS})')
                     if prev_fps >= self.LOW_FPS_WARN_THRESHOLD or prev_fps == 0:
-                        print(f"[camera] WARNING: capture fps={self._fps:.1f} "
-                              f"— check USB bandwidth / format")
+                        logger.warning(f"capture fps={self._fps:.1f} "
+                                       f"— check USB bandwidth / format")
 
                 # Cheap dark-frame check: downsample + mean. Done at most
                 # once per second to keep overhead negligible.
@@ -450,7 +453,7 @@ class CameraManager:
             # Pace to ~30 FPS max — gives other threads room to run.
             time.sleep(0.03)
 
-        print("[camera] capture loop exiting")
+        logger.info("capture loop exiting")
 
     # -------------------------------------------------------------------
     # Watchdog — monitors capture loop health
@@ -472,17 +475,17 @@ class CameraManager:
                 continue
             since = time.time() - self._last_good_frame_time
             if since > self.WATCHDOG_STALL_RECONNECT:
-                print(f"[camera] watchdog: {since:.1f}s since last frame "
-                      f"— forcing reconnect")
+                logger.warning(f"watchdog: {since:.1f}s since last frame "
+                               f"— forcing reconnect")
                 self._reconnect(f'watchdog stall {since:.1f}s')
             elif since > self.WATCHDOG_STALL_WARN:
                 if self._health != 'stalled':
-                    print(f"[camera] watchdog: {since:.1f}s since last frame "
-                          f"(stalled)")
+                    logger.warning(f"watchdog: {since:.1f}s since last frame "
+                                   f"(stalled)")
                 self._set_health('stalled')
             else:
                 if self._health != 'ok':
-                    print(f"[camera] watchdog: healthy again")
+                    logger.info("watchdog: healthy again")
                 self._set_health('ok')
 
     # -------------------------------------------------------------------
@@ -559,9 +562,9 @@ class CameraManager:
             # Disable autofocus — freezes the lens at current position
             cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)
             self._focus_locked = True
-            print("[camera] Focus LOCKED (autofocus disabled)")
+            logger.info("Focus LOCKED (autofocus disabled)")
         except Exception as e:
-            print(f"[camera] Could not lock focus: {e}")
+            logger.warning(f"Could not lock focus: {e}")
 
     def unlock_focus(self):
         """
@@ -576,9 +579,9 @@ class CameraManager:
         try:
             cap.set(cv2.CAP_PROP_AUTOFOCUS, 1)
             self._focus_locked = False
-            print("[camera] Focus UNLOCKED (autofocus re-enabled)")
+            logger.info("Focus UNLOCKED (autofocus re-enabled)")
         except Exception as e:
-            print(f"[camera] Could not unlock focus: {e}")
+            logger.warning(f"Could not unlock focus: {e}")
 
     @property
     def focus_locked(self):
@@ -646,8 +649,8 @@ class CameraManager:
 
         # Timeout — return the best frame we saw (may still be usable)
         if best_frame is not None:
-            print(f"[camera] get_sharp_frame timeout — best sharpness "
-                  f"{best_sharpness:.1f} (threshold {min_sharpness})")
+            logger.warning(f"get_sharp_frame timeout — best sharpness "
+                           f"{best_sharpness:.1f} (threshold {min_sharpness})")
         return best_frame, best_sharpness
 
     # -------------------------------------------------------------------
@@ -730,7 +733,7 @@ class CameraManager:
             except GeneratorExit:
                 return
             except Exception as e:
-                print(f"[camera] mjpeg generator error: {e}")
+                logger.error(f"mjpeg generator error: {e}")
             time.sleep(interval)
 
     def generate_mjpeg_with_aruco(self, quality=70, max_fps=10):
@@ -844,7 +847,7 @@ class CameraManager:
                 return
             except Exception as e:
                 # Last-resort safety net. Never let the stream die.
-                print(f"[camera] aruco mjpeg error: {e}")
+                logger.error(f"aruco mjpeg error: {e}")
                 try:
                     ph = self._placeholder_jpeg(
                         'STREAM ERROR', str(e)[:60])

@@ -15,6 +15,7 @@ Typical performance: ~15-25ms per card.
 Requires: card_embeddings.npz (built by build_embedding_db.py)
 """
 
+import logging
 import os
 import time
 import cv2
@@ -22,6 +23,8 @@ import numpy as np
 import torch
 from torchvision import transforms
 from PIL import Image
+
+logger = logging.getLogger(__name__)
 
 # --- Config ---
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -80,7 +83,7 @@ def _load_model():
     _model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14')
     _model = _model.to(_device)
     _model.eval()
-    print(f"[card_identify_v2] DINOv2 ViT-B/14 loaded on {_device}")
+    logger.info(f"DINOv2 ViT-B/14 loaded on {_device}")
 
 
 def _load_db():
@@ -92,8 +95,7 @@ def _load_db():
     _db_loaded = True
 
     if not os.path.exists(EMBEDDING_DB_PATH):
-        print(f"[card_identify_v2] WARNING: No embedding DB at "
-              f"{EMBEDDING_DB_PATH}")
+        logger.warning(f"No embedding DB at {EMBEDDING_DB_PATH}")
         return
 
     t0 = time.time()
@@ -104,11 +106,11 @@ def _load_db():
 
     if "card_back" in data:
         _card_back_embedding = data["card_back"].astype(np.float32)
-        print("[card_identify_v2] Card back reference loaded")
+        logger.info("Card back reference loaded")
 
     elapsed = time.time() - t0
-    print(f"[card_identify_v2] Loaded {len(_card_ids)} embeddings "
-          f"({elapsed:.2f}s, {_embeddings.shape[1]}-dim)")
+    logger.info(f"Loaded {len(_card_ids)} embeddings "
+                f"({elapsed:.2f}s, {_embeddings.shape[1]}-dim)")
 
 
 # Load on import

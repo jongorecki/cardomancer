@@ -13,6 +13,7 @@
 # (~75s) and auto-creates the cache for next time.
 # ---------------------------------------------------------------------------
 
+import logging
 import os
 import json
 import time
@@ -20,6 +21,8 @@ import cv2
 import numpy as np
 from PIL import Image
 import imagehash
+
+logger = logging.getLogger(__name__)
 
 # --- Region definition (art crop, must match build_hash_db_v3.py Region A) ---
 REGION_A = (30, 105, 715, 520)
@@ -97,10 +100,10 @@ def _load_db():
             _db_a_packed = data['a_packed']        # (N, 3, 32) uint8
             if 'card_back_packed' in data:
                 _card_back_packed = data['card_back_packed']  # (3, 32)
-                print("[card_identify] Card back reference loaded")
+                logger.info("Card back reference loaded")
             elapsed = time.time() - t0
-            print(f"[card_identify] Loaded {len(_card_ids)} cards from "
-                  f"packed cache ({elapsed:.1f}s)")
+            logger.info(f"Loaded {len(_card_ids)} cards from "
+                        f"packed cache ({elapsed:.1f}s)")
             _db_loaded = True
             return
 
@@ -108,7 +111,7 @@ def _load_db():
     # Slow path: load from JSON, extract Region A, pack, cache as npz
     # ------------------------------------------------------------------
     if not os.path.exists(HASH_DB_JSON):
-        print(f"[card_identify] WARNING: No hash DB at {HASH_DB_JSON}")
+        logger.warning(f"No hash DB at {HASH_DB_JSON}")
         _db_loaded = True
         return
 
@@ -125,7 +128,7 @@ def _load_db():
             _hash_to_bits(card_back_entry['a_pb']),
         ])  # (3, 256) bool
         _card_back_packed = _pack_bits(cb_bits)  # (3, 32) uint8
-        print("[card_identify] Card back reference loaded")
+        logger.info("Card back reference loaded")
 
     # Build packed numpy arrays -- Region A only
     n = len(raw_db)
@@ -145,8 +148,8 @@ def _load_db():
     _db_a_packed = _pack_bits(ap)  # (N, 3, 32) uint8
 
     elapsed = time.time() - t0
-    print(f"[card_identify] Loaded {n} cards from JSON "
-          f"({elapsed:.1f}s, {bits_len}-bit -> packed uint8)")
+    logger.info(f"Loaded {n} cards from JSON "
+                f"({elapsed:.1f}s, {bits_len}-bit -> packed uint8)")
 
     # Cache as npz for fast loading next time
     try:
@@ -158,10 +161,10 @@ def _load_db():
             save_kw['card_back_packed'] = _card_back_packed
         np.savez(HASH_DB_NPZ, **save_kw)
         size_mb = os.path.getsize(HASH_DB_NPZ) / (1024 * 1024)
-        print(f"[card_identify] Cached packed DB -> "
-              f"{os.path.basename(HASH_DB_NPZ)} ({size_mb:.1f} MB)")
+        logger.info(f"Cached packed DB -> "
+                    f"{os.path.basename(HASH_DB_NPZ)} ({size_mb:.1f} MB)")
     except Exception as e:
-        print(f"[card_identify] WARNING: Could not cache npz: {e}")
+        logger.warning(f"Could not cache npz: {e}")
 
     _db_loaded = True
 
