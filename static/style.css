@@ -132,6 +132,37 @@ body {
     border-color: var(--accent-blue);
     background: var(--bg-card-header);
 }
+/* Keyboard-only focus ring for the bin-tile pseudo-buttons. The
+ * hover treatment alone isn't enough — sighted keyboard users need
+ * a clearly visible focus indicator. Uses the sigil amber so it
+ * pops against both indigo (dark) and parchment (light) surfaces. */
+.bin-tile:focus-visible {
+    outline: 2px solid var(--accent-sigil);
+    outline-offset: 2px;
+    border-color: var(--accent-sigil);
+}
+/* Headings used as focus landing points for stage transitions take
+ * a programmatic tabindex=-1; suppress the default focus outline
+ * since they aren't actually interactive — the focus move is only
+ * so screen readers re-orient. */
+#pre-sort-heading:focus,
+#post-sort-heading:focus,
+#pre-sort-heading:focus-visible,
+#post-sort-heading:focus-visible {
+    outline: none;
+}
+
+/* Global :focus-visible fallback. Bootstrap's default focus shadow
+ * on inputs/links can wash out on the indigo background; ensure
+ * every focusable element gets a visible amber ring even if a
+ * component-specific selector hasn't been added. */
+a:focus-visible,
+button:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:not([tabindex="-1"]):focus-visible {
+    outline: 2px solid var(--accent-sigil);
+    outline-offset: 2px;
+}
 .bin-tile-full {
     border-color: var(--accent-red);
 }

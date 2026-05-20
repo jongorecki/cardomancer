@@ -6,6 +6,16 @@
             <!-- ============================================================ -->
             <div class="tab-pane fade show active" id="tab-sort">
 
+                <!-- Visually-hidden live region for stage transition
+                     announcements (pre / running / post). Updated by
+                     sortStage.js so screen-reader users hear stage
+                     changes even though the visual cue is layout-only. -->
+                <div id="sort-stage-announcer"
+                     class="visually-hidden"
+                     role="status"
+                     aria-live="polite"
+                     aria-atomic="true"></div>
+
                 <!-- ===================================================== -->
                 <!-- 1. Session control bar (Start / Stop / Continuous /    -->
                 <!--    Undo) plus camera feed and live readouts. Pulled    -->
@@ -24,6 +34,8 @@
                             <div class="card-body">
                                 <div class="d-flex flex-wrap align-items-baseline justify-content-between mb-3">
                                     <h2 class="mb-0"
+                                        id="post-sort-heading"
+                                        tabindex="-1"
                                         style="font-family: var(--font-display); font-weight: 700; font-size: 1.6rem; color: var(--text-primary);">
                                         Session complete
                                     </h2>
@@ -55,6 +67,7 @@
                                 </div>
                                 <div class="d-flex gap-2 flex-wrap">
                                     <button class="btn btn-success"
+                                            id="btn-start-another-session"
                                             onclick="startAnotherSession()">
                                         Start another session &rarr;
                                     </button>
@@ -77,10 +90,10 @@
                                 -->
                                 <div id="post-sort-review-inline" class="mt-3"
                                      style="display:none;">
-                                    <h6 class="text-muted small mb-2"
-                                        style="text-transform:uppercase; letter-spacing:0.06em;">
+                                    <h3 class="text-muted small mb-2"
+                                        style="text-transform:uppercase; letter-spacing:0.06em; font-size:0.85rem; font-weight:600;">
                                         Cards to review from this session
-                                    </h6>
+                                    </h3>
                                     <ul id="post-sort-review-inline-list"
                                         class="list-unstyled small mb-0"></ul>
                                 </div>
@@ -102,6 +115,8 @@
                             <div class="card-body d-flex flex-wrap align-items-center gap-3">
                                 <div class="flex-grow-1">
                                     <h2 class="mb-1"
+                                        id="pre-sort-heading"
+                                        tabindex="-1"
                                         style="font-family: var(--font-display); font-weight: 700; font-size: 1.6rem; color: var(--text-primary); margin: 0;">
                                         Ready to sort
                                     </h2>
@@ -147,7 +162,7 @@
 
                                     <!-- Preset toolbar -->
                                     <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
-                                        <label class="form-label mb-0"><strong>Preset</strong></label>
+                                        <label class="form-label mb-0" for="sort-preset-select"><strong>Preset</strong></label>
                                         <select class="form-select form-select-sm"
                                                 id="sort-preset-select"
                                                 style="width:auto; min-width:220px;"
@@ -197,21 +212,21 @@
                                     <!-- bins / fallback / limit row -->
                                     <div class="row g-2 mb-2">
                                         <div class="col-auto">
-                                            <label class="form-label">Bins</label>
+                                            <label class="form-label" for="sc-bin-count">Bins</label>
                                             <input type="number" class="form-control form-control-sm"
                                                    id="sc-bin-count" value="10" min="1" max="20"
                                                    style="width:75px;"
                                                    onchange="onSortConfigBinCountChange()">
                                         </div>
                                         <div class="col-auto">
-                                            <label class="form-label">Fallback bin</label>
+                                            <label class="form-label" for="sc-fallback">Fallback bin</label>
                                             <input type="number" class="form-control form-control-sm"
                                                    id="sc-fallback" value="10" min="1"
                                                    style="width:75px;"
                                                    onchange="markSortConfigDirty()">
                                         </div>
                                         <div class="col-auto">
-                                            <label class="form-label">Bin limit</label>
+                                            <label class="form-label" for="sc-bin-limit">Bin limit</label>
                                             <input type="number" class="form-control form-control-sm"
                                                    id="sc-bin-limit" placeholder="unlimited" min="1"
                                                    style="width:110px;"
@@ -251,7 +266,7 @@
                                          in sync; Save uses whichever view
                                          was edited last. -->
                                     <div class="collapse mt-3" id="sort-config-text-editor">
-                                        <label class="form-label small mb-1">
+                                        <label class="form-label small mb-1" for="sort-config-text-area">
                                             Raw preset content
                                             <span class="text-muted">
                                                 &mdash; saved verbatim when you hit Save.
@@ -420,21 +435,21 @@
                             <div class="card-body">
                                 <div class="row g-2 mb-3">
                                     <div class="col">
-                                        <label class="form-label">Number of Bins</label>
+                                        <label class="form-label" for="bin-count">Number of Bins</label>
                                         <input type="number" class="form-control" id="bin-count" value="10" min="1" max="20">
                                     </div>
                                     <div class="col">
-                                        <label class="form-label">Bin Spacing (mm)</label>
+                                        <label class="form-label" for="bin-spacing">Bin Spacing (mm)</label>
                                         <input type="number" class="form-control" id="bin-spacing" value="100" min="10">
                                     </div>
                                     <div class="col">
-                                        <label class="form-label">Start X (mm)</label>
+                                        <label class="form-label" for="bin-start-x">Start X (mm)</label>
                                         <input type="number" class="form-control" id="bin-start-x" value="100" min="0">
                                     </div>
                                 </div>
                                 <div class="row g-2 mt-2 mb-2">
                                     <div class="col">
-                                        <label class="form-label">Card Limit / Bin</label>
+                                        <label class="form-label" for="bin-card-limit">Card Limit / Bin</label>
                                         <input type="number" class="form-control" id="bin-card-limit" value="150" min="1" max="500" title="Max cards per physical bin before it's considered full">
                                     </div>
                                 </div>
@@ -442,22 +457,22 @@
                                 <button class="btn btn-outline-info ms-2" onclick="saveDefaultBinConfig()" title="Save current bin config so it auto-loads on startup">Save as Default</button>
                                 <button class="btn btn-outline-warning ms-2" onclick="apiPost('/api/bins/probe-all')">Probe All Bins</button>
                                 <hr class="my-3">
-                                <h6>Machine Positions</h6>
+                                <h3 class="h6">Machine Positions</h3>
                                 <div class="row g-2 mb-2">
                                     <div class="col">
-                                        <label class="form-label small">Source Bin X</label>
+                                        <label class="form-label small" for="machine-source-x">Source Bin X</label>
                                         <input type="number" class="form-control form-control-sm" id="machine-source-x" value="50" min="0" step="0.1">
                                     </div>
                                     <div class="col">
-                                        <label class="form-label small">Camera Offset</label>
+                                        <label class="form-label small" for="machine-detect-x">Camera Offset</label>
                                         <input type="number" class="form-control form-control-sm" id="machine-detect-x" value="100" min="0" step="0.1">
                                     </div>
                                     <div class="col">
-                                        <label class="form-label small">Staging X</label>
+                                        <label class="form-label small" for="machine-staging-x">Staging X</label>
                                         <input type="number" class="form-control form-control-sm" id="machine-staging-x" value="162" min="0" step="0.1">
                                     </div>
                                     <div class="col">
-                                        <label class="form-label small">Staging W</label>
+                                        <label class="form-label small" for="machine-staging-w">Staging W</label>
                                         <input type="number" class="form-control form-control-sm" id="machine-staging-w" value="200" min="10" step="1">
                                     </div>
                                 </div>
@@ -483,14 +498,14 @@
                             <div class="card-header">Saved Configurations</div>
                             <div class="card-body">
                                 <div class="d-flex gap-2 mb-2">
-                                    <select class="form-select form-select-sm" id="bin-config-select">
+                                    <select class="form-select form-select-sm" id="bin-config-select" aria-label="Saved bin configuration">
                                         <option value="">Select a saved config…</option>
                                     </select>
                                     <button class="btn btn-primary btn-sm" onclick="loadBinConfig()">Load</button>
                                     <button class="btn btn-outline-danger btn-sm" onclick="deleteBinConfig()">Delete</button>
                                 </div>
                                 <div class="d-flex gap-2">
-                                    <input type="text" class="form-control form-control-sm" id="bin-config-name" placeholder="Config name…">
+                                    <input type="text" class="form-control form-control-sm" id="bin-config-name" placeholder="Config name…" aria-label="New bin config name">
                                     <button class="btn btn-outline-success btn-sm" style="white-space:nowrap;" onclick="saveBinConfig()">Save current</button>
                                 </div>
                             </div>
@@ -572,12 +587,12 @@
                         <!-- Controls -->
                         <div class="card mt-2">
                             <div class="card-body">
-                                <input type="text" class="form-control form-control-sm mb-2" id="session-notes" placeholder="Session notes (e.g. 'Sorting Commander deck', 'Bulk commons box 3')">
+                                <input type="text" class="form-control form-control-sm mb-2" id="session-notes" placeholder="Session notes (e.g. 'Sorting Commander deck', 'Bulk commons box 3')" aria-label="Session notes">
                                 <!-- Optional destination plan (where sorted output will live).
                                      Fill in now, or leave blank and record per-bin later. -->
                                 <div class="row g-2 mb-2">
                                     <div class="col-sm-6">
-                                        <label class="form-label small mb-0">Destination box (optional)</label>
+                                        <label class="form-label small mb-0" for="storage-box-select">Destination box (optional)</label>
                                         <select class="form-select form-select-sm"
                                                 id="storage-box-select">
                                             <option value="">Not set</option>
@@ -588,7 +603,7 @@
                                         </select>
                                     </div>
                                     <div class="col-sm-6">
-                                        <label class="form-label small mb-0">Starting divider (optional)</label>
+                                        <label class="form-label small mb-0" for="storage-divider-input">Starting divider (optional)</label>
                                         <input type="number"
                                                id="storage-divider-input"
                                                class="form-control form-control-sm"
@@ -609,7 +624,7 @@
                                 </div>
                                 <div id="resort-source-row" class="row g-2 mb-2" style="display:none;">
                                     <div class="col-sm-6">
-                                        <label class="form-label small mb-0">Source box</label>
+                                        <label class="form-label small mb-0" for="resort-source-select">Source box</label>
                                         <select class="form-select form-select-sm" id="resort-source-select">
                                             <option value="">Choose source box…</option>
                                             <option value="box-a">Box A — bulk commons</option>
@@ -654,21 +669,21 @@
                                 <!-- Continuous sort delay + Wishlist bin -->
                                 <div class="d-flex gap-2 flex-wrap mt-2 align-items-center">
                                     <div class="input-group input-group-sm" style="max-width:180px;">
-                                        <span class="input-group-text">Delay</span>
-                                        <input type="number" id="continuous-delay" class="form-control" value="0.1" min="0" max="10" step="0.1" title="Seconds between auto-detect cycles">
+                                        <span class="input-group-text" id="continuous-delay-label">Delay</span>
+                                        <input type="number" id="continuous-delay" class="form-control" value="0.1" min="0" max="10" step="0.1" title="Seconds between auto-detect cycles" aria-label="Continuous sort delay (seconds)" aria-describedby="continuous-delay-label">
                                         <span class="input-group-text">s</span>
                                     </div>
                                     <div class="input-group input-group-sm" style="max-width:200px;">
-                                        <span class="input-group-text">Wishlist Bin</span>
-                                        <input type="number" id="wishlist-bin-input" class="form-control" placeholder="None" min="1" max="10" title="Bin for wishlist matches (leave empty to disable)">
+                                        <span class="input-group-text" id="wishlist-bin-label">Wishlist Bin</span>
+                                        <input type="number" id="wishlist-bin-input" class="form-control" placeholder="None" min="1" max="10" title="Bin for wishlist matches (leave empty to disable)" aria-label="Wishlist bin number" aria-describedby="wishlist-bin-label">
                                         <button class="btn btn-outline-secondary" onclick="setWishlistBin()">Set</button>
                                     </div>
                                     <!-- Priority bin (Phase 4.21): Moxfield wishlist -> priority bin. -->
                                     <div class="input-group input-group-sm" style="max-width:320px;"
                                          title="Cards in the selected Moxfield wishlist are routed to the priority bin (overrides all other sort rules).">
-                                        <span class="input-group-text">Priority Bin</span>
-                                        <input type="number" id="priority-bin-input" class="form-control" placeholder="None" min="1" max="10">
-                                        <select id="priority-wishlist-select" class="form-select" title="Moxfield wishlist source">
+                                        <span class="input-group-text" id="priority-bin-label">Priority Bin</span>
+                                        <input type="number" id="priority-bin-input" class="form-control" placeholder="None" min="1" max="10" aria-label="Priority bin number" aria-describedby="priority-bin-label">
+                                        <select id="priority-wishlist-select" class="form-select" title="Moxfield wishlist source" aria-label="Moxfield wishlist source">
                                             <option value="">— wishlist —</option>
                                         </select>
                                         <button class="btn btn-outline-warning" onclick="setPriorityBin()">Set</button>
@@ -679,8 +694,8 @@
                                         </button>
                                     </div>
                                     <div class="input-group input-group-sm" style="max-width:220px;">
-                                        <span class="input-group-text">Re-home every</span>
-                                        <input type="number" id="rehome-interval" class="form-control" value="100" min="10" max="1000" step="10">
+                                        <span class="input-group-text" id="rehome-interval-label">Re-home every</span>
+                                        <input type="number" id="rehome-interval" class="form-control" value="100" min="10" max="1000" step="10" aria-label="Re-home interval (cards)" aria-describedby="rehome-interval-label">
                                         <button class="btn btn-outline-secondary" onclick="setRehomeInterval()">Set</button>
                                     </div>
                                 </div>
@@ -744,7 +759,10 @@
                         <div class="card">
                             <div class="card-header d-flex justify-content-between align-items-center">
                                 Bin Contents
-                                <button class="btn btn-outline-secondary btn-sm py-0 px-1" onclick="toggleAllBinDetails()" title="Expand/collapse all">&#9776;</button>
+                                <button class="btn btn-outline-secondary btn-sm py-0 px-1"
+                                        onclick="toggleAllBinDetails()"
+                                        title="Expand/collapse all"
+                                        aria-label="Expand or collapse all bin details">&#9776;</button>
                             </div>
                             <div class="card-body p-2" id="session-bin-contents" style="max-height:600px; overflow-y:auto;">
                                 <div class="cm-empty-state cm-empty-compact">
@@ -764,7 +782,11 @@
                         <div class="card">
                             <div class="card-header">Activity Log</div>
                             <div class="card-body p-2">
-                                <div id="activity-log" class="activity-log"></div>
+                                <div id="activity-log" class="activity-log"
+                                     role="log"
+                                     aria-live="polite"
+                                     aria-relevant="additions"
+                                     aria-label="Activity log"></div>
                             </div>
                         </div>
                     </div>
@@ -809,12 +831,12 @@
                                 <p class="text-muted small mb-2">Pick, identify, and drop cards into one bin. Tests detection without sorting.</p>
                                 <div class="d-flex gap-2 align-items-center mb-2">
                                     <div class="input-group input-group-sm" style="max-width:140px;">
-                                        <span class="input-group-text">Cards</span>
-                                        <input type="number" id="test-scan-count" class="form-control" value="10" min="1" max="100">
+                                        <span class="input-group-text" id="test-scan-count-label">Cards</span>
+                                        <input type="number" id="test-scan-count" class="form-control" value="10" min="1" max="100" aria-label="Test scan card count" aria-describedby="test-scan-count-label">
                                     </div>
                                     <div class="input-group input-group-sm" style="max-width:150px;">
-                                        <span class="input-group-text">Drop Bin</span>
-                                        <input type="number" id="test-scan-bin" class="form-control" value="1" min="1" max="10">
+                                        <span class="input-group-text" id="test-scan-bin-label">Drop Bin</span>
+                                        <input type="number" id="test-scan-bin" class="form-control" value="1" min="1" max="10" aria-label="Test scan drop bin" aria-describedby="test-scan-bin-label">
                                     </div>
                                     <button id="btn-test-scan-start" class="btn btn-primary btn-sm" onclick="startTestScan()">Start</button>
                                     <button id="btn-test-scan-stop" class="btn btn-danger btn-sm" onclick="stopTestScan()" style="display:none;">Stop</button>

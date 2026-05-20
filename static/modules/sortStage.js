@@ -18,12 +18,67 @@
 
 let _currentStage = 'pre';
 
+// Map stage → screen-reader announcement + DOM id we want focused
+// after the layout settles. requestAnimationFrame defers the focus
+// move until *after* the data-stage attribute has driven the CSS
+// hide/show, so we don't focus into a now-hidden subtree.
+const _STAGE_ANNOUNCEMENTS = {
+    pre:     'Pre-sort configuration ready.',
+    running: 'Sorting started.',
+    post:    'Sort session complete.',
+};
+const _STAGE_FOCUS_TARGETS = {
+    pre:     'pre-sort-heading',
+    running: 'sort-stage-announcer',
+    post:    'btn-start-another-session',
+};
+
+function _announceStage(stage) {
+    const region = document.getElementById('sort-stage-announcer');
+    if (!region) return;
+    const msg = _STAGE_ANNOUNCEMENTS[stage] || `Sort stage: ${stage}`;
+    // Toggle the text to guarantee SR replay even when the value is
+    // unchanged (some readers de-dupe identical aria-live payloads).
+    region.textContent = '';
+    requestAnimationFrame(() => { region.textContent = msg; });
+}
+
+function _focusStageLanding(stage) {
+    const targetId = _STAGE_FOCUS_TARGETS[stage];
+    if (!targetId) return;
+    // Defer until the next frame so the CSS [data-sort-stage] cascade
+    // has run and the landing element is actually visible / focusable.
+    requestAnimationFrame(() => {
+        const el = document.getElementById(targetId);
+        if (!el) return;
+        // Skip auto-focus if the user is already typing into an input —
+        // stealing focus mid-keystroke is hostile.
+        const active = document.activeElement;
+        if (active && (active.tagName === 'INPUT' ||
+                       active.tagName === 'TEXTAREA' ||
+                       active.tagName === 'SELECT')) {
+            return;
+        }
+        try { el.focus({ preventScroll: false }); } catch (_) {}
+    });
+}
+
 function _applyStage(stage) {
+    const prevStage = _currentStage;
     _currentStage = stage;
     const root = document.getElementById('tab-sort');
     if (root) root.setAttribute('data-sort-stage', stage);
     if (typeof addLog === 'function') {
         addLog(`Sort stage: ${stage}`);
+    }
+    // Only announce + move focus on real transitions, not on the
+    // initial boot-time _applyStage('pre') where there's no prior
+    // stage to come from. The initSortStageFromState path triggers
+    // _applyStage during page load and we don't want to yank focus
+    // into the Sort tab if the user landed on a different tab.
+    if (prevStage && prevStage !== stage) {
+        _announceStage(stage);
+        _focusStageLanding(stage);
     }
 }
 

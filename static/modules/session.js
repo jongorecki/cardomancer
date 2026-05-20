@@ -119,7 +119,7 @@ function updateBinContentsPanel(cardsPerBin, binDetailsData, binFullness) {
              .map(el => el.getAttribute('data-bin'))
     );
 
-    let html = '<div class="bin-tile-grid">';
+    let html = '<div class="bin-tile-grid" role="list">';
     for (const [bin, count] of entries) {
         const cards = _cachedBinDetails[bin] || [];
         const lastCard = cards.length > 0 ? cards[cards.length - 1] : null;
@@ -185,13 +185,28 @@ function updateBinContentsPanel(cardsPerBin, binDetailsData, binFullness) {
             }
         }
 
+        // Accessible bin tile: role=button + tabindex so keyboard users
+        // can focus and activate via Enter/Space. aria-label summarizes
+        // bin number, live count, last card name (if any) for screen
+        // readers; aria-expanded mirrors the detail-drawer state.
+        const lastName = lastCard ? lastCard.name : '';
+        const ariaLabel = lastName
+            ? `Bin ${bin}, ${liveCount} of ${limit} cards${isFull ? ', full' : ''}. Last card: ${lastName}. Click to ${isExpanded ? 'collapse' : 'expand'} card list.`
+            : `Bin ${bin}, ${liveCount} of ${limit} cards${isFull ? ', full' : ''}, empty. Click to ${isExpanded ? 'collapse' : 'expand'} card list.`;
         html += `
             <div class="bin-tile${isFull ? ' bin-tile-full' : ''}"
-                 onclick="toggleBinDetail(${bin})">
+                 role="button"
+                 tabindex="0"
+                 aria-label="${escapeHtml(ariaLabel)}"
+                 aria-expanded="${isExpanded ? 'true' : 'false'}"
+                 onclick="toggleBinDetail(${bin})"
+                 onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); toggleBinDetail(${bin});}">
                 <div class="bin-tile-head d-flex justify-content-between align-items-center">
                     <strong>Bin ${bin}${fullBadge}</strong>
                     <button class="btn btn-outline-success btn-sm py-0 px-1"
                             onclick="event.stopPropagation(); markBinEmpty(${bin})"
+                            onkeydown="event.stopPropagation();"
+                            aria-label="Empty bin ${bin}"
                             title="Mark bin as emptied (resets card count)">Empty</button>
                 </div>
                 <div class="bin-tile-count">
@@ -217,13 +232,23 @@ function updateBinContentsPanel(cardsPerBin, binDetailsData, binFullness) {
 
 function toggleBinDetail(binNum) {
     const el = document.querySelector(`.bin-tile-detail[data-bin="${binNum}"]`);
-    if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    if (!el) return;
+    const nowOpen = el.style.display === 'none';
+    el.style.display = nowOpen ? 'block' : 'none';
+    // Keep aria-expanded on the parent tile in sync with the drawer
+    // state so screen readers announce open/closed correctly.
+    const tile = el.closest('.bin-tile');
+    if (tile) tile.setAttribute('aria-expanded', nowOpen ? 'true' : 'false');
 }
 
 function toggleAllBinDetails() {
     const details = document.querySelectorAll('.bin-tile-detail');
     const anyHidden = [...details].some(el => el.style.display === 'none');
-    details.forEach(el => { el.style.display = anyHidden ? 'block' : 'none'; });
+    details.forEach(el => {
+        el.style.display = anyHidden ? 'block' : 'none';
+        const tile = el.closest('.bin-tile');
+        if (tile) tile.setAttribute('aria-expanded', anyHidden ? 'true' : 'false');
+    });
 }
 
 // =========================================================================
