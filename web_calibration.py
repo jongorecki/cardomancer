@@ -21,15 +21,19 @@
 #   whichever source bin is closest to the carriage's current position.
 # ---------------------------------------------------------------------------
 
-import cv2
-import numpy as np
+import logging
 import time
 import threading
+
+import cv2
+import numpy as np
 
 from config import (
     CAMERA_X_OFFSET as CONFIG_CAMERA_X_OFFSET,
     CALIBRATION_MAX_SWEEP_X as CONFIG_MAX_SWEEP_X,
 )
+
+logger = logging.getLogger(__name__)
 
 # ArUco configuration
 ARUCO_DICT_TYPE = cv2.aruco.DICT_4X4_50
@@ -433,7 +437,7 @@ class BinCalibrator:
             margin = max(50.0, abs(float(self.camera_x_offset)) + 50.0)
             gcode_module.set_x_safe_max(self.max_sweep_x + margin)
         except Exception as e:
-            print(f"[calibration] could not update X_SAFE_MAX: {e}")
+            logger.warning(f"could not update X_SAFE_MAX: {e}")
         # Belt-and-suspenders: re-assert M211 S0 (software endstops off)
         # at sweep start. The firmware's X_MAX_POS is 800mm but our rail
         # travels farther, and Marlin SILENTLY clips G0 X>800 to X=800
@@ -445,7 +449,7 @@ class BinCalibrator:
         try:
             gcode_module._send_and_wait("M211 S0")
         except Exception as e:
-            print(f"[calibration] could not disable software endstops: {e}")
+            logger.warning(f"could not disable software endstops: {e}")
         feedrate = sweep_feedrate or SWEEP_FEEDRATE
         expected_total = expected_sources + expected_dests + (1 if expect_staging else 0)
 
@@ -725,14 +729,14 @@ class BinCalibrator:
                 summary = (
                     f"Filtered {len(rejections)} suspect marker(s) "
                     f"from {raw_count} raw detections")
-                print(f"[calibration] {summary}")
+                logger.info(summary)
                 self.emit('log_message', {'message': summary})
                 for rej in rejections:
                     line = (
                         f"  rejected ID {rej['marker_id']} "
                         f"({rej['type']}) at X={rej['bin_x']:.1f}mm: "
                         f"{rej['reason']}")
-                    print(f"[calibration] {line}")
+                    logger.info(line)
                     self.emit('log_message', {'message': line})
                 self.emit('calibration_rejections',
                           {'rejections': rejections})
@@ -742,7 +746,7 @@ class BinCalibrator:
                     f"<{MIN_MARKER_SAMPLES} samples queued for "
                     f"re-verification during refinement: "
                     f"{sorted(provisional.keys())}")
-                print(f"[calibration] {prov_line}")
+                logger.info(prov_line)
                 self.emit('log_message', {'message': prov_line})
 
             # --- Provisional verification pass: drive to each marker
@@ -755,7 +759,7 @@ class BinCalibrator:
             try:
                 self._verify_provisional_bins(camera, gcode_module)
             except Exception as e:
-                print(f"[calibration] provisional verification failed: {e}")
+                logger.exception(f"provisional verification failed: {e}")
                 self.emit('log_message', {
                     'message': (f'Provisional verification pass failed: '
                                 f'{e} (dropping unverified markers)'),
@@ -770,7 +774,7 @@ class BinCalibrator:
                         f"  rejected ID {rej['marker_id']} "
                         f"({rej['type']}) at X={rej['bin_x']:.1f}mm: "
                         f"{rej['reason']}")
-                    print(f"[calibration] {line}")
+                    logger.info(line)
                     self.emit('log_message', {'message': line})
                 rejections.extend(self._last_verify_rejections)
                 self.emit('calibration_rejections',
@@ -785,7 +789,7 @@ class BinCalibrator:
             try:
                 self._refine_bin_positions(camera, gcode_module)
             except Exception as e:
-                print(f"[calibration] refinement pass failed: {e}")
+                logger.exception(f"refinement pass failed: {e}")
                 self.emit('log_message', {
                     'message': (f'Bin refinement pass failed: {e} '
                                 f'(keeping interpolated positions)'),
@@ -1107,7 +1111,7 @@ class BinCalibrator:
                     f"G0 X{x_clamped:.2f} F{feedrate}")
                 gcode_module._send_and_wait("M400")
             except Exception as e:
-                print(f"[calibration] verify move failed: {e}")
+                logger.exception(f"verify move failed: {e}")
                 return None
             time.sleep(0.25)
             return x_clamped
@@ -1288,7 +1292,7 @@ class BinCalibrator:
 
         summary = (f'Provisional verification done: '
                    f'{promoted} promoted, {dropped} dropped')
-        print(f'[calibration] {summary}')
+        logger.info(summary)
         self.emit('log_message', {'message': summary})
         self.emit('calibration_progress', self._get_status())
 
@@ -1365,7 +1369,7 @@ class BinCalibrator:
                     f"G0 X{x_clamped:.2f} F{feedrate}")
                 gcode_module._send_and_wait("M400")
             except Exception as e:
-                print(f"[calibration] refine move failed: {e}")
+                logger.exception(f"refine move failed: {e}")
                 return None
             time.sleep(0.25)  # settle
             return x_clamped
