@@ -3840,6 +3840,33 @@ def api_detection_reviews_list(variable):
         conn.close()
 
 
+@app.route('/api/detection-reviews/recent')
+def api_detection_reviews_recent():
+    """Detection-review queue items for the most-recently-ended session
+    (or most-recently-started if none has ended cleanly). Used by the
+    Sort tab's post-sort hero to surface what needs review without
+    making the user switch to Setup.
+
+    Limit param caps the response; default 20 is enough for the
+    inline preview in the post-sort hero.
+    """
+    import collection_db
+    limit = int(request.args.get('limit', 20))
+    conn = collection_db.get_connection()
+    try:
+        rows = collection_db.list_recent_session_reviews(conn, limit=limit)
+        for r in rows:
+            scan_ref = {
+                'session_start_time': r.get('session_start_time', ''),
+                'scan_num': r.get('scan_num', 0),
+            }
+            r['crop_url'] = _resolve_crop_url(scan_ref)
+            r['scan_url'] = _resolve_scan_url(scan_ref)
+        return jsonify({'items': rows, 'count': len(rows)})
+    finally:
+        conn.close()
+
+
 @app.route('/api/detection-reviews/<int:review_id>/verdict',
            methods=['PATCH', 'POST'])
 def api_detection_review_verdict(review_id):

@@ -98,6 +98,45 @@ function renderPostSortSummary(data) {
     if (typeof loadDetectionReviewCounts === 'function') {
         try { loadDetectionReviewCounts(); } catch (_) {}
     }
+    // Populate the inline post-sort review preview from the recent-session
+    // endpoint. Doesn't block — runs in the background and replaces the
+    // placeholder when results arrive.
+    populatePostSortReviewQueue();
+}
+
+// Fetch + render the recent-session detection-review queue inside the
+// post-sort hero. Reuses the same data the Setup queue uses but
+// scoped to the just-ended session.
+async function populatePostSortReviewQueue() {
+    const wrap = document.getElementById('post-sort-review-inline');
+    const list = document.getElementById('post-sort-review-inline-list');
+    if (!wrap || !list) return;
+    try {
+        const data = await apiGet('/api/detection-reviews/recent?limit=8');
+        const items = (data && data.items) || [];
+        if (items.length === 0) {
+            wrap.style.display = 'none';
+            return;
+        }
+        list.innerHTML = items.map(it => {
+            const variable = escapeHtml(it.variable || '?');
+            const name = escapeHtml(it.name || 'Unrecognized');
+            const setStr = it.set_code ? `<span class="text-muted ms-1">${escapeHtml(it.set_code.toUpperCase())}</span>` : '';
+            const cn = it.collector_number ? `<span class="text-muted">${escapeHtml('#' + it.collector_number)}</span>` : '';
+            const conf = (it.confidence !== null && it.confidence !== undefined)
+                ? `<span class="text-muted ms-2 small">conf ${Number(it.confidence).toFixed(2)}</span>`
+                : '';
+            return `<li class="d-flex align-items-center gap-2 py-1">
+                <span class="badge bg-secondary" style="font-size:0.65em">${variable}</span>
+                <strong>${name}</strong>
+                ${setStr}${cn}
+                ${conf}
+            </li>`;
+        }).join('');
+        wrap.style.display = '';
+    } catch (e) {
+        wrap.style.display = 'none';
+    }
 }
 
 // Post-sort action: launch another session with the same preset.

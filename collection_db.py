@@ -1603,6 +1603,53 @@ def list_detection_reviews(conn, variable, include_reviewed=False, limit=200):
     return [dict(r) for r in rows]
 
 
+def list_recent_session_reviews(conn, limit=20):
+    """Return pending detection-review items from the *most recently
+    ended* session, across all variables. Used by the post-sort hero
+    in the Sort tab so the user can see what needs review without
+    switching to Setup.
+
+    Falls back to the most-recently-started session if there's no
+    cleanly-ended one (e.g. mid-session reload of the page) — both
+    behaviors are reasonable for the post-sort use case.
+
+    Returns a list of dicts shaped the same as list_detection_reviews
+    rows, plus 'variable' (since results span all variables).
+    """
+    # Most recent session — prefer ended, fall back to most-recent-started
+    row = conn.execute(
+        """SELECT id FROM sessions
+           WHERE end_time IS NOT NULL
+           ORDER BY end_time DESC LIMIT 1"""
+    ).fetchone()
+    if row is None:
+        row = conn.execute(
+            "SELECT id FROM sessions ORDER BY start_time DESC LIMIT 1"
+        ).fetchone()
+    if row is None:
+        return []
+    session_id = int(row['id'])
+
+    sql = """
+        SELECT dr.id, dr.scan_id, dr.variable, dr.detected_value,
+               dr.confidence, dr.verdict, dr.correction, dr.reviewed_at,
+               sh.scan_num, sh.name, sh.set_code, sh.collector_number,
+               sh.session_id, s.start_time as session_start_time
+        FROM detection_reviews dr
+        JOIN scan_history sh ON dr.scan_id = sh.id
+        LEFT JOIN sessions s ON sh.session_id = s.id
+        WHERE sh.session_id = ?
+          AND dr.verdict IS NULL
+        ORDER BY
+          CASE WHEN dr.confidence IS NULL THEN 0 ELSE 1 END ASC,
+          dr.confidence ASC,
+          dr.id ASC
+        LIMIT ?
+    """
+    rows = conn.execute(sql, (session_id, int(limit))).fetchall()
+    return [dict(r) for r in rows]
+
+
 def set_detection_verdict(conn, review_id, verdict, correction=None):
     """
     Mark a review row with a verdict. Idempotent on the same verdict (just
