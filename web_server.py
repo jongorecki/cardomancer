@@ -4161,9 +4161,30 @@ def _run_price_update():
         updated = 0
         not_found = 0
 
+        # Walk rows in chunks; collect (new_price, id) tuples for cards
+        # whose price actually changed, then executemany per chunk. This
+        # replaces what used to be one UPDATE per row (10k+ statements on
+        # a real-sized inventory). Progress still emits between chunks so
+        # the UI stays responsive and Cancel still works.
+        UPDATE_CHUNK = 500
+        pending_updates = []
+        cancelled = False
+
+        def _flush_pending():
+            """Apply queued price updates as a single executemany."""
+            nonlocal pending_updates
+            if pending_updates:
+                conn.executemany(
+                    "UPDATE inventory SET price_usd=? WHERE id=?",
+                    pending_updates,
+                )
+                pending_updates = []
+
         for i, row in enumerate(rows):
             if not _price_update_status['running']:
+                _flush_pending()
                 _price_update_status['message'] = 'Cancelled'
+                cancelled = True
                 break
 
             key = (row['set_code'], row['collector_number'])
@@ -4171,24 +4192,27 @@ def _run_price_update():
                 new_price = price_index[key]
                 old_price = row['price_usd']
                 if new_price != old_price:
-                    conn.execute(
-                        "UPDATE inventory SET price_usd=? WHERE id=?",
-                        (new_price, row['id']))
+                    pending_updates.append((new_price, row['id']))
                     updated += 1
             else:
                 not_found += 1
 
-            _price_update_status['progress'] = i + 1
-            _price_update_status['updated'] = updated
-            _price_update_status['errors'] = not_found
-
-            # Emit progress every 100 cards (batch update is fast)
-            if (i + 1) % 100 == 0 or i == total - 1:
+            # Flush + emit progress every UPDATE_CHUNK rows. Same cadence
+            # as the prior per-100-row emit, but the writes are batched.
+            if (i + 1) % UPDATE_CHUNK == 0 or i == total - 1:
+                _flush_pending()
+                _price_update_status['progress'] = i + 1
+                _price_update_status['updated'] = updated
+                _price_update_status['errors'] = not_found
                 _price_update_status['message'] = (
                     f'{i + 1}/{total} checked, {updated} updated, '
                     f'{not_found} not in bulk data')
                 socketio.emit('price_update_progress', dict(_price_update_status))
 
+        # Belt-and-suspenders: anything left in the buffer if we somehow
+        # exited the loop without hitting a flush boundary.
+        if not cancelled:
+            _flush_pending()
         conn.commit()
 
         from datetime import datetime
