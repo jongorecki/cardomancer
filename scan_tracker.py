@@ -13,10 +13,13 @@
 import os
 import csv
 import json
+import logging
 from datetime import datetime
 
 from config import SCAN_LOGS_DIR
 import collection_db
+
+logger = logging.getLogger(__name__)
 
 
 class ScanTracker:
@@ -93,7 +96,7 @@ class ScanTracker:
         self.scan_count = 0
         self.unrecognized_count = 0
 
-        print(f"[tracker] Session started: {self.session_dir}")
+        logger.info(f"Session started: {self.session_dir}")
 
     def record_scan(self, card_info=None, bin_num=None, method=None,
                     hash_distance=None, card_data=None,
@@ -106,7 +109,7 @@ class ScanTracker:
         :param foil_confidence: float, raw foil detection confidence score
         """
         if self.session_dir is None:
-            print("[tracker] Warning: no active session, call start_session() first")
+            logger.warning("no active session, call start_session() first")
             return
 
         self.scan_count += 1
@@ -218,10 +221,10 @@ class ScanTracker:
 
         # Print status
         if recognized:
-            print(f"[tracker] Scan #{self.scan_count}: {name} ({set_code}) "
-                  f"-> bin {bin_num}")
+            logger.info(f"Scan #{self.scan_count}: {name} ({set_code}) "
+                        f"-> bin {bin_num}")
         else:
-            print(f"[tracker] Scan #{self.scan_count}: UNRECOGNIZED -> bin {bin_num}")
+            logger.info(f"Scan #{self.scan_count}: UNRECOGNIZED -> bin {bin_num}")
 
     def get_bin_contents(self, bin_num):
         """Get list of cards in a specific bin (this session)."""
@@ -324,8 +327,8 @@ class ScanTracker:
             self._db_conn.close()
             self._db_conn = None
 
-        print(f"[tracker] Session ended. {self.scan_count} cards scanned.")
-        print(f"[tracker] Logs saved to: {self.session_dir}")
+        logger.info(f"Session ended. {self.scan_count} cards scanned.")
+        logger.info(f"Logs saved to: {self.session_dir}")
 
     def resume_session(self, session_id):
         """Rehydrate this tracker from a previously-started session that
@@ -344,12 +347,12 @@ class ScanTracker:
         meta = collection_db.get_session_metadata(conn, session_id)
         if meta is None:
             conn.close()
-            print(f"[tracker] resume_session: #{session_id} not found")
+            logger.warning(f"resume_session: #{session_id} not found")
             return False
         if meta.get('end_time') is not None:
             conn.close()
-            print(f"[tracker] resume_session: #{session_id} already ended at "
-                  f"{meta['end_time']}")
+            logger.warning(f"resume_session: #{session_id} already ended at "
+                           f"{meta['end_time']}")
             return False
 
         self._db_conn = conn
@@ -404,8 +407,8 @@ class ScanTracker:
         ])
 
         self.scans = []
-        print(f"[tracker] Resumed session #{session_id}: "
-              f"{self.scan_count} prior scans, {len(self.bins)} bins.")
+        logger.info(f"Resumed session #{session_id}: "
+                    f"{self.scan_count} prior scans, {len(self.bins)} bins.")
         return True
 
     def _save_session_meta(self):
@@ -496,14 +499,14 @@ def load_session(session_dir):
 
         return meta, scans, bins
     except Exception as e:
-        print(f"[tracker] Error loading session: {e}")
+        logger.exception(f"Error loading session: {e}")
         return None
 
 
 def list_sessions():
     """List all past sessions with basic info."""
     if not os.path.exists(SCAN_LOGS_DIR):
-        print("[tracker] No scan logs found.")
+        logger.info("No scan logs found.")
         return []
 
     sessions = []

@@ -2,6 +2,7 @@
 # Loads and manages sort configurations for custom Scryfall-like query sorting.
 # Supports loading from file, manual input, and pre-fetching otag data.
 
+import logging
 import os
 import re
 import time
@@ -10,6 +11,8 @@ from query_parser import (
     parse_query, evaluate_query, collect_otag_terms,
     collect_enrichment_fields, expand_otag_cache, QueryParseError,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class SortConfig:
@@ -108,8 +111,8 @@ class SortConfig:
                             self.bin_card_counts.get(bin_num, 0) + 1
                         return bin_num
                 except Exception as e:
-                    print(f"[sort_config] Error evaluating bin {bin_num} "
-                          f"query '{query_str}': {e}")
+                    logger.exception(f"Error evaluating bin {bin_num} "
+                                     f"query '{query_str}': {e}")
                     continue
 
         # Nothing matched — log once (first 5 fallbacks) so the user can
@@ -120,10 +123,9 @@ class SortConfig:
             tried = ', '.join(
                 f'bin{b}({q!r})' for b, q, _ in self.bin_queries
             ) or '(none)'
-            print(
-                f"[sort_config] FALLBACK: '{card_name}' matched no queries "
-                f"[{tried}] → bin {self.fallback_bin}",
-                flush=True,
+            logger.info(
+                f"FALLBACK: '{card_name}' matched no queries "
+                f"[{tried}] → bin {self.fallback_bin}"
             )
         self.bin_card_counts[self.fallback_bin] = fb_count + 1
         return self.fallback_bin
@@ -196,7 +198,7 @@ class SortConfig:
             finally:
                 conn.close()
         except Exception as exc:
-            print(f"[sort_config] enrichment lookup failed for {oracle_id}: {exc}")
+            logger.exception(f"enrichment lookup failed for {oracle_id}: {exc}")
 
         self._enr_cache[oracle_id] = data
         return data
@@ -385,8 +387,8 @@ class SortConfig:
                 config._needs_enrichment = True
                 break
         if config._needs_enrichment:
-            print("[sort_config] Enrichment tokens detected — "
-                  "staple/salt/combo/cull will be resolved per card from enrichment.db")
+            logger.info("Enrichment tokens detected — "
+                        "staple/salt/combo/cull will be resolved per card from enrichment.db")
 
         return config
 
@@ -399,9 +401,9 @@ class SortConfig:
         with open(filepath, 'r', encoding='utf-8') as f:
             lines = f.readlines()
 
-        print(f"[sort_config] Loading config from: {filepath}")
+        logger.info(f"Loading config from: {filepath}")
         config = cls.from_lines(lines)
-        print(f"[sort_config] {config.describe()}")
+        logger.info(config.describe())
         return config
 
     def to_lines(self, description: str = "") -> list:
@@ -512,8 +514,8 @@ def prompt_manual_config():
             config._needs_enrichment = True
             break
     if config._needs_enrichment:
-        print("[sort_config] Enrichment tokens detected — "
-              "staple/salt/combo/cull will be resolved per card from enrichment.db")
+        logger.info("Enrichment tokens detected — "
+                    "staple/salt/combo/cull will be resolved per card from enrichment.db")
 
     print(f"\n{config.describe()}")
     return config
@@ -534,7 +536,7 @@ def fetch_otag_data(tag_names):
 
     cache = {}
     for tag in sorted(tag_names):
-        print(f"[otag] Fetching otag:{tag} from Scryfall API...")
+        logger.info(f"Fetching otag:{tag} from Scryfall API...")
         oracle_ids = set()
         url = 'https://api.scryfall.com/cards/search'
         params = {
@@ -550,7 +552,7 @@ def fetch_otag_data(tag_names):
                 resp = requests.get(url, params=params)
                 if resp.status_code == 404:
                     # No results for this tag
-                    print(f"[otag] No cards found for otag:{tag}")
+                    logger.info(f"No cards found for otag:{tag}")
                     break
                 resp.raise_for_status()
                 data = resp.json()
@@ -561,7 +563,7 @@ def fetch_otag_data(tag_names):
                         oracle_ids.add(oid)
 
                 if page % 10 == 0:
-                    print(f"[otag]   ... page {page}, {len(oracle_ids)} cards so far")
+                    logger.info(f"  ... page {page}, {len(oracle_ids)} cards so far")
 
                 if not data.get('has_more'):
                     break
@@ -572,11 +574,11 @@ def fetch_otag_data(tag_names):
                 time.sleep(0.1)  # respect rate limit
 
             except Exception as e:
-                print(f"[otag] Error fetching otag:{tag} page {page}: {e}")
+                logger.exception(f"Error fetching otag:{tag} page {page}: {e}")
                 break
 
         cache[tag] = oracle_ids
-        print(f"[otag] otag:{tag} — {len(oracle_ids)} unique cards cached")
+        logger.info(f"otag:{tag} — {len(oracle_ids)} unique cards cached")
 
     # Expand parent tags to include descendant tags' oracle_ids using
     # enrichment_db tag_catalog hierarchy (degrades gracefully if unavailable).

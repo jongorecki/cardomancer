@@ -12,6 +12,7 @@
 # tracking since cards get re-sorted into different bins over time.
 # ---------------------------------------------------------------------------
 
+import logging
 import os
 import sqlite3
 from datetime import datetime
@@ -22,6 +23,8 @@ try:
     import card_lookup as _card_lookup
 except Exception:
     _card_lookup = None
+
+logger = logging.getLogger(__name__)
 
 DB_PATH = os.path.join(SCRIPT_DIR, "collection.db")
 
@@ -262,7 +265,7 @@ def start_session(conn, sort_mode=None, config_name=None, bin_count=None,
     )
     conn.commit()
     session_id = cursor.lastrowid
-    print(f"[collection] Session #{session_id} started")
+    logger.info(f"Session #{session_id} started")
     return session_id
 
 
@@ -776,7 +779,7 @@ def resolve_unrecognized_scan(conn, scan_id, card_info, card_data=None):
             )
 
     conn.commit()
-    print(f"[collection] Resolved scan #{scan_id}: {name} ({set_code})")
+    logger.info(f"Resolved scan #{scan_id}: {name} ({set_code})")
     return True
 
 
@@ -785,7 +788,7 @@ def export_inventory_csv(conn, filepath):
     import csv
     rows = get_inventory(conn, order_by="name")
     if not rows:
-        print("[collection] No cards in inventory to export.")
+        logger.info("No cards in inventory to export.")
         return
 
     with open(filepath, 'w', newline='', encoding='utf-8') as f:
@@ -793,7 +796,7 @@ def export_inventory_csv(conn, filepath):
         writer.writeheader()
         writer.writerows(rows)
 
-    print(f"[collection] Exported {len(rows)} cards to {filepath}")
+    logger.info(f"Exported {len(rows)} cards to {filepath}")
 
 
 def import_inventory_csv(conn, csv_text):
@@ -869,8 +872,8 @@ def import_inventory_csv(conn, csv_text):
             imported += 1
 
     conn.commit()
-    print(f"[collection] CSV import: {imported} new, {updated} updated, "
-          f"{skipped} skipped")
+    logger.info(f"CSV import: {imported} new, {updated} updated, "
+                f"{skipped} skipped")
     return imported, updated, skipped
 
 
