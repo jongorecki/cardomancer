@@ -202,6 +202,19 @@
                         </button>
                     </section>
 
+                    <!-- Recent activity panel. Hidden by default; revealed
+                         by home.js loadHomeStatus() when there are real
+                         sessions to show. Click a row to jump to that
+                         session's review queue. -->
+                    <section id="home-recent-activity"
+                             class="cm-home-recent"
+                             style="display:none;"
+                             aria-label="Recent sessions">
+                        <h2 class="cm-home-recent-title">Recent rituals</h2>
+                        <ul id="home-recent-activity-list"
+                            class="cm-home-recent-list"></ul>
+                    </section>
+
                     <!-- Getting-started banner. Hidden by default; revealed
                          by home.js loadHomeStatus() when no saved hardware
                          setup exists (fresh install). -->
@@ -226,6 +239,20 @@
                             Run calibration ritual
                         </button>
                     </div>
+
+                    <!-- Lightweight "Walk me through it" link below the
+                         getting-started banner. Triggers the welcome
+                         tour (see modules/tour.js). Always visible — an
+                         operator can re-run the tour even after the
+                         calibration is done. -->
+                    <p class="text-center mt-3 mb-0">
+                        <button type="button"
+                                class="cm-home-getting-started-tour"
+                                onclick="startTour()"
+                                aria-label="Walk through the Sort tab — five-step overlay tour">
+                            New here? Walk me through it.
+                        </button>
+                    </p>
 
                     <!-- Footer flourish. app_version is the git short SHA
                          when running from a checkout, "dev" otherwise. -->

@@ -34,21 +34,23 @@
                 <!-- ===================================================== -->
                 <div class="row mb-3" data-stage="post">
                     <div class="col-12">
-                        <div class="card" style="border-color: var(--accent-sigil);">
+                        <div class="card cm-sort-hero cm-sort-hero-post">
                             <div class="card-body">
-                                <div class="d-flex flex-wrap align-items-baseline justify-content-between mb-3">
-                                    <h2 class="mb-0"
-                                        id="post-sort-heading"
-                                        tabindex="-1"
-                                        style="font-family: var(--font-display); font-weight: 700; font-size: 1.6rem; color: var(--text-primary);">
-                                        Session complete
-                                    </h2>
-                                    <div class="d-flex align-items-baseline gap-3">
+                                <div class="cm-sort-hero-head">
+                                    <div>
+                                        <div class="cm-sort-hero-eyebrow">Ritual complete</div>
+                                        <h2 class="cm-sort-hero-title"
+                                            id="post-sort-heading"
+                                            tabindex="-1">
+                                            The sorting is finished.
+                                        </h2>
+                                    </div>
+                                    <div class="cm-sort-hero-meta">
                                         <small class="text-muted" id="post-sort-end-reason"></small>
-                                        <a href="#" class="small text-muted"
+                                        <a href="#" class="cm-sort-hero-link"
                                            onclick="event.preventDefault(); openPastSessionsModal();"
                                            title="See recent session history">
-                                            View past sessions
+                                            View past sessions &rarr;
                                         </a>
                                     </div>
                                 </div>
@@ -115,14 +117,14 @@
                 <!-- ===================================================== -->
                 <div class="row mb-3" data-stage="pre">
                     <div class="col-12">
-                        <div class="card" style="border-color: var(--accent-blue);">
+                        <div class="card cm-sort-hero cm-sort-hero-pre">
                             <div class="card-body d-flex flex-wrap align-items-center gap-3">
                                 <div class="flex-grow-1">
-                                    <h2 class="mb-1"
+                                    <div class="cm-sort-hero-eyebrow">The apparatus stands ready</div>
+                                    <h2 class="cm-sort-hero-title"
                                         id="pre-sort-heading"
-                                        tabindex="-1"
-                                        style="font-family: var(--font-display); font-weight: 700; font-size: 1.6rem; color: var(--text-primary); margin: 0;">
-                                        Ready to sort
+                                        tabindex="-1">
+                                        Begin the sorting.
                                     </h2>
                                     <p class="text-muted small mb-0 mt-1">
                                         Active preset:
@@ -135,7 +137,7 @@
                                 <button class="btn btn-success btn-lg"
                                         onclick="startSession()"
                                         title="Begin a new sort session with the configuration below.">
-                                    Start Session &rarr;
+                                    Start session &rarr;
                                 </button>
                             </div>
                         </div>
@@ -751,10 +753,16 @@
                                 </button>
                             </div>
                             <div class="card-body" id="stack-estimate-panel">
-                                <p class="text-muted small mb-0">
-                                    No data yet. Pick a card or calibrate
-                                    the empty source bin to start the count.
-                                </p>
+                                <div class="cm-empty-state cm-empty-compact">
+                                    <img class="cm-empty-sigil"
+                                         src="/static/branding/sigils/sigil-stars.svg"
+                                         alt="" width="40" height="40" aria-hidden="true">
+                                    <div class="cm-empty-title">No data yet.</div>
+                                    <p class="cm-empty-body small text-muted mb-0">
+                                        Pick a card or calibrate the empty source
+                                        bin to start the count.
+                                    </p>
+                                </div>
                             </div>
                         </div>
                     </div>

@@ -125,9 +125,11 @@ def _load_drop_offset_from_disk():
         else:
             logger.warning(f"drop_height.json: value {v} out of range, "
                            f"keeping default {Z_DROP_OFFSET}")
-    except Exception as e:
-        logger.warning(f"drop_height.json load failed ({e}); "
-                       f"keeping default Z_DROP_OFFSET = {Z_DROP_OFFSET}")
+    except Exception:
+        logger.warning(
+            "drop_height.json load failed; keeping default "
+            "Z_DROP_OFFSET = %s", Z_DROP_OFFSET, exc_info=True,
+        )
 
 
 _load_drop_offset_from_disk()

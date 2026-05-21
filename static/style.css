@@ -29,7 +29,12 @@
     --border-card: #2A2C46;
     --text-primary: #ECEAF6;
     --text-secondary: #B6B3CD;
-    --text-muted: #807DA0;
+    /* --text-muted lifted from #807DA0 (4.14:1 on bg-card, 3.65:1 on
+     * bg-card-header — both failed WCAG AA body text) to #9A97B8
+     * (5.06:1 on bg-card, 4.54:1 on bg-card-header — both clear AA).
+     * Still reads "muted" against the indigo wash; just no longer
+     * unreadable for low-contrast eyes. */
+    --text-muted: #9A97B8;
     --text-label: #C7C4DD;
     --accent-blue: var(--indigo-400);   /* mid-violet; primary action accent */
     --accent-green: var(--status-green);
@@ -1379,7 +1384,7 @@ body > nav.navbar { position: relative; z-index: 20; }
 }
 
 .cm-home-status-label {
-    color: #807DA0;
+    color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.12em;
     font-size: 10px;
@@ -1398,7 +1403,7 @@ body > nav.navbar { position: relative; z-index: 20; }
 .cm-home-status-cell strong.ok    { color: #7BD9A6; }
 .cm-home-status-cell strong.warn  { color: var(--amber-300); }
 .cm-home-status-cell strong.bad   { color: var(--accent-red, #E05050); }
-.cm-home-status-cell strong.muted { color: #807DA0; font-weight: 400; }
+.cm-home-status-cell strong.muted { color: var(--text-muted); font-weight: 400; }
 
 /* ---- Action tiles ---- */
 
@@ -1544,6 +1549,83 @@ body > nav.navbar { position: relative; z-index: 20; }
     transform: translateX(4px);
 }
 
+/* ---- Recent activity panel ---- */
+
+.cm-home-recent {
+    margin-top: 8px;
+    padding: 18px 22px 6px;
+    background: rgba(20, 20, 46, 0.55);
+    border: 1px solid var(--indigo-700);
+    border-radius: 10px;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+}
+
+.cm-home-recent-title {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 20px;
+    color: #fff;
+    margin: 0 0 12px;
+    letter-spacing: 0.005em;
+}
+
+.cm-home-recent-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.cm-home-recent-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto auto;
+    gap: 12px;
+    align-items: baseline;
+    padding: 10px 0;
+    border-top: 1px solid var(--indigo-700);
+    color: #ECEAF6;
+    font-size: 13px;
+    cursor: pointer;
+    transition: color 160ms ease;
+}
+
+.cm-home-recent-row:hover,
+.cm-home-recent-row:focus-visible {
+    color: var(--amber-300);
+    outline: none;
+}
+
+.cm-home-recent-row:first-child {
+    border-top: 0;
+}
+
+.cm-home-recent-when {
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.cm-home-recent-mode {
+    color: var(--indigo-300);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.cm-home-recent-count {
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.cm-home-recent-count strong {
+    color: #fff;
+    font-weight: 600;
+}
+
 /* ---- Getting-started banner (fresh install) ---- */
 
 .cm-home-getting-started {
@@ -1634,4 +1716,307 @@ body > nav.navbar { position: relative; z-index: 20; }
     .cm-home-status-cell  { justify-content: flex-start; }
     .cm-home-getting-started     { flex-wrap: wrap; }
     .cm-home-getting-started-btn { margin-left: 0; width: 100%; }
+}
+
+/* =========================================================================
+ * Sort tab — hero panels (Claude Design treatment)
+ *
+ * The Sort tab has two heroes:
+ *   cm-sort-hero-pre   — visible before a session starts
+ *   cm-sort-hero-post  — visible after a session completes
+ *
+ * They borrow the Home tab's brand voice (display-serif title, amber
+ * eyebrow rule, amber link accents) so the Sort surface doesn't feel
+ * like a different app from the welcome page.
+ * ========================================================================= */
+
+.cm-sort-hero {
+    border-color: var(--indigo-700);
+    background: linear-gradient(160deg, #181838 0%, #14142E 100%);
+    position: relative;
+    overflow: hidden;
+}
+
+.cm-sort-hero-pre  { border-left: 3px solid var(--accent-blue); }
+.cm-sort-hero-post { border-left: 3px solid var(--amber-500); }
+
+.cm-sort-hero-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 18px;
+}
+
+.cm-sort-hero-eyebrow {
+    font-family: var(--font-sans);
+    font-size: 11px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--amber-300);
+    font-weight: 500;
+    margin-bottom: 4px;
+}
+
+.cm-sort-hero-title {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 2rem;
+    line-height: 1.1;
+    letter-spacing: 0.005em;
+    color: #fff;
+    margin: 0 0 4px;
+}
+
+.cm-sort-hero-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+    font-family: var(--font-mono);
+}
+
+.cm-sort-hero-link {
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--amber-300);
+    text-decoration: none;
+    text-transform: uppercase;
+    letter-spacing: 0.10em;
+    transition: color 160ms ease;
+}
+
+.cm-sort-hero-link:hover,
+.cm-sort-hero-link:focus-visible {
+    color: var(--amber-500);
+    outline: none;
+}
+
+/* Tighter responsive: title shrinks, meta drops below */
+@media (max-width: 768px) {
+    .cm-sort-hero-title { font-size: 1.6rem; }
+    .cm-sort-hero-head  { flex-direction: column; gap: 4px; }
+    .cm-sort-hero-meta  { align-items: flex-start; }
+}
+
+/* =========================================================================
+ * Generic section hero — used by Collection + Setup tabs
+ *
+ * A simpler variant of the Sort tab's pre/post heroes: just an eyebrow
+ * + display-serif title + subtitle, without the stat cards. Each tab
+ * picks ritual-style copy that echoes the Home tab's three action
+ * tiles, so an operator who clicks "Consult the library" on Home lands
+ * on a Collection tab that opens with the same phrase.
+ * ========================================================================= */
+
+.cm-page-hero {
+    padding: 22px 26px 18px;
+    border-radius: 12px;
+    background: linear-gradient(160deg, #181838 0%, #14142E 100%);
+    border: 1px solid var(--indigo-700);
+    border-left: 3px solid var(--amber-500);
+}
+
+.cm-page-hero-eyebrow {
+    font-family: var(--font-sans);
+    font-size: 11px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--amber-300);
+    font-weight: 500;
+    margin-bottom: 4px;
+}
+
+.cm-page-hero-title {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 2rem;
+    line-height: 1.1;
+    letter-spacing: 0.005em;
+    color: #fff;
+    margin: 0 0 4px;
+}
+
+.cm-page-hero-subtitle {
+    font-family: var(--font-sans);
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin: 0;
+    line-height: 1.45;
+}
+
+@media (max-width: 768px) {
+    .cm-page-hero-title { font-size: 1.6rem; }
+    .cm-page-hero       { padding: 18px 20px 14px; }
+}
+
+/* =========================================================================
+ * Welcome tour overlay
+ *
+ * Lightweight first-run walkthrough triggered from the home-getting-
+ * started banner OR autostarted the first time an operator opens the
+ * Sort tab. Five steps total. Drawn over a dim backdrop with an amber
+ * ring around the current target and a tooltip card explaining what
+ * the operator is looking at.
+ *
+ * Esc / Arrow Right / Arrow Left / Enter all work as keyboard shortcuts.
+ * Backdrop click dismisses. localStorage('cm.tour.shown') gates autostart.
+ * ========================================================================= */
+
+.cm-tour-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1090;  /* above modals (1050) and toasts (1080) */
+    background: rgba(10, 10, 28, 0.72);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    /* Block clicks to the underlying page so the operator can't
+     * accidentally fire a Start Session while reading the tour. */
+}
+
+.cm-tour-highlight {
+    border: 2px solid var(--amber-500);
+    border-radius: 8px;
+    box-shadow:
+        0 0 0 4px rgba(212, 165, 55, 0.18),
+        0 0 28px rgba(212, 165, 55, 0.25);
+    pointer-events: none;
+    transition: top 220ms ease, left 220ms ease,
+                width 220ms ease, height 220ms ease;
+}
+
+.cm-tour-tip {
+    background: #14142E;
+    border: 1px solid var(--amber-500);
+    border-radius: 10px;
+    padding: 22px 24px 18px;
+    color: #ECEAF6;
+    box-shadow:
+        0 16px 40px rgba(0, 0, 0, 0.45),
+        0 0 0 1px rgba(212, 165, 55, 0.20);
+    font-family: var(--font-sans);
+    /* width set inline by JS so we can flip near viewport edges */
+}
+
+.cm-tour-step {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--amber-300);
+    margin-bottom: 4px;
+}
+
+.cm-tour-tip-title {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 22px;
+    line-height: 1.15;
+    letter-spacing: 0.005em;
+    color: #fff;
+    margin: 0 0 10px;
+}
+
+.cm-tour-tip-body {
+    font-size: 13px;
+    color: #B6B3CD;
+    line-height: 1.55;
+    margin: 0 0 16px;
+}
+
+.cm-tour-tip-body code {
+    background: rgba(120, 120, 216, 0.18);
+    border: 1px solid var(--indigo-500);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 0.85em;
+    color: #fff;
+}
+
+.cm-tour-tip-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.cm-tour-nav {
+    display: flex;
+    gap: 8px;
+}
+
+.cm-tour-btn {
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 7px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: filter 160ms ease,
+                background 160ms ease,
+                color 160ms ease;
+}
+
+.cm-tour-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.cm-tour-btn-skip {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-muted);
+}
+
+.cm-tour-btn-skip:hover {
+    color: var(--text-secondary);
+}
+
+.cm-tour-btn-prev {
+    background: transparent;
+    border: 1px solid var(--indigo-500);
+    color: #ECEAF6;
+}
+
+.cm-tour-btn-prev:hover:not(:disabled) {
+    border-color: var(--amber-500);
+    color: var(--amber-300);
+}
+
+.cm-tour-btn-next {
+    background: var(--amber-500);
+    border: 1px solid var(--amber-500);
+    color: var(--indigo-900);
+}
+
+.cm-tour-btn-next:hover {
+    filter: brightness(1.08);
+}
+
+.cm-tour-btn:focus-visible {
+    outline: 2px solid var(--amber-500);
+    outline-offset: 2px;
+}
+
+/* Inline "Walk me through it" link inside the home-getting-started
+ * banner. Less prominent than the primary Calibration button. */
+.cm-home-getting-started-tour {
+    margin-left: 4px;
+    color: var(--amber-300);
+    font-size: 12px;
+    font-weight: 500;
+    background: none;
+    border: none;
+    padding: 4px 2px;
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-color: rgba(236, 201, 123, 0.4);
+    text-underline-offset: 3px;
+}
+
+.cm-home-getting-started-tour:hover {
+    color: var(--amber-500);
+    text-decoration-color: var(--amber-500);
 }

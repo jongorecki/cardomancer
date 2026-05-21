@@ -2476,8 +2476,8 @@ class SortWorker:
         try:
             with open(path, 'r') as f:
                 payload = json.load(f)
-        except Exception as e:
-            logger.warning(f"Failed to read last setup: {e}")
+        except Exception:
+            logger.warning("Failed to read last setup", exc_info=True)
             return None
 
         import gcode_control
@@ -2497,8 +2497,8 @@ class SortWorker:
                     camera_x_offset=(float(camera_x_offset)
                                      if camera_x_offset is not None
                                      else None))
-            except Exception as e:
-                logger.warning(f"staging restore error: {e}")
+            except Exception:
+                logger.warning("staging restore error", exc_info=True)
 
         source_bins = payload.get('source_bins') or []
         if source_bins:
@@ -2508,8 +2508,8 @@ class SortWorker:
                 try:
                     gcode_control.set_machine_positions(
                         source_x=float(primary['x']))
-                except Exception as e:
-                    logger.warning(f"source restore error: {e}")
+                except Exception:
+                    logger.warning("source restore error", exc_info=True)
             self.source_bins = source_bins
 
         # Restore probe cache so the first sort doesn't have to re-probe
@@ -2527,8 +2527,8 @@ class SortWorker:
                     if x is None:
                         continue
                     gcode_control._probe_z_cache[float(x)] = float(z)
-            except Exception as e:
-                logger.warning(f"probe cache restore error: {e}")
+            except Exception:
+                logger.warning("probe cache restore error", exc_info=True)
 
         summary = {
             'locations': locations,
@@ -3554,8 +3554,9 @@ class SortWorker:
             return float(z) if z is not None else None
         except FileNotFoundError:
             return None
-        except Exception as e:
-            logger.warning(f"Could not read empty_source_z.json: {e}")
+        except Exception:
+            logger.warning("Could not read empty_source_z.json",
+                           exc_info=True)
             return None
 
     def _save_empty_source_z(self, z):
