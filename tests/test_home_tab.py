@@ -130,6 +130,68 @@ class HomeTabTemplateTests(unittest.TestCase):
         chunk = self.body[idx:idx + 1500]
         self.assertIn('data-bs-target="#calibration-wizard-modal"', chunk)
 
+    # ------------------------------------------------------------------
+    # Redesign-specific markers (Claude Design handoff)
+    # ------------------------------------------------------------------
+
+    def test_backdrop_sigils_present(self):
+        """The redesigned home tab has 7 rotating card sigils in a
+        fixed backdrop (sg-1 through sg-7). The backdrop is the
+        signature visual change in the Claude Design redesign."""
+        self.assertIn('class="cm-backdrop"', self.body)
+        for i in range(1, 8):
+            self.assertIn(f'sg-{i}', self.body,
+                          f"backdrop sigil sg-{i} missing")
+
+    def test_hero_redesigned_copy(self):
+        """Hero uses the redesign's display copy. 'The Cardomancer
+        awaits' is the load-bearing brand line; if it changes back to
+        the old 'Welcome to Cardomancer' that's a regression in
+        intent."""
+        self.assertIn('awaits', self.body,
+                      "Hero copy should read 'The Cardomancer awaits.'")
+        self.assertIn('Drop a stack. The machine does the rest.', self.body,
+                      "Tagline copy missing from hero")
+
+    def test_eyebrow_above_title(self):
+        """Eyebrow strip 'Trading Card Collection System' renders
+        above the title in the new hero block."""
+        self.assertIn('cm-home-eyebrow', self.body)
+        eb_idx = self.body.find('cm-home-eyebrow')
+        title_idx = self.body.find('cm-home-title')
+        self.assertGreater(title_idx, eb_idx,
+                           "Eyebrow must precede title in markup order")
+
+    def test_action_tiles_have_roman_numerals(self):
+        """Each tile is numbered I / II / III via a .cm-home-tile-num
+        span. Confirms the redesign's ritual-step framing is present."""
+        for numeral in ('I', 'II', 'III'):
+            self.assertIn(
+                f'class="cm-home-tile-num">{numeral}</span>',
+                self.body,
+                f"Tile numeral {numeral!r} missing — redesign drops it"
+            )
+
+    def test_redesigned_tile_titles(self):
+        """The redesign renames the tile titles to ritual-style verbs."""
+        for title in ('Begin the sorting',
+                      'Consult the library',
+                      'Tune the apparatus'):
+            self.assertIn(title, self.body,
+                          f"Redesigned tile title {title!r} missing")
+
+    def test_getting_started_uses_ritual_copy(self):
+        """The fresh-install banner uses the redesigned ritual copy."""
+        self.assertIn('A first ritual is required.', self.body)
+        self.assertIn('Run calibration ritual', self.body)
+
+    def test_footer_flourish_present(self):
+        """The redesign adds a small monospaced footer flourish
+        ('vX.Y.Z · scan, divine, route'). Confirms the partial wires
+        in app_version + tagline."""
+        self.assertIn('cm-home-footer', self.body)
+        self.assertIn('scan, divine, route', self.body)
+
 
 class HomeStatusDataSourcesContract(unittest.TestCase):
     """The Home JS loader hits three existing endpoints. We pin the

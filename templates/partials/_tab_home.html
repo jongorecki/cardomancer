@@ -1,139 +1,238 @@
             <!-- ============================================================ -->
-            <!-- HOME TAB — landing page                                     -->
-            <!-- Default-active tab. Surfaces a friendly welcome, a one-line -->
-            <!-- status of the kiosk, and three large action tiles routing   -->
-            <!-- to the main paths (Sort, Collection, Setup) so the operator -->
-            <!-- isn't dropped into a field-dense screen on launch.           -->
+            <!-- HOME TAB - landing page (Claude Design redesign)              -->
+            <!--                                                              -->
+            <!-- Drop-in for the original welcome tab. Class names preserved  -->
+            <!-- (cm-home-*, home-status-*, home-getting-started) so home.js  -->
+            <!-- continues to populate the status strip and toggle the        -->
+            <!-- fresh-install banner without modification.                   -->
+            <!--                                                              -->
+            <!-- Layers, back-to-front:                                       -->
+            <!--   1. cm-backdrop          slowly-rotating card sigils        -->
+            <!--   2. cm-home-hero         eyebrow + display title            -->
+            <!--   3. cm-home-status       glass strip (hw / library / last)  -->
+            <!--   4. cm-home-actions      three numbered I/II/III tiles      -->
+            <!--   5. cm-home-getting-started (revealed by home.js on fresh   -->
+            <!--      installs only)                                          -->
+            <!--   6. cm-home-footer       version + tagline flourish         -->
             <!-- ============================================================ -->
             <div class="tab-pane fade show active" id="tab-home">
 
-                <!-- Welcome hero -->
-                <div class="cm-home-hero card mb-3">
-                    <div class="card-body text-center py-5">
-                        <h1 class="cm-home-title mb-2">
-                            Welcome to {{ app_name }}.
-                        </h1>
-                        <p class="cm-home-tagline mb-3">
-                            Trading Card Collection System
-                        </p>
-                        <p class="cm-home-subtitle mb-0">
-                            Choose what you&rsquo;d like to do.
-                        </p>
-                    </div>
+                <!-- ===== Backdrop: slowly rotating card sigils =====
+                     Each <svg> renders the same card-silhouette glyph at a
+                     different size, position, and animation speed. Five
+                     indigo + two amber, all at low opacity so they read as
+                     atmosphere rather than content. prefers-reduced-motion
+                     stops all rotation via CSS. -->
+                <div class="cm-backdrop" aria-hidden="true">
+                    <svg class="sigil sg-1" viewBox="0 0 64 96" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <g transform="rotate(-8 32 48)">
+                        <rect x="4" y="4" width="56" height="88" rx="6"/>
+                        <line x1="32" y1="20" x2="32" y2="80"/>
+                        <line x1="22" y1="28" x2="42" y2="28"/>
+                        <path d="M22 50 L32 42 L42 50"/>
+                        <path d="M28 64 L32 60 L36 64 L32 68 Z" fill="currentColor"/>
+                        <circle cx="32" cy="78" r="2" fill="currentColor"/>
+                      </g>
+                    </svg>
+                    <svg class="sigil sg-2 amber" viewBox="0 0 64 96" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <g transform="rotate(-8 32 48)">
+                        <rect x="4" y="4" width="56" height="88" rx="6"/>
+                        <line x1="32" y1="20" x2="32" y2="80"/>
+                        <line x1="22" y1="28" x2="42" y2="28"/>
+                        <path d="M22 50 L32 42 L42 50"/>
+                        <path d="M28 64 L32 60 L36 64 L32 68 Z" fill="currentColor"/>
+                        <circle cx="32" cy="78" r="2" fill="currentColor"/>
+                      </g>
+                    </svg>
+                    <svg class="sigil sg-3" viewBox="0 0 64 96" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <g transform="rotate(-8 32 48)">
+                        <rect x="4" y="4" width="56" height="88" rx="6"/>
+                        <line x1="32" y1="20" x2="32" y2="80"/>
+                        <line x1="22" y1="28" x2="42" y2="28"/>
+                        <path d="M22 50 L32 42 L42 50"/>
+                        <path d="M28 64 L32 60 L36 64 L32 68 Z" fill="currentColor"/>
+                        <circle cx="32" cy="78" r="2" fill="currentColor"/>
+                      </g>
+                    </svg>
+                    <svg class="sigil sg-4 amber" viewBox="0 0 64 96" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <g transform="rotate(-8 32 48)">
+                        <rect x="4" y="4" width="56" height="88" rx="6"/>
+                        <line x1="32" y1="20" x2="32" y2="80"/>
+                        <line x1="22" y1="28" x2="42" y2="28"/>
+                        <path d="M22 50 L32 42 L42 50"/>
+                        <path d="M28 64 L32 60 L36 64 L32 68 Z" fill="currentColor"/>
+                        <circle cx="32" cy="78" r="2" fill="currentColor"/>
+                      </g>
+                    </svg>
+                    <svg class="sigil sg-5" viewBox="0 0 64 96" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                      <g transform="rotate(-8 32 48)">
+                        <rect x="4" y="4" width="56" height="88" rx="6"/>
+                        <line x1="32" y1="20" x2="32" y2="80"/>
+                        <line x1="22" y1="28" x2="42" y2="28"/>
+                        <path d="M22 50 L32 42 L42 50"/>
+                        <path d="M28 64 L32 60 L36 64 L32 68 Z" fill="currentColor"/>
+                        <circle cx="32" cy="78" r="2" fill="currentColor"/>
+                      </g>
+                    </svg>
+                    <svg class="sigil sg-6" viewBox="0 0 64 96" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <g transform="rotate(-8 32 48)">
+                        <rect x="4" y="4" width="56" height="88" rx="6"/>
+                        <line x1="32" y1="20" x2="32" y2="80"/>
+                        <line x1="22" y1="28" x2="42" y2="28"/>
+                        <path d="M22 50 L32 42 L42 50"/>
+                        <path d="M28 64 L32 60 L36 64 L32 68 Z" fill="currentColor"/>
+                        <circle cx="32" cy="78" r="2" fill="currentColor"/>
+                      </g>
+                    </svg>
+                    <svg class="sigil sg-7 amber" viewBox="0 0 64 96" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <g transform="rotate(-8 32 48)">
+                        <rect x="4" y="4" width="56" height="88" rx="6"/>
+                        <line x1="32" y1="20" x2="32" y2="80"/>
+                        <line x1="22" y1="28" x2="42" y2="28"/>
+                        <path d="M22 50 L32 42 L42 50"/>
+                        <path d="M28 64 L32 60 L36 64 L32 68 Z" fill="currentColor"/>
+                        <circle cx="32" cy="78" r="2" fill="currentColor"/>
+                      </g>
+                    </svg>
+                    <div class="cm-backdrop-vignette"></div>
                 </div>
 
-                <!-- Quick-status strip. Populated by loadHomeStatus().
-                     Three short lines: hardware, collection, last session.
-                     If any one isn't yet available (fresh install, no
-                     sessions, no hardware), the corresponding line shows
-                     a gentle empty-state instead of a number. -->
-                <div class="cm-home-status card mb-3">
-                    <div class="card-body py-2">
-                        <div class="row text-center small">
-                            <div class="col-md-4 cm-home-status-cell">
-                                <span class="cm-home-status-icon">&#9881;</span>
-                                <span class="cm-home-status-label">Hardware:</span>
-                                <strong id="home-status-hardware">Checking&hellip;</strong>
-                            </div>
-                            <div class="col-md-4 cm-home-status-cell">
-                                <span class="cm-home-status-icon">&#9636;</span>
-                                <span class="cm-home-status-label">Collection:</span>
-                                <strong id="home-status-collection">&mdash;</strong>
-                            </div>
-                            <div class="col-md-4 cm-home-status-cell">
-                                <span class="cm-home-status-icon">&#9201;</span>
-                                <span class="cm-home-status-label">Last session:</span>
-                                <strong id="home-status-last-session">&mdash;</strong>
-                            </div>
+                <!-- ===== Foreground ===== -->
+                <main class="cm-home">
+
+                    <!-- Hero -->
+                    <header class="cm-home-hero">
+                        <div class="cm-home-eyebrow">Trading Card Collection System</div>
+                        <h1 class="cm-home-title">The {{ app_name }} awaits.</h1>
+                        <p class="cm-home-tagline">Drop a stack. The machine does the rest.</p>
+                        <p class="cm-home-subtitle">
+                            Every card scanned. Every printing identified. Every bin
+                            filled by the rule you chose. Choose your ritual below.
+                        </p>
+                    </header>
+
+                    <!-- Status strip. IDs and classes match the originals so
+                         home.js's loadHomeStatus() drops in unchanged. -->
+                    <section class="cm-home-status" aria-label="Kiosk status">
+                        <div class="cm-home-status-cell">
+                            <span class="cm-home-status-icon">&#9881;</span>
+                            <span class="cm-home-status-label">Hardware</span>
+                            <strong id="home-status-hardware">Checking&hellip;</strong>
                         </div>
-                    </div>
-                </div>
+                        <div class="cm-home-status-cell">
+                            <span class="cm-home-status-icon">&#9636;</span>
+                            <span class="cm-home-status-label">Library</span>
+                            <strong id="home-status-collection">&mdash;</strong>
+                        </div>
+                        <div class="cm-home-status-cell">
+                            <span class="cm-home-status-icon">&#9201;</span>
+                            <span class="cm-home-status-label">Last session</span>
+                            <strong id="home-status-last-session">&mdash;</strong>
+                        </div>
+                    </section>
 
-                <!-- Primary action tiles. Each tile is a self-contained
-                     <button> so keyboard users can tab through and the
-                     whole rectangle reads as one target to screen readers. -->
-                <div class="row g-3 cm-home-actions">
-                    <div class="col-md-4">
+                    <!-- Action tiles. Each is a <button> for keyboard +
+                         screen-reader friendliness; clicking activates the
+                         target tab via goToTab() in home.js. -->
+                    <section class="cm-home-actions">
                         <button type="button"
                                 class="cm-home-tile"
                                 onclick="goToTab('#tab-sort')"
-                                aria-label="Sort cards. Pick up cards from the source bin, identify them, and drop into destination bins by query.">
-                            <img class="cm-home-tile-sigil"
-                                 src="/static/branding/sigils/sigil-spiral.svg"
-                                 alt="" aria-hidden="true">
-                            <h2 class="cm-home-tile-title">Sort cards</h2>
+                                aria-label="Begin a sort session.">
+                            <span class="cm-home-tile-num">I</span>
+                            <div class="cm-home-tile-sigil-wrap">
+                                <!-- spiral / sorting -->
+                                <svg class="cm-home-tile-sigil" viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M40 40 m-2 0 a2 2 0 1 1 4 0 a4 4 0 1 1 -8 0 a8 8 0 1 1 16 0 a14 14 0 1 1 -28 0 a22 22 0 1 1 44 0 a30 30 0 1 1 -60 0"/>
+                                    <circle cx="40" cy="40" r="1.5" fill="currentColor"/>
+                                </svg>
+                            </div>
+                            <h2 class="cm-home-tile-title">Begin the sorting</h2>
                             <p class="cm-home-tile-body">
-                                Pick up cards from the source bin, identify them,
-                                and drop into destination bins by query.
+                                Load the source bin, choose a preset, and watch every
+                                card find its home. Pause, undo, or step away &mdash; the
+                                machine waits patiently.
                             </p>
-                            <span class="cm-home-tile-cta">
-                                Open sort &rarr;
-                            </span>
+                            <span class="cm-home-tile-cta">Start sorting</span>
                         </button>
-                    </div>
-                    <div class="col-md-4">
+
                         <button type="button"
                                 class="cm-home-tile"
                                 onclick="goToTab('#tab-collection')"
-                                aria-label="View collection. Browse cards you have sorted. Filter by set, color, price, or any Scryfall-style query.">
-                            <img class="cm-home-tile-sigil"
-                                 src="/static/branding/sigils/sigil-bin.svg"
-                                 alt="" aria-hidden="true">
-                            <h2 class="cm-home-tile-title">View collection</h2>
+                                aria-label="Consult the collection.">
+                            <span class="cm-home-tile-num">II</span>
+                            <div class="cm-home-tile-sigil-wrap">
+                                <!-- bin / library -->
+                                <svg class="cm-home-tile-sigil" viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="40" cy="40" r="28"/>
+                                    <path d="M28 32 L28 50 Q28 54 32 54 L48 54 Q52 54 52 50 L52 32 Z"/>
+                                    <line x1="32" y1="38" x2="48" y2="38"/>
+                                    <line x1="32" y1="44" x2="48" y2="44"/>
+                                </svg>
+                            </div>
+                            <h2 class="cm-home-tile-title">Consult the library</h2>
                             <p class="cm-home-tile-body">
-                                Browse what you&rsquo;ve sorted. Filter by set,
-                                color, price, or any Scryfall-style query.
+                                Every card you&rsquo;ve ever sorted. Filter by set, color,
+                                price, salt score, or any Scryfall-style query. Find what
+                                you own. Decide what to sell.
                             </p>
-                            <span class="cm-home-tile-cta">
-                                Open collection &rarr;
-                            </span>
+                            <span class="cm-home-tile-cta">Open collection</span>
                         </button>
-                    </div>
-                    <div class="col-md-4">
+
                         <button type="button"
                                 class="cm-home-tile"
                                 onclick="goToTab('#tab-setup')"
-                                aria-label="Setup and calibration. Run the calibration wizard, tune drop height, review uncertain detections, and test simulation runs.">
-                            <img class="cm-home-tile-sigil"
-                                 src="/static/branding/sigils/sigil-eye.svg"
-                                 alt="" aria-hidden="true">
-                            <h2 class="cm-home-tile-title">Setup &amp; calibration</h2>
+                                aria-label="Setup and calibration.">
+                            <span class="cm-home-tile-num">III</span>
+                            <div class="cm-home-tile-sigil-wrap">
+                                <!-- eye / scry -->
+                                <svg class="cm-home-tile-sigil" viewBox="0 0 96 64" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M4 32 Q48 4 92 32 Q48 60 4 32 Z"/>
+                                    <circle cx="48" cy="32" r="11"/>
+                                    <circle cx="48" cy="32" r="4" fill="currentColor"/>
+                                </svg>
+                            </div>
+                            <h2 class="cm-home-tile-title">Tune the apparatus</h2>
                             <p class="cm-home-tile-body">
-                                Run the calibration wizard, tune drop height,
-                                review uncertain detections, and test sim runs.
+                                Calibrate the gantry, set bin positions, review uncertain
+                                detections, and run simulations before you touch a real
+                                card.
                             </p>
-                            <span class="cm-home-tile-cta">
-                                Open setup &rarr;
-                            </span>
+                            <span class="cm-home-tile-cta">Open setup</span>
                         </button>
-                    </div>
-                </div>
+                    </section>
 
-                <!-- Getting-started banner. Hidden by default; revealed by
-                     loadHomeStatus() when the kiosk has no saved hardware
-                     setup yet (fresh install). Steers the operator at the
-                     calibration wizard before they wander into Sort. -->
-                <div id="home-getting-started"
-                     class="cm-home-getting-started card mt-3"
-                     style="display:none;">
-                    <div class="card-body d-flex align-items-center flex-wrap gap-3">
-                        <img class="cm-home-getting-started-sigil"
-                             src="/static/branding/sigils/sigil-stars.svg"
-                             alt="" width="48" height="48" aria-hidden="true">
-                        <div class="flex-grow-1">
-                            <h3 class="h6 mb-1">New to {{ app_name }}?</h3>
-                            <p class="small text-muted mb-0">
-                                Run the calibration wizard once so the machine
-                                learns where your bins live, then come back to
-                                Sort to start a session.
+                    <!-- Getting-started banner. Hidden by default; revealed
+                         by home.js loadHomeStatus() when no saved hardware
+                         setup exists (fresh install). -->
+                    <div id="home-getting-started"
+                         class="cm-home-getting-started"
+                         style="display:none;">
+                        <svg class="cm-home-getting-started-sigil" viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M40 8 L46 32 L70 36 L46 40 L40 64 L34 40 L10 36 L34 32 Z" fill="currentColor" opacity="0.85"/>
+                        </svg>
+                        <div>
+                            <h3 class="cm-home-getting-started-title">A first ritual is required.</h3>
+                            <p class="cm-home-getting-started-body">
+                                Run the calibration ritual once. The machine learns
+                                where your bins live and how deep to delve. After that,
+                                the {{ app_name }} is yours to command.
                             </p>
                         </div>
-                        <button class="btn btn-primary"
+                        <button type="button"
+                                class="cm-home-getting-started-btn"
                                 data-bs-toggle="modal"
                                 data-bs-target="#calibration-wizard-modal">
-                            Run calibration wizard
+                            Run calibration ritual
                         </button>
                     </div>
-                </div>
+
+                    <!-- Footer flourish. app_version is the git short SHA
+                         when running from a checkout, "dev" otherwise. -->
+                    <div class="cm-home-footer">
+                        v{{ app_version }} &middot; scan, divine, route
+                    </div>
+
+                </main>
 
             </div><!-- /#tab-home -->
