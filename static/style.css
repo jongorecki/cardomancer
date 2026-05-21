@@ -1851,3 +1851,172 @@ body > nav.navbar { position: relative; z-index: 20; }
     .cm-page-hero-title { font-size: 1.6rem; }
     .cm-page-hero       { padding: 18px 20px 14px; }
 }
+
+/* =========================================================================
+ * Welcome tour overlay
+ *
+ * Lightweight first-run walkthrough triggered from the home-getting-
+ * started banner OR autostarted the first time an operator opens the
+ * Sort tab. Five steps total. Drawn over a dim backdrop with an amber
+ * ring around the current target and a tooltip card explaining what
+ * the operator is looking at.
+ *
+ * Esc / Arrow Right / Arrow Left / Enter all work as keyboard shortcuts.
+ * Backdrop click dismisses. localStorage('cm.tour.shown') gates autostart.
+ * ========================================================================= */
+
+.cm-tour-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1090;  /* above modals (1050) and toasts (1080) */
+    background: rgba(10, 10, 28, 0.72);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    /* Block clicks to the underlying page so the operator can't
+     * accidentally fire a Start Session while reading the tour. */
+}
+
+.cm-tour-highlight {
+    border: 2px solid var(--amber-500);
+    border-radius: 8px;
+    box-shadow:
+        0 0 0 4px rgba(212, 165, 55, 0.18),
+        0 0 28px rgba(212, 165, 55, 0.25);
+    pointer-events: none;
+    transition: top 220ms ease, left 220ms ease,
+                width 220ms ease, height 220ms ease;
+}
+
+.cm-tour-tip {
+    background: #14142E;
+    border: 1px solid var(--amber-500);
+    border-radius: 10px;
+    padding: 22px 24px 18px;
+    color: #ECEAF6;
+    box-shadow:
+        0 16px 40px rgba(0, 0, 0, 0.45),
+        0 0 0 1px rgba(212, 165, 55, 0.20);
+    font-family: var(--font-sans);
+    /* width set inline by JS so we can flip near viewport edges */
+}
+
+.cm-tour-step {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--amber-300);
+    margin-bottom: 4px;
+}
+
+.cm-tour-tip-title {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 22px;
+    line-height: 1.15;
+    letter-spacing: 0.005em;
+    color: #fff;
+    margin: 0 0 10px;
+}
+
+.cm-tour-tip-body {
+    font-size: 13px;
+    color: #B6B3CD;
+    line-height: 1.55;
+    margin: 0 0 16px;
+}
+
+.cm-tour-tip-body code {
+    background: rgba(120, 120, 216, 0.18);
+    border: 1px solid var(--indigo-500);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 0.85em;
+    color: #fff;
+}
+
+.cm-tour-tip-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.cm-tour-nav {
+    display: flex;
+    gap: 8px;
+}
+
+.cm-tour-btn {
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 7px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: filter 160ms ease,
+                background 160ms ease,
+                color 160ms ease;
+}
+
+.cm-tour-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.cm-tour-btn-skip {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-muted);
+}
+
+.cm-tour-btn-skip:hover {
+    color: var(--text-secondary);
+}
+
+.cm-tour-btn-prev {
+    background: transparent;
+    border: 1px solid var(--indigo-500);
+    color: #ECEAF6;
+}
+
+.cm-tour-btn-prev:hover:not(:disabled) {
+    border-color: var(--amber-500);
+    color: var(--amber-300);
+}
+
+.cm-tour-btn-next {
+    background: var(--amber-500);
+    border: 1px solid var(--amber-500);
+    color: var(--indigo-900);
+}
+
+.cm-tour-btn-next:hover {
+    filter: brightness(1.08);
+}
+
+.cm-tour-btn:focus-visible {
+    outline: 2px solid var(--amber-500);
+    outline-offset: 2px;
+}
+
+/* Inline "Walk me through it" link inside the home-getting-started
+ * banner. Less prominent than the primary Calibration button. */
+.cm-home-getting-started-tour {
+    margin-left: 4px;
+    color: var(--amber-300);
+    font-size: 12px;
+    font-weight: 500;
+    background: none;
+    border: none;
+    padding: 4px 2px;
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-color: rgba(236, 201, 123, 0.4);
+    text-underline-offset: 3px;
+}
+
+.cm-home-getting-started-tour:hover {
+    color: var(--amber-500);
+    text-decoration-color: var(--amber-500);
+}

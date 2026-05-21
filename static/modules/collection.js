@@ -119,18 +119,7 @@ async function loadInventory(page) {
             tbody.innerHTML += _renderInventoryRow(item);
         }
         _updateSortArrows();
-        // Pagination
-        const pagDiv = document.getElementById('inventory-pagination');
-        pagDiv.innerHTML = '';
-        if (data.pages > 1) {
-            for (let p = 1; p <= data.pages; p++) {
-                const btn = document.createElement('button');
-                btn.className = `btn btn-sm ${p === data.page ? 'btn-primary' : 'btn-outline-secondary'} mx-1`;
-                btn.textContent = p;
-                btn.onclick = () => loadInventory(p);
-                pagDiv.appendChild(btn);
-            }
-        }
+        _renderInventoryPagination(data.pages || 0, data.page || 1);
     } catch (e) {
         const errEl = document.getElementById('collection-filter-error');
         if (errEl && e && e.message) {
@@ -138,6 +127,73 @@ async function loadInventory(page) {
             errEl.style.display = '';
         }
     }
+}
+
+/**
+ * Compact pagination for the inventory table.
+ *
+ * The original implementation rendered one button per page — fine at
+ * 10 pages, hostile at 200+ (the inventory grows fast on a real
+ * sorter). This replacement shows: « prev / first / … / N-1 [N] N+1
+ * / … / last / next » so the DOM stays bounded at ~9 buttons even
+ * with thousands of pages.
+ *
+ * Server-side pagination at /api/collection/filter handles the
+ * actual row-window math; this is purely the click target UI.
+ */
+function _renderInventoryPagination(totalPages, currentPage) {
+    const div = document.getElementById('inventory-pagination');
+    if (!div) return;
+    div.innerHTML = '';
+    if (totalPages <= 1) return;
+
+    // Window of pages to render around the current one.
+    const WINDOW = 2;
+    const pages = new Set([1, totalPages, currentPage]);
+    for (let d = 1; d <= WINDOW; d++) {
+        if (currentPage - d > 1) pages.add(currentPage - d);
+        if (currentPage + d < totalPages) pages.add(currentPage + d);
+    }
+    const sorted = Array.from(pages).sort((a, b) => a - b);
+
+    const make = (label, page, opts = {}) => {
+        const btn = document.createElement('button');
+        const variant = opts.active ? 'btn-primary' : 'btn-outline-secondary';
+        btn.className = `btn btn-sm ${variant} mx-1`;
+        btn.textContent = label;
+        if (opts.disabled) {
+            btn.disabled = true;
+        } else if (page != null) {
+            btn.onclick = () => loadInventory(page);
+        }
+        if (opts.title) btn.title = opts.title;
+        return btn;
+    };
+
+    // Prev arrow
+    div.appendChild(make('«', currentPage - 1, {
+        disabled: currentPage <= 1,
+        title: 'Previous page',
+    }));
+
+    // Numbered pages with ellipses where the window skips
+    let last = 0;
+    for (const p of sorted) {
+        if (p > last + 1) {
+            const ell = document.createElement('span');
+            ell.className = 'mx-1 text-muted';
+            ell.textContent = '…';
+            div.appendChild(ell);
+        }
+        div.appendChild(make(String(p), p, { active: p === currentPage }));
+        last = p;
+    }
+
+    // Next arrow
+    div.appendChild(make('»', currentPage + 1, {
+        disabled: currentPage >= totalPages,
+        title: 'Next page',
+    }));
 }
 
 // ---- Collection tab filter chips (2.13) ----
