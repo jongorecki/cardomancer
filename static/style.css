@@ -1174,3 +1174,179 @@ tr.price-mythic { border-left: 3px solid var(--accent-red); }
     color: var(--accent-green);
     border-color: var(--accent-green);
 }
+
+/* =========================================================================
+ * Home tab — welcome / landing page
+ *
+ * Three-part layout:
+ *   1. cm-home-hero        wordmark + tagline + subtitle
+ *   2. cm-home-status      one-line "Hardware · Collection · Last session"
+ *   3. cm-home-actions     three large action tiles routing to the
+ *                          Sort / Collection / Setup tabs
+ *
+ * Plus an optional cm-home-getting-started banner that surfaces on
+ * fresh installs (no saved calibration) pointing the operator at the
+ * calibration wizard before they wander into Sort.
+ * ========================================================================= */
+
+.cm-home-hero {
+    background:
+        linear-gradient(135deg,
+            rgba(40, 35, 90, 0.55) 0%,
+            rgba(20, 18, 50, 0.92) 100%),
+        var(--bg-card);
+    border-color: var(--border-card);
+}
+
+.cm-home-title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 2.4rem;
+    color: var(--text-primary);
+    letter-spacing: 0.005em;
+    line-height: 1.1;
+}
+
+.cm-home-tagline {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-weight: 500;
+    font-size: 1.1rem;
+    color: var(--accent-sigil);
+    letter-spacing: 0.04em;
+}
+
+.cm-home-subtitle {
+    font-size: 1rem;
+    color: var(--text-secondary);
+}
+
+/* Quick-status strip */
+
+.cm-home-status .card-body {
+    /* Tighter padding so the strip reads as info banner, not card. */
+    padding-top: 0.55rem;
+    padding-bottom: 0.55rem;
+}
+
+.cm-home-status-cell {
+    color: var(--text-secondary);
+    padding: 0.15rem 0.5rem;
+}
+
+.cm-home-status-cell strong {
+    color: var(--text-primary);
+    margin-left: 0.35rem;
+}
+
+.cm-home-status-icon {
+    color: var(--accent-blue);
+    margin-right: 0.4rem;
+    font-size: 1.05em;
+}
+
+.cm-home-status-label {
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.78rem;
+    font-weight: 500;
+}
+
+/* Action tiles */
+
+.cm-home-actions {
+    /* Slightly more breathing room than the default Bootstrap row gap. */
+    margin-top: 0.25rem;
+}
+
+.cm-home-tile {
+    width: 100%;
+    height: 100%;
+    min-height: 220px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    text-align: left;
+    padding: 1.5rem 1.5rem 1.25rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius-md, 6px);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: border-color 120ms ease,
+                box-shadow 120ms ease,
+                transform 120ms ease;
+}
+
+.cm-home-tile:hover {
+    border-color: var(--accent-blue);
+    box-shadow: 0 4px 18px rgba(91, 91, 200, 0.18);
+    /* Subtle lift; not so much that the layout shifts. */
+    transform: translateY(-2px);
+}
+
+.cm-home-tile:focus-visible {
+    outline: 2px solid var(--accent-sigil);
+    outline-offset: 3px;
+    border-color: var(--accent-sigil);
+}
+
+.cm-home-tile-sigil {
+    width: 56px;
+    height: 56px;
+    margin-bottom: 0.85rem;
+    /* Sigils ship as monochrome SVG using the indigo brand. The home
+     * tiles deserve the amber pop — recolour with a CSS filter rather
+     * than maintaining duplicate SVG files. */
+    filter: brightness(0) saturate(100%) invert(73%) sepia(85%)
+            saturate(490%) hue-rotate(2deg) brightness(96%) contrast(95%);
+    opacity: 0.92;
+}
+
+.cm-home-tile-title {
+    font-family: var(--font-display);
+    font-size: 1.45rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 0.4rem 0;
+}
+
+.cm-home-tile-body {
+    font-size: 0.92rem;
+    color: var(--text-secondary);
+    line-height: 1.45;
+    margin: 0 0 0.85rem 0;
+    flex-grow: 1;
+}
+
+.cm-home-tile-cta {
+    font-size: 0.88rem;
+    color: var(--accent-blue);
+    font-weight: 500;
+    margin-top: auto;
+}
+
+.cm-home-tile:hover .cm-home-tile-cta {
+    color: var(--accent-sigil);
+}
+
+/* Getting-started banner (fresh install) */
+
+.cm-home-getting-started {
+    background: var(--bg-card);
+    border: 1px solid var(--accent-sigil);
+}
+
+.cm-home-getting-started-sigil {
+    filter: brightness(0) saturate(100%) invert(73%) sepia(85%)
+            saturate(490%) hue-rotate(2deg) brightness(96%) contrast(95%);
+    opacity: 0.95;
+}
+
+@media (max-width: 768px) {
+    .cm-home-title { font-size: 1.9rem; }
+    .cm-home-tile { min-height: 180px; padding: 1.2rem; }
+    .cm-home-tile-sigil { width: 44px; height: 44px; }
+    .cm-home-status-cell { margin-bottom: 0.25rem; }
+}

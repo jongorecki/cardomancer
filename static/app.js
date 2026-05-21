@@ -9,6 +9,21 @@ document.addEventListener('DOMContentLoaded', () => {
     drawMotionCanvas();
     loadPriorityWishlistSources();
 
+    // Home tab is the default landing tab — populate its status strip
+    // immediately so the operator doesn't see placeholder dashes on
+    // first paint. Refresh every time the Home tab is re-shown so the
+    // "last session" line is accurate after finishing a sort.
+    if (typeof loadHomeStatus === 'function') {
+        loadHomeStatus();
+    }
+    document.querySelector('a[href="#tab-home"]')?.addEventListener(
+        'shown.bs.tab', () => {
+            if (typeof loadHomeStatus === 'function') {
+                loadHomeStatus();
+            }
+        }
+    );
+
     // Load collection data when tab is shown
     document.querySelector('a[href="#tab-collection"]').addEventListener('shown.bs.tab', () => {
         loadCollectionStats();

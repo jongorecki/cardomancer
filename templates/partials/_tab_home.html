@@ -1,0 +1,139 @@
+            <!-- ============================================================ -->
+            <!-- HOME TAB — landing page                                     -->
+            <!-- Default-active tab. Surfaces a friendly welcome, a one-line -->
+            <!-- status of the kiosk, and three large action tiles routing   -->
+            <!-- to the main paths (Sort, Collection, Setup) so the operator -->
+            <!-- isn't dropped into a field-dense screen on launch.           -->
+            <!-- ============================================================ -->
+            <div class="tab-pane fade show active" id="tab-home">
+
+                <!-- Welcome hero -->
+                <div class="cm-home-hero card mb-3">
+                    <div class="card-body text-center py-5">
+                        <h1 class="cm-home-title mb-2">
+                            Welcome to {{ app_name }}.
+                        </h1>
+                        <p class="cm-home-tagline mb-3">
+                            Trading Card Collection System
+                        </p>
+                        <p class="cm-home-subtitle mb-0">
+                            Choose what you&rsquo;d like to do.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Quick-status strip. Populated by loadHomeStatus().
+                     Three short lines: hardware, collection, last session.
+                     If any one isn't yet available (fresh install, no
+                     sessions, no hardware), the corresponding line shows
+                     a gentle empty-state instead of a number. -->
+                <div class="cm-home-status card mb-3">
+                    <div class="card-body py-2">
+                        <div class="row text-center small">
+                            <div class="col-md-4 cm-home-status-cell">
+                                <span class="cm-home-status-icon">&#9881;</span>
+                                <span class="cm-home-status-label">Hardware:</span>
+                                <strong id="home-status-hardware">Checking&hellip;</strong>
+                            </div>
+                            <div class="col-md-4 cm-home-status-cell">
+                                <span class="cm-home-status-icon">&#9636;</span>
+                                <span class="cm-home-status-label">Collection:</span>
+                                <strong id="home-status-collection">&mdash;</strong>
+                            </div>
+                            <div class="col-md-4 cm-home-status-cell">
+                                <span class="cm-home-status-icon">&#9201;</span>
+                                <span class="cm-home-status-label">Last session:</span>
+                                <strong id="home-status-last-session">&mdash;</strong>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Primary action tiles. Each tile is a self-contained
+                     <button> so keyboard users can tab through and the
+                     whole rectangle reads as one target to screen readers. -->
+                <div class="row g-3 cm-home-actions">
+                    <div class="col-md-4">
+                        <button type="button"
+                                class="cm-home-tile"
+                                onclick="goToTab('#tab-sort')"
+                                aria-label="Sort cards. Pick up cards from the source bin, identify them, and drop into destination bins by query.">
+                            <img class="cm-home-tile-sigil"
+                                 src="/static/branding/sigils/sigil-spiral.svg"
+                                 alt="" aria-hidden="true">
+                            <h2 class="cm-home-tile-title">Sort cards</h2>
+                            <p class="cm-home-tile-body">
+                                Pick up cards from the source bin, identify them,
+                                and drop into destination bins by query.
+                            </p>
+                            <span class="cm-home-tile-cta">
+                                Open sort &rarr;
+                            </span>
+                        </button>
+                    </div>
+                    <div class="col-md-4">
+                        <button type="button"
+                                class="cm-home-tile"
+                                onclick="goToTab('#tab-collection')"
+                                aria-label="View collection. Browse cards you have sorted. Filter by set, color, price, or any Scryfall-style query.">
+                            <img class="cm-home-tile-sigil"
+                                 src="/static/branding/sigils/sigil-bin.svg"
+                                 alt="" aria-hidden="true">
+                            <h2 class="cm-home-tile-title">View collection</h2>
+                            <p class="cm-home-tile-body">
+                                Browse what you&rsquo;ve sorted. Filter by set,
+                                color, price, or any Scryfall-style query.
+                            </p>
+                            <span class="cm-home-tile-cta">
+                                Open collection &rarr;
+                            </span>
+                        </button>
+                    </div>
+                    <div class="col-md-4">
+                        <button type="button"
+                                class="cm-home-tile"
+                                onclick="goToTab('#tab-setup')"
+                                aria-label="Setup and calibration. Run the calibration wizard, tune drop height, review uncertain detections, and test simulation runs.">
+                            <img class="cm-home-tile-sigil"
+                                 src="/static/branding/sigils/sigil-eye.svg"
+                                 alt="" aria-hidden="true">
+                            <h2 class="cm-home-tile-title">Setup &amp; calibration</h2>
+                            <p class="cm-home-tile-body">
+                                Run the calibration wizard, tune drop height,
+                                review uncertain detections, and test sim runs.
+                            </p>
+                            <span class="cm-home-tile-cta">
+                                Open setup &rarr;
+                            </span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Getting-started banner. Hidden by default; revealed by
+                     loadHomeStatus() when the kiosk has no saved hardware
+                     setup yet (fresh install). Steers the operator at the
+                     calibration wizard before they wander into Sort. -->
+                <div id="home-getting-started"
+                     class="cm-home-getting-started card mt-3"
+                     style="display:none;">
+                    <div class="card-body d-flex align-items-center flex-wrap gap-3">
+                        <img class="cm-home-getting-started-sigil"
+                             src="/static/branding/sigils/sigil-stars.svg"
+                             alt="" width="48" height="48" aria-hidden="true">
+                        <div class="flex-grow-1">
+                            <h3 class="h6 mb-1">New to {{ app_name }}?</h3>
+                            <p class="small text-muted mb-0">
+                                Run the calibration wizard once so the machine
+                                learns where your bins live, then come back to
+                                Sort to start a session.
+                            </p>
+                        </div>
+                        <button class="btn btn-primary"
+                                data-bs-toggle="modal"
+                                data-bs-target="#calibration-wizard-modal">
+                            Run calibration wizard
+                        </button>
+                    </div>
+                </div>
+
+            </div><!-- /#tab-home -->
