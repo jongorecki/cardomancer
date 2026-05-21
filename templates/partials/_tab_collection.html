@@ -2,6 +2,17 @@
             <!-- COLLECTION TAB -->
             <!-- ============================================================ -->
             <div class="tab-pane fade" id="tab-collection">
+                <!-- Section hero (Claude Design treatment). Mirrors the
+                     display-serif heading + amber eyebrow rule from the
+                     Home tab's "Consult the library" tile so the section
+                     feels like a continuation of the welcome page. -->
+                <header class="cm-page-hero mb-3">
+                    <div class="cm-page-hero-eyebrow">Your archive</div>
+                    <h2 class="cm-page-hero-title">Consult the library.</h2>
+                    <p class="cm-page-hero-subtitle">
+                        Browse, filter, and decide what to keep.
+                    </p>
+                </header>
                 <ul class="nav nav-pills mb-3" id="collection-subnav" role="tablist">
                     <li class="nav-item"><a class="nav-link active" data-collection-view="inventory" href="#">Inventory</a></li>
                     <li class="nav-item"><a class="nav-link" data-collection-view="locator" href="#">Locator</a></li>
@@ -286,9 +297,18 @@
                             </div>
                             <div class="card-body">
                                 <div id="locator-status" class="text-muted small text-center py-3"
-                                     style="display:none">Searching…</div>
-                                <div id="locator-empty" class="text-muted small text-center py-3"
-                                     style="display:none">No cards found matching that query.</div>
+                                     style="display:none">Searching&hellip;</div>
+                                <div id="locator-empty" style="display:none">
+                                    <div class="cm-empty-state cm-empty-compact">
+                                        <img class="cm-empty-sigil"
+                                             src="/static/branding/sigils/sigil-eye.svg"
+                                             alt="" width="40" height="40" aria-hidden="true">
+                                        <div class="cm-empty-title">No matches.</div>
+                                        <p class="cm-empty-body small text-muted mb-0">
+                                            Try a broader query or check the spelling.
+                                        </p>
+                                    </div>
+                                </div>
                                 <div id="locator-error" class="alert alert-danger py-2 small"
                                      style="display:none"></div>
                                 <div id="locator-results"></div>

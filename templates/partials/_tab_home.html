@@ -202,6 +202,19 @@
                         </button>
                     </section>
 
+                    <!-- Recent activity panel. Hidden by default; revealed
+                         by home.js loadHomeStatus() when there are real
+                         sessions to show. Click a row to jump to that
+                         session's review queue. -->
+                    <section id="home-recent-activity"
+                             class="cm-home-recent"
+                             style="display:none;"
+                             aria-label="Recent sessions">
+                        <h2 class="cm-home-recent-title">Recent rituals</h2>
+                        <ul id="home-recent-activity-list"
+                            class="cm-home-recent-list"></ul>
+                    </section>
+
                     <!-- Getting-started banner. Hidden by default; revealed
                          by home.js loadHomeStatus() when no saved hardware
                          setup exists (fresh install). -->

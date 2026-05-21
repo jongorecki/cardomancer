@@ -1549,6 +1549,83 @@ body > nav.navbar { position: relative; z-index: 20; }
     transform: translateX(4px);
 }
 
+/* ---- Recent activity panel ---- */
+
+.cm-home-recent {
+    margin-top: 8px;
+    padding: 18px 22px 6px;
+    background: rgba(20, 20, 46, 0.55);
+    border: 1px solid var(--indigo-700);
+    border-radius: 10px;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+}
+
+.cm-home-recent-title {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 20px;
+    color: #fff;
+    margin: 0 0 12px;
+    letter-spacing: 0.005em;
+}
+
+.cm-home-recent-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.cm-home-recent-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto auto;
+    gap: 12px;
+    align-items: baseline;
+    padding: 10px 0;
+    border-top: 1px solid var(--indigo-700);
+    color: #ECEAF6;
+    font-size: 13px;
+    cursor: pointer;
+    transition: color 160ms ease;
+}
+
+.cm-home-recent-row:hover,
+.cm-home-recent-row:focus-visible {
+    color: var(--amber-300);
+    outline: none;
+}
+
+.cm-home-recent-row:first-child {
+    border-top: 0;
+}
+
+.cm-home-recent-when {
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.cm-home-recent-mode {
+    color: var(--indigo-300);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.cm-home-recent-count {
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.cm-home-recent-count strong {
+    color: #fff;
+    font-weight: 600;
+}
+
 /* ---- Getting-started banner (fresh install) ---- */
 
 .cm-home-getting-started {
@@ -1639,4 +1716,138 @@ body > nav.navbar { position: relative; z-index: 20; }
     .cm-home-status-cell  { justify-content: flex-start; }
     .cm-home-getting-started     { flex-wrap: wrap; }
     .cm-home-getting-started-btn { margin-left: 0; width: 100%; }
+}
+
+/* =========================================================================
+ * Sort tab — hero panels (Claude Design treatment)
+ *
+ * The Sort tab has two heroes:
+ *   cm-sort-hero-pre   — visible before a session starts
+ *   cm-sort-hero-post  — visible after a session completes
+ *
+ * They borrow the Home tab's brand voice (display-serif title, amber
+ * eyebrow rule, amber link accents) so the Sort surface doesn't feel
+ * like a different app from the welcome page.
+ * ========================================================================= */
+
+.cm-sort-hero {
+    border-color: var(--indigo-700);
+    background: linear-gradient(160deg, #181838 0%, #14142E 100%);
+    position: relative;
+    overflow: hidden;
+}
+
+.cm-sort-hero-pre  { border-left: 3px solid var(--accent-blue); }
+.cm-sort-hero-post { border-left: 3px solid var(--amber-500); }
+
+.cm-sort-hero-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 18px;
+}
+
+.cm-sort-hero-eyebrow {
+    font-family: var(--font-sans);
+    font-size: 11px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--amber-300);
+    font-weight: 500;
+    margin-bottom: 4px;
+}
+
+.cm-sort-hero-title {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 2rem;
+    line-height: 1.1;
+    letter-spacing: 0.005em;
+    color: #fff;
+    margin: 0 0 4px;
+}
+
+.cm-sort-hero-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+    font-family: var(--font-mono);
+}
+
+.cm-sort-hero-link {
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--amber-300);
+    text-decoration: none;
+    text-transform: uppercase;
+    letter-spacing: 0.10em;
+    transition: color 160ms ease;
+}
+
+.cm-sort-hero-link:hover,
+.cm-sort-hero-link:focus-visible {
+    color: var(--amber-500);
+    outline: none;
+}
+
+/* Tighter responsive: title shrinks, meta drops below */
+@media (max-width: 768px) {
+    .cm-sort-hero-title { font-size: 1.6rem; }
+    .cm-sort-hero-head  { flex-direction: column; gap: 4px; }
+    .cm-sort-hero-meta  { align-items: flex-start; }
+}
+
+/* =========================================================================
+ * Generic section hero — used by Collection + Setup tabs
+ *
+ * A simpler variant of the Sort tab's pre/post heroes: just an eyebrow
+ * + display-serif title + subtitle, without the stat cards. Each tab
+ * picks ritual-style copy that echoes the Home tab's three action
+ * tiles, so an operator who clicks "Consult the library" on Home lands
+ * on a Collection tab that opens with the same phrase.
+ * ========================================================================= */
+
+.cm-page-hero {
+    padding: 22px 26px 18px;
+    border-radius: 12px;
+    background: linear-gradient(160deg, #181838 0%, #14142E 100%);
+    border: 1px solid var(--indigo-700);
+    border-left: 3px solid var(--amber-500);
+}
+
+.cm-page-hero-eyebrow {
+    font-family: var(--font-sans);
+    font-size: 11px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--amber-300);
+    font-weight: 500;
+    margin-bottom: 4px;
+}
+
+.cm-page-hero-title {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 2rem;
+    line-height: 1.1;
+    letter-spacing: 0.005em;
+    color: #fff;
+    margin: 0 0 4px;
+}
+
+.cm-page-hero-subtitle {
+    font-family: var(--font-sans);
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin: 0;
+    line-height: 1.45;
+}
+
+@media (max-width: 768px) {
+    .cm-page-hero-title { font-size: 1.6rem; }
+    .cm-page-hero       { padding: 18px 20px 14px; }
 }

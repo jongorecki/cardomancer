@@ -4,8 +4,27 @@ async function loadSessionHistory() {
     try {
         const data = await apiGet('/api/collection/sessions');
         const tbody = document.getElementById('sessions-body');
+        if (!tbody) return;
+        const sessions = data.sessions || [];
+        if (sessions.length === 0) {
+            // 8-column row matches the table header so the empty-state
+            // cell spans the full width of the panel.
+            tbody.innerHTML = `<tr><td colspan="8" class="p-0">
+                <div class="cm-empty-state cm-empty-compact">
+                    <img class="cm-empty-sigil"
+                         src="/static/branding/sigils/sigil-stars.svg"
+                         alt="" width="40" height="40" aria-hidden="true">
+                    <div class="cm-empty-title">No sessions yet.</div>
+                    <p class="cm-empty-body small text-muted mb-0">
+                        Run your first sort from the Sort tab. Past
+                        sessions show up here with per-card detail.
+                    </p>
+                </div>
+            </td></tr>`;
+            return;
+        }
         tbody.innerHTML = '';
-        for (const s of data.sessions || []) {
+        for (const s of sessions) {
             tbody.innerHTML += `<tr>
                 <td>${s.id}</td>
                 <td>${s.start_time || '?'}</td>

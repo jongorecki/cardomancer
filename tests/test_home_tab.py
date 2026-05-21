@@ -192,6 +192,20 @@ class HomeTabTemplateTests(unittest.TestCase):
         self.assertIn('cm-home-footer', self.body)
         self.assertIn('scan, divine, route', self.body)
 
+    def test_recent_activity_panel_present_and_hidden(self):
+        """Recent activity panel sits in the markup hidden by default;
+        home.js populates + reveals it when there are sessions."""
+        idx = self.body.find('id="home-recent-activity"')
+        self.assertGreater(idx, -1,
+                           "Recent activity panel missing from home tab")
+        chunk = self.body[idx:idx + 300]
+        self.assertIn('display:none', chunk,
+                      "Recent activity panel should start hidden — "
+                      "home.js reveals it after a successful sessions "
+                      "fetch returns at least one row")
+        # The list container the JS appends rows into.
+        self.assertIn('id="home-recent-activity-list"', self.body)
+
 
 class HomeStatusDataSourcesContract(unittest.TestCase):
     """The Home JS loader hits three existing endpoints. We pin the
