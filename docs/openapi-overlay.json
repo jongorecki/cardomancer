@@ -1,0 +1,482 @@
+{
+  "_meta": {
+    "purpose": "Hand-annotated OpenAPI overlay. Deep-merged on top of the auto-generated spec by tools/generate_openapi.py:build_spec(). Use this file to give precise request/response schemas to endpoints whose contract is load-bearing for integrators. Endpoints NOT listed here keep their generic-object schema from the auto-generator — that's fine for internal/admin routes.",
+    "convention": "Mirror the OpenAPI 3.1 structure of the generated spec. Only fields you want to override or add need to be present; everything else falls through from the generator."
+  },
+  "components": {
+    "schemas": {
+      "WorkerState": {
+        "type": "string",
+        "enum": [
+          "disconnected",
+          "idle",
+          "sorting",
+          "paused",
+          "estopped"
+        ],
+        "description": "Cardomancer worker state machine — see web_worker.STATES."
+      },
+      "SessionStartRequest": {
+        "type": "object",
+        "required": ["config"],
+        "properties": {
+          "config": {
+            "type": "string",
+            "description": "Filename of a sort preset under sort_configs/, OR an inline config_lines text body. The worker accepts either."
+          },
+          "continuous": {
+            "type": "boolean",
+            "default": false,
+            "description": "If true, the worker re-enqueues a new detect-and-sort cycle after every drop until the source bin is empty or the operator pauses."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Free-text operator notes; persisted to sessions.notes."
+          },
+          "config_text": {
+            "type": "string",
+            "description": "Inline config_lines body. Sent when the operator starts from an unsaved preset edit. Stored in sessions.config_text so power-loss-resume can rehydrate."
+          }
+        }
+      },
+      "SessionStartResponse": {
+        "type": "object",
+        "properties": {
+          "session_id": { "type": "integer", "format": "int64" },
+          "queued":     { "type": "boolean" }
+        }
+      },
+      "StatusResponse": {
+        "type": "object",
+        "required": ["state"],
+        "properties": {
+          "state":             { "$ref": "#/components/schemas/WorkerState" },
+          "continuous":        { "type": "boolean" },
+          "scan_count":        { "type": "integer", "format": "int64" },
+          "current_session_id":{ "type": "integer", "format": "int64", "nullable": true }
+        }
+      },
+      "CollectionStats": {
+        "type": "object",
+        "properties": {
+          "total_cards":     { "type": "integer", "format": "int64" },
+          "total_quantity":  { "type": "integer", "format": "int64" },
+          "total_value":     { "type": "number",  "format": "float" },
+          "unique_sets":     { "type": "integer" }
+        }
+      },
+      "InventoryRow": {
+        "type": "object",
+        "properties": {
+          "id":               { "type": "integer", "format": "int64" },
+          "name":             { "type": "string" },
+          "set_code":         { "type": "string" },
+          "collector_number": { "type": "string" },
+          "oracle_id":        { "type": "string", "nullable": true },
+          "colors":           { "type": "string", "description": "Concatenated color symbols (e.g. 'WUB')." },
+          "cmc":              { "type": "number", "format": "float", "nullable": true },
+          "type_line":        { "type": "string", "nullable": true },
+          "rarity":           { "type": "string", "nullable": true },
+          "price_usd":        { "type": "number", "format": "float", "nullable": true },
+          "quantity":         { "type": "integer" },
+          "foil_quantity":    { "type": "integer" },
+          "box":              { "type": "string", "nullable": true },
+          "divider_id":       { "type": "integer", "nullable": true }
+        }
+      },
+      "CollectionFilterResponse": {
+        "type": "object",
+        "required": ["items", "total", "page", "per_page", "pages", "query"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/InventoryRow" }
+          },
+          "total":    { "type": "integer", "description": "Total matches before pagination." },
+          "page":     { "type": "integer", "description": "1-indexed page number." },
+          "per_page": { "type": "integer" },
+          "pages":    { "type": "integer", "description": "Total page count." },
+          "query":    { "type": "string",  "description": "Compiled query that was actually applied (echoed back)." },
+          "error":    { "type": "string",  "description": "Query parse error, if any. Present only on 400." }
+        }
+      },
+      "SortPresetSummary": {
+        "type": "object",
+        "properties": {
+          "filename":    { "type": "string" },
+          "description": { "type": "string", "nullable": true },
+          "bin_count":   { "type": "integer", "nullable": true },
+          "builtin":     { "type": "boolean", "description": "True for shipped presets (color.txt etc.) — these can't be overwritten or deleted by the operator." }
+        }
+      },
+      "SortConfigsListResponse": {
+        "type": "object",
+        "properties": {
+          "configs":  { "type": "array", "items": { "$ref": "#/components/schemas/SortPresetSummary" } },
+          "builtins": { "type": "array", "items": { "type": "string" }, "description": "Filenames that are shipped as built-in presets." }
+        }
+      },
+      "EnrichmentSource": {
+        "type": "object",
+        "properties": {
+          "name":    { "type": "string" },
+          "cron":    { "type": "string", "description": "Cron expression or shorthand (e.g. 'weekly') controlling automatic refresh cadence." },
+          "running": { "type": "boolean" },
+          "last_result": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "success":      { "type": "boolean" },
+              "duration_ms":  { "type": "integer" },
+              "rows_changed": { "type": "integer" },
+              "coverage_pct": { "type": "number", "format": "float" }
+            }
+          }
+        }
+      },
+      "EnrichmentSourcesResponse": {
+        "type": "object",
+        "properties": {
+          "sources": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/EnrichmentSource" }
+          }
+        }
+      },
+      "DatabaseStatusResponse": {
+        "type": "object",
+        "properties": {
+          "cards_json":         { "type": "string" },
+          "cards_json_size_mb": { "type": "number", "format": "float" },
+          "card_count":         { "type": "integer" },
+          "hash_db_v1_exists":  { "type": "boolean" },
+          "hash_db_v1_count":   { "type": "integer", "nullable": true },
+          "hash_db_v1_size_mb": { "type": "number",  "format": "float", "nullable": true },
+          "hash_db_v2_exists":  { "type": "boolean" },
+          "hash_db_v2_count":   { "type": "integer", "nullable": true },
+          "hash_db_v2_size_mb": { "type": "number",  "format": "float", "nullable": true },
+          "image_count":        { "type": "integer" },
+          "images_size_gb":     { "type": "number",  "format": "float" },
+          "update_status": {
+            "type": "object",
+            "properties": {
+              "running":  { "type": "boolean" },
+              "step":     { "type": "string", "nullable": true },
+              "message":  { "type": "string", "nullable": true },
+              "progress": { "type": "integer" },
+              "total":    { "type": "integer" }
+            }
+          }
+        }
+      },
+      "CalibrationStatusResponse": {
+        "type": "object",
+        "properties": {
+          "running":  { "type": "boolean" },
+          "phase":    { "type": "string", "nullable": true },
+          "progress": { "type": "integer" },
+          "total":    { "type": "integer" },
+          "message":  { "type": "string", "nullable": true },
+          "discovered_bins": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "bin_number": { "type": "integer" },
+                "x":          { "type": "number", "format": "float" },
+                "marker_id":  { "type": "integer" }
+              }
+            }
+          }
+        }
+      },
+      "QueuedResponse": {
+        "type": "object",
+        "properties": {
+          "queued":  { "type": "boolean" }
+        },
+        "description": "Generic ack for fire-and-forget worker-enqueue endpoints. The actual result arrives later as a Socket.IO event."
+      }
+    }
+  },
+  "paths": {
+    "/api/status": {
+      "get": {
+        "summary": "Get the worker's current state plus a few aggregate counters.",
+        "responses": {
+          "200": {
+            "description": "Worker status.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/StatusResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session/start": {
+      "post": {
+        "summary": "Start a new sort session.",
+        "description": "Enqueues a `start_session` command on the worker. Returns immediately with `queued: true`; the actual session_started Socket.IO event arrives once the worker picks up the command. Either `config` (preset filename) or `config_text` (inline body) is required.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SessionStartRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Session queued.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SessionStartResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session/pause": {
+      "post": {
+        "summary": "Pause an in-flight sort session.",
+        "responses": {
+          "200": {
+            "description": "Pause queued.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/QueuedResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session/resume": {
+      "post": {
+        "summary": "Resume a paused sort session.",
+        "responses": {
+          "200": {
+            "description": "Resume queued.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/QueuedResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session/stop": {
+      "post": {
+        "summary": "Stop the current sort session.",
+        "responses": {
+          "200": {
+            "description": "Stop queued.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/QueuedResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sort/configs": {
+      "get": {
+        "summary": "List every sort preset on disk (built-in + user).",
+        "responses": {
+          "200": {
+            "description": "Preset list.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SortConfigsListResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/collection/stats": {
+      "get": {
+        "summary": "Aggregate stats over the entire collection.",
+        "responses": {
+          "200": {
+            "description": "Collection-wide totals.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CollectionStats" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/collection/filter": {
+      "get": {
+        "summary": "Filter the inventory by a Scryfall-like query string.",
+        "description": "The query language is documented under the Sort tab's query help. Supported tokens include name, set, color, type, rarity, usd ranges, oracle text, and enrichment tokens (staple, salt, combo, buylist, edhrec_top, edhtop16_top).",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "Compiled query string. Empty / omitted returns the full inventory."
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "default": 1 }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "default": 50 }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "Sort column (name | set_code | price_usd | quantity | cmc)."
+          },
+          {
+            "name": "dir",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "enum": ["asc", "desc"] }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Filtered + paginated inventory rows.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CollectionFilterResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Query parse error.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CollectionFilterResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/enrichment/sources": {
+      "get": {
+        "summary": "List every registered enrichment source plus its last refresh result.",
+        "responses": {
+          "200": {
+            "description": "Enrichment source registry.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/EnrichmentSourcesResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/enrichment/refresh/{source}": {
+      "post": {
+        "summary": "Trigger a manual refresh of the named enrichment source.",
+        "description": "Returns 202 immediately; refresh progress arrives via Socket.IO `enrichment_progress` events.",
+        "responses": {
+          "200": {
+            "description": "Refresh queued.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/QueuedResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "No source registered with that name."
+          }
+        }
+      }
+    },
+    "/api/database/status": {
+      "get": {
+        "summary": "Stats about the local Scryfall card data and hash databases.",
+        "responses": {
+          "200": {
+            "description": "Database stats.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DatabaseStatusResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/database/refresh-prices": {
+      "post": {
+        "summary": "Fast prices-only refresh from the latest Scryfall bulk JSON.",
+        "description": "Downloads the bulk JSON, scans it once, and updates inventory.price_usd in chunks via executemany. Takes ~1 minute on a typical kiosk. Progress arrives via Socket.IO `price_update_progress` events.",
+        "responses": {
+          "200": {
+            "description": "Refresh started.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "started": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/database/update": {
+      "post": {
+        "summary": "Full database update — bulk JSON + images + hash + embeddings.",
+        "description": "Five-phase pipeline (see update_all.py): download bulk, reload metadata, download missing images, rebuild pHash DB, rebuild DINOv2 embeddings. Slow (~30+ minutes). Progress arrives via Socket.IO `db_update_progress` events.",
+        "responses": {
+          "200": {
+            "description": "Update started.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "started": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/calibration/status": {
+      "get": {
+        "summary": "Live status of any in-flight calibration sweep.",
+        "responses": {
+          "200": {
+            "description": "Calibration status (may indicate idle).",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CalibrationStatusResponse" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

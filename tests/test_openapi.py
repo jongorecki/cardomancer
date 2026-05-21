@@ -247,5 +247,86 @@ class LiveOpenAPIRouteTests(unittest.TestCase):
         self.assertIn('/api/openapi.json', body)
 
 
+class OverlayMergeTests(unittest.TestCase):
+    """Pin the `docs/openapi-overlay.json` -> spec merge contract.
+
+    The overlay layers hand-annotated request/response schemas on top
+    of the auto-generated skeleton. We assert:
+      1. The overlay's schema components show up in the merged spec.
+      2. A few representative paths got the precise schema instead of
+         the GenericObject placeholder.
+      3. Deep-merge preserves the auto-generated fields the overlay
+         didn't override (e.g. tags, operationId).
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from tools.generate_openapi import build_spec, _deep_merge
+        cls.build_spec = staticmethod(build_spec)
+        cls._deep_merge = staticmethod(_deep_merge)
+        cls.spec = build_spec(web_server.app)
+
+    def test_overlay_schema_components_present(self):
+        """A representative subset of the overlay's named schemas
+        survives into the final spec under components.schemas."""
+        schemas = self.spec['components']['schemas']
+        for name in (
+            'WorkerState', 'SessionStartRequest', 'StatusResponse',
+            'CollectionStats', 'InventoryRow', 'CollectionFilterResponse',
+            'EnrichmentSource', 'DatabaseStatusResponse',
+        ):
+            self.assertIn(name, schemas,
+                          f"Overlay schema {name!r} missing from spec")
+
+    def test_session_start_has_typed_request_body(self):
+        """POST /api/session/start should reference SessionStartRequest
+        instead of the generator's GenericObject."""
+        body = (self.spec['paths']['/api/session/start']['post']
+                ['requestBody']['content']['application/json']['schema'])
+        self.assertEqual(body, {'$ref': '#/components/schemas/SessionStartRequest'})
+
+    def test_collection_filter_has_typed_response_and_params(self):
+        """GET /api/collection/filter should have a CollectionFilterResponse
+        schema AND query parameters from the overlay (q, page, per_page)."""
+        op = self.spec['paths']['/api/collection/filter']['get']
+        ok = op['responses']['200']['content']['application/json']['schema']
+        self.assertEqual(ok, {'$ref': '#/components/schemas/CollectionFilterResponse'})
+        names = {p['name'] for p in op.get('parameters', [])}
+        for required in ('q', 'page', 'per_page'):
+            self.assertIn(required, names,
+                          f"Overlay should add `{required}` query param")
+
+    def test_overlay_preserves_auto_generated_fields(self):
+        """Deep merge must NOT clobber operationId / tags that the
+        auto-generator put in place when the overlay didn't override
+        those fields."""
+        op = self.spec['paths']['/api/status']['get']
+        self.assertIn('tags', op)
+        self.assertIn('operationId', op)
+        # Overlay set the summary; auto fields still there.
+        self.assertEqual(op['summary'],
+                         "Get the worker's current state plus a few "
+                         "aggregate counters.")
+
+    def test_deep_merge_replaces_lists_does_not_concat(self):
+        """The merge helper replaces lists wholesale rather than
+        concatenating — OpenAPI list semantics are curated sets."""
+        merged = self._deep_merge(
+            {'a': [1, 2, 3], 'b': {'c': [4]}},
+            {'a': [9],        'b': {'c': [5, 6]}},
+        )
+        self.assertEqual(merged['a'], [9])
+        self.assertEqual(merged['b']['c'], [5, 6])
+
+    def test_deep_merge_recurses_into_dicts(self):
+        """Nested dict keys merge — `c` from base survives when
+        overlay only overrides `d`."""
+        merged = self._deep_merge(
+            {'a': {'c': 1, 'd': 2}},
+            {'a': {'d': 99}},
+        )
+        self.assertEqual(merged['a'], {'c': 1, 'd': 99})
+
+
 if __name__ == '__main__':
     unittest.main()

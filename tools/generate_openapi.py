@@ -321,8 +321,58 @@ def _build_paths(app) -> tuple[dict, set[str]]:
     return paths, tags
 
 
+def _deep_merge(base: dict, overlay: dict) -> dict:
+    """Recursive dict merge. Overlay values win at leaves; nested dicts
+    merge key-by-key; lists are replaced wholesale (not concatenated)
+    because OpenAPI list semantics are heterogeneous (e.g. `tags` on
+    an operation is a curated set, not an append-list).
+
+    Used to layer `docs/openapi-overlay.json` on top of the auto-
+    generated skeleton so an operator can hand-annotate request /
+    response schemas for the endpoints that matter without losing the
+    coverage the generator gives.
+    """
+    out = dict(base)
+    for k, v in overlay.items():
+        if (
+            k in out
+            and isinstance(out[k], dict)
+            and isinstance(v, dict)
+        ):
+            out[k] = _deep_merge(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+
+def _load_overlay() -> dict | None:
+    """Return the parsed `docs/openapi-overlay.json` if it exists,
+    else None. JSON-only for now (no PyYAML dependency on the overlay
+    path)."""
+    candidate = _ROOT / 'docs' / 'openapi-overlay.json'
+    if not candidate.exists():
+        return None
+    try:
+        with open(candidate, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        # A malformed overlay shouldn't break the live /api/openapi.json
+        # endpoint. Skip silently and let the generator output the
+        # plain auto-generated skeleton.
+        return None
+
+
 def build_spec(app) -> dict:
-    """Build the full OpenAPI doc for the given Flask app."""
+    """Build the full OpenAPI doc for the given Flask app.
+
+    Pipeline:
+      1. Start from the static `_base_spec` (info, servers, tags,
+         components for ErrorResponse / CSRFFailed).
+      2. Introspect Flask's url_map to populate `paths`.
+      3. Deep-merge `docs/openapi-overlay.json` on top if present —
+         that's where hand-annotated request/response schemas live
+         for the endpoints that matter most.
+    """
     spec = _base_spec()
     paths, tags = _build_paths(app)
     spec['paths'] = paths
@@ -334,6 +384,10 @@ def build_spec(app) -> dict:
         if 'pages' in tags else None
     ]
     spec['tags'] = [t for t in spec['tags'] if t]
+
+    overlay = _load_overlay()
+    if overlay:
+        spec = _deep_merge(spec, overlay)
     return spec
 
 

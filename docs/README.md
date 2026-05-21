@@ -64,29 +64,62 @@ test fails if a route slips through.
 
 ## Adding a precise schema to one endpoint
 
-(Future, once `docs/openapi-overlay.yaml` lands.)
+Hand-annotated schemas live in `docs/openapi-overlay.json`. The
+generator deep-merges that file on top of the auto-generated
+skeleton before writing `openapi.json` and before serving
+`/api/openapi.json` live. Only fields you want to override or add
+need to be present — everything else falls through from the
+generator.
 
-```yaml
-# docs/openapi-overlay.yaml — manual edits merged on top of the generated skeleton
-paths:
-  /api/sort/start:
-    post:
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [preset]
-              properties:
-                preset:
-                  type: string
-                  description: Filename of the sort preset to use.
-                continuous:
-                  type: boolean
-                  default: false
+Example: give `/api/sort/start` a precise request body schema.
+
+```json
+{
+  "components": {
+    "schemas": {
+      "SortStartRequest": {
+        "type": "object",
+        "required": ["preset"],
+        "properties": {
+          "preset": {
+            "type": "string",
+            "description": "Filename of the sort preset to use."
+          },
+          "continuous": { "type": "boolean", "default": false }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/api/sort/start": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SortStartRequest" }
+            }
+          }
+        }
+      }
+    }
+  }
+}
 ```
 
-The overlay-merging step is not implemented yet — it lives behind
-`tools/generate_openapi.py` and will read the overlay file and
-deep-merge it into the generated spec before writing. Issue this when
-the precise-schema work becomes worth it.
+The current overlay ships precise schemas for 14 load-bearing
+endpoints — worker status, session lifecycle, sort presets list,
+collection stats + filter, enrichment sources + refresh, database
+status / refresh-prices / full-update, and calibration status.
+Extend it when a new integrator surfaces.
+
+### Merge semantics
+
+- Dict values are merged key-by-key (recursive).
+- Leaf values from the overlay overwrite the base.
+- Lists are replaced wholesale (not concatenated). OpenAPI list
+  fields like `tags` on an operation are curated sets, not
+  append-lists.
+
+The merge helper is unit-tested at
+`tests/test_openapi.py::OverlayMergeTests`.
