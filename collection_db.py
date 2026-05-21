@@ -1758,47 +1758,77 @@ def seed_detection_reviews_from_scans(conn, variables=None,
 
     scans = conn.execute(sql, params).fetchall()
 
-    inserted = 0
+    # Build the candidate insert set in Python first, then bulk-INSERT
+    # via executemany. The prior shape was one INSERT OR IGNORE per
+    # (scan, variable) — N*4 statements for a session-history seed, which
+    # adds up on a maintenance pass over a real-sized history.
+    #
+    # To preserve the "rows actually inserted" return value without
+    # losing it to OR IGNORE, we pre-filter against the existing
+    # (scan_id, variable) keys in detection_reviews before the insert.
+    candidate_tuples = []  # (scan_id, variable, detected_value, confidence)
     for scan in scans:
         scan_id = scan['id']
         set_code = scan['set_code'] or None
         name = scan['name'] or None
         hash_distance = scan['hash_distance']
         for variable in variables:
-            detected = None
             if variable == 'identity':
                 # Only seed identity reviews for scans that crossed the
                 # low-confidence bar. Confident matches don't need review.
                 if hash_distance is None or hash_distance < _IDENT_THRESH:
                     continue
-                detected = name
                 # Store hash distance as the "confidence" so the queue
                 # can sort: highest distance = least confident first.
-                cur = conn.execute(
-                    """INSERT OR IGNORE INTO detection_reviews
-                       (scan_id, variable, detected_value, confidence)
-                       VALUES (?, ?, ?, ?)""",
-                    (scan_id, variable, detected, float(hash_distance))
+                candidate_tuples.append(
+                    (scan_id, variable, name, float(hash_distance))
                 )
-                inserted += cur.rowcount
                 continue
             if variable == 'set_symbol':
-                # The best proxy for "detected set symbol" we currently have
-                # is the set code that identification landed on. It's not
-                # the symbol detector's own output — but it's what the user
-                # would verify as right/wrong until a real detector lands.
+                # Best proxy for "detected set symbol" is the set code
+                # identification landed on. Not the symbol detector's
+                # own output, but what the user would verify as
+                # right/wrong until a real detector lands.
                 detected = set_code
-            # foil + border: no detector output stored → leave NULL so these
-            # cases bubble to the top of the queue.
-            cur = conn.execute(
-                """INSERT OR IGNORE INTO detection_reviews
-                   (scan_id, variable, detected_value, confidence)
-                   VALUES (?, ?, ?, NULL)""",
-                (scan_id, variable, detected)
-            )
-            inserted += cur.rowcount
+            else:
+                # foil + border: no detector output stored — leave NULL
+                # so these cases bubble to the top of the queue.
+                detected = None
+            candidate_tuples.append((scan_id, variable, detected, None))
+
+    if not candidate_tuples:
+        return 0
+
+    # Pull existing keys in one query — uniqueness is (scan_id, variable)
+    # per the table's UNIQUE constraint. Filter the candidates against
+    # this set so `inserted` matches the rowcount we'd get from
+    # INSERT OR IGNORE without paying for one statement per row.
+    candidate_scan_ids = {t[0] for t in candidate_tuples}
+    if candidate_scan_ids:
+        placeholders = ','.join(['?'] * len(candidate_scan_ids))
+        existing = {
+            (r['scan_id'], r['variable'])
+            for r in conn.execute(
+                f"SELECT scan_id, variable FROM detection_reviews "
+                f"WHERE scan_id IN ({placeholders})",
+                tuple(candidate_scan_ids),
+            ).fetchall()
+        }
+    else:
+        existing = set()
+
+    new_tuples = [
+        t for t in candidate_tuples if (t[0], t[1]) not in existing
+    ]
+    if new_tuples:
+        conn.executemany(
+            """INSERT OR IGNORE INTO detection_reviews
+               (scan_id, variable, detected_value, confidence)
+               VALUES (?, ?, ?, ?)""",
+            new_tuples,
+        )
     conn.commit()
-    return inserted
+    return len(new_tuples)
 
 
 def get_detection_review_counts(conn):

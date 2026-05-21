@@ -2136,14 +2136,27 @@ class SortWorker:
         # Drop back in source
         gcode_control.drop_on_surface(source_x)
 
-        # Reverse the tracker/inventory
-        if self.tracker and self.tracker.scans:
-            self.tracker.scans.pop()
+        # Reverse the tracker/inventory. ScanTracker no longer keeps a
+        # per-scan in-memory list (that was a leak on long sessions);
+        # use scan_count > 0 as the "is there anything to undo" check
+        # and decrement counters + pop the per-bin list directly.
+        if self.tracker and self.tracker.scan_count > 0:
             self.tracker.scan_count -= 1
             # Remove from bin tracking
             bin_key = str(last_bin)
             if bin_key in self.tracker.bins and self.tracker.bins[bin_key]:
-                self.tracker.bins[bin_key].pop()
+                popped = self.tracker.bins[bin_key].pop()
+                # Reverse the running total — match the same
+                # parsing the record_scan path uses so undo + redo
+                # are symmetric.
+                try:
+                    price = popped.get('price') if isinstance(popped, dict) else None
+                    if price and price != 'N/A':
+                        self.tracker.session_total_value -= float(
+                            str(price).replace('$', '')
+                        )
+                except (ValueError, TypeError):
+                    pass
             # Reverse inventory in DB
             try:
                 import collection_db

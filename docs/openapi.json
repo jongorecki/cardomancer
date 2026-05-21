@@ -1,0 +1,5671 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Cardomancer Card Sorter API",
+    "version": "1.0.0",
+    "description": "HTTP API for the Cardomancer Card Sorter. Auto-generated from `web_server.py` by `tools/generate_openapi.py`. Most endpoints accept and return JSON. POST/PUT/DELETE/PATCH endpoints are gated by the CSRF Origin / Referer / X-Requested-With check (see the `csrf_failed` response below). Socket.IO traffic is separate and not covered here.",
+    "contact": {
+      "name": "Cardomancer"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://{host}:5000",
+      "description": "Local kiosk server.",
+      "variables": {
+        "host": {
+          "default": "localhost",
+          "description": "Hostname or LAN IP of the kiosk."
+        }
+      }
+    }
+  ],
+  "components": {
+    "schemas": {
+      "GenericObject": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Placeholder schema — see route-specific docs or inspect the view function. Hand-annotated schemas live in docs/openapi-overlay.yaml."
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Stable machine-readable code. See static/errors.json for the user-facing copy mapping."
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable failure detail."
+          }
+        },
+        "required": [
+          "error"
+        ]
+      }
+    },
+    "responses": {
+      "CSRFFailed": {
+        "description": "Cross-site request blocked. The Origin/Referer did not match the kiosk host and the `X-Requested-With: XMLHttpRequest` header was absent.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": "csrf_failed",
+              "message": "This request was blocked because it did not come from the Cardomancer UI. Reload the page and try again."
+            }
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "bins",
+      "description": "Endpoints under /api/bins/."
+    },
+    {
+      "name": "calibration",
+      "description": "Endpoints under /api/calibration/."
+    },
+    {
+      "name": "camera",
+      "description": "Endpoints under /api/camera/."
+    },
+    {
+      "name": "card",
+      "description": "Endpoints under /api/card/."
+    },
+    {
+      "name": "cards",
+      "description": "Endpoints under /api/cards/."
+    },
+    {
+      "name": "collection",
+      "description": "Endpoints under /api/collection/."
+    },
+    {
+      "name": "connect",
+      "description": "Endpoints under /api/connect/."
+    },
+    {
+      "name": "database",
+      "description": "Endpoints under /api/database/."
+    },
+    {
+      "name": "detection-reviews",
+      "description": "Endpoints under /api/detection-reviews/."
+    },
+    {
+      "name": "disconnect",
+      "description": "Endpoints under /api/disconnect/."
+    },
+    {
+      "name": "enrichment",
+      "description": "Endpoints under /api/enrichment/."
+    },
+    {
+      "name": "estop",
+      "description": "Endpoints under /api/estop/."
+    },
+    {
+      "name": "home",
+      "description": "Endpoints under /api/home/."
+    },
+    {
+      "name": "integrations",
+      "description": "Endpoints under /api/integrations/."
+    },
+    {
+      "name": "label",
+      "description": "Endpoints under /api/label/."
+    },
+    {
+      "name": "locator",
+      "description": "Endpoints under /api/locator/."
+    },
+    {
+      "name": "motion",
+      "description": "Endpoints under /api/motion/."
+    },
+    {
+      "name": "reset-after-estop",
+      "description": "Endpoints under /api/reset-after-estop/."
+    },
+    {
+      "name": "review",
+      "description": "Endpoints under /api/review/."
+    },
+    {
+      "name": "self-test",
+      "description": "Endpoints under /api/self-test/."
+    },
+    {
+      "name": "session",
+      "description": "Endpoints under /api/session/."
+    },
+    {
+      "name": "sim",
+      "description": "Endpoints under /api/sim/."
+    },
+    {
+      "name": "sort",
+      "description": "Endpoints under /api/sort/."
+    },
+    {
+      "name": "source-bin",
+      "description": "Endpoints under /api/source-bin/."
+    },
+    {
+      "name": "status",
+      "description": "Endpoints under /api/status/."
+    },
+    {
+      "name": "support",
+      "description": "Endpoints under /api/support/."
+    },
+    {
+      "name": "test-scan",
+      "description": "Endpoints under /api/test-scan/."
+    },
+    {
+      "name": "translate",
+      "description": "Endpoints under /api/translate/."
+    },
+    {
+      "name": "pages",
+      "description": "HTML pages served by the kiosk."
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "tags": [
+          "pages"
+        ],
+        "operationId": "get_index",
+        "summary": "index",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connect": {
+      "post": {
+        "tags": [
+          "connect"
+        ],
+        "operationId": "post_api_connect",
+        "summary": "api_connect",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/disconnect": {
+      "post": {
+        "tags": [
+          "disconnect"
+        ],
+        "operationId": "post_api_disconnect",
+        "summary": "api_disconnect",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/home": {
+      "post": {
+        "tags": [
+          "home"
+        ],
+        "operationId": "post_api_home",
+        "summary": "api_home",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/home/x": {
+      "post": {
+        "tags": [
+          "home"
+        ],
+        "operationId": "post_api_home_x",
+        "summary": "api_home_x",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/home/z": {
+      "post": {
+        "tags": [
+          "home"
+        ],
+        "operationId": "post_api_home_z",
+        "summary": "api_home_z",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/estop": {
+      "post": {
+        "tags": [
+          "estop"
+        ],
+        "operationId": "post_api_estop",
+        "summary": "Emergency stop — bypasses queue, writes directly to serial.",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/status": {
+      "get": {
+        "tags": [
+          "status"
+        ],
+        "operationId": "get_api_status",
+        "summary": "api_status",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/camera/start": {
+      "post": {
+        "tags": [
+          "camera"
+        ],
+        "operationId": "post_api_camera_start",
+        "summary": "api_camera_start",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/camera/stop": {
+      "post": {
+        "tags": [
+          "camera"
+        ],
+        "operationId": "post_api_camera_stop",
+        "summary": "api_camera_stop",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/camera/feed": {
+      "get": {
+        "tags": [
+          "camera"
+        ],
+        "operationId": "get_api_camera_feed",
+        "summary": "MJPEG stream for live camera view.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/camera/feed-aruco": {
+      "get": {
+        "tags": [
+          "camera"
+        ],
+        "operationId": "get_api_camera_feed_aruco",
+        "summary": "MJPEG stream with live ArUco marker overlay. Detected markers are outlined and labeled with ID + type. Used by the Calibration tab to verify that markers are visible to the camera before (and during) a sweep.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/camera/snapshot": {
+      "post": {
+        "tags": [
+          "camera"
+        ],
+        "operationId": "post_api_camera_snapshot",
+        "summary": "Capture a single frame as JPEG.",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/camera/status": {
+      "get": {
+        "tags": [
+          "camera"
+        ],
+        "operationId": "get_api_camera_status",
+        "summary": "api_camera_status",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bins/config": {
+      "get": {
+        "tags": [
+          "bins"
+        ],
+        "operationId": "get_api_bins_config_get",
+        "summary": "api_bins_config_get",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "bins"
+        ],
+        "operationId": "post_api_bins_config_set",
+        "summary": "api_bins_config_set",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/bins/locations": {
+      "post": {
+        "tags": [
+          "bins"
+        ],
+        "operationId": "post_api_bins_locations_set",
+        "summary": "Set individual bin X positions manually. Expects: {locations: {bin_num: x_pos, ...}} Auto-saves to _default.json so positions survive restarts.",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/bins/machine-positions": {
+      "get": {
+        "tags": [
+          "bins"
+        ],
+        "operationId": "get_api_bins_machine_positions_get",
+        "summary": "Get machine reference positions.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "bins"
+        ],
+        "operationId": "post_api_bins_machine_positions_set",
+        "summary": "Set machine reference positions (source, detection, staging).",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/bins/test/{bin_number}": {
+      "post": {
+        "tags": [
+          "bins"
+        ],
+        "operationId": "post_api_bins_test",
+        "summary": "api_bins_test",
+        "parameters": [
+          {
+            "name": "bin_number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/bins/probe/{bin_number}": {
+      "post": {
+        "tags": [
+          "bins"
+        ],
+        "operationId": "post_api_bins_probe",
+        "summary": "api_bins_probe",
+        "parameters": [
+          {
+            "name": "bin_number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/bins/probe-all": {
+      "post": {
+        "tags": [
+          "bins"
+        ],
+        "operationId": "post_api_bins_probe_all",
+        "summary": "api_bins_probe_all",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/bins/saved-configs": {
+      "get": {
+        "tags": [
+          "bins"
+        ],
+        "operationId": "get_api_bins_saved_configs",
+        "summary": "List saved bin configurations.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bins/saved-configs/{filename}": {
+      "get": {
+        "tags": [
+          "bins"
+        ],
+        "operationId": "get_api_bins_saved_config_get",
+        "summary": "Load a saved bin configuration.",
+        "parameters": [
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "bins"
+        ],
+        "operationId": "post_api_bins_saved_config_save",
+        "summary": "Save current bin configuration.",
+        "parameters": [
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "bins"
+        ],
+        "operationId": "delete_api_bins_saved_config_delete",
+        "summary": "Delete a saved bin configuration.",
+        "parameters": [
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/bins/contents": {
+      "get": {
+        "tags": [
+          "bins"
+        ],
+        "operationId": "get_api_bins_contents",
+        "summary": "api_bins_contents",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bins/overflow": {
+      "get": {
+        "tags": [
+          "bins"
+        ],
+        "operationId": "get_api_bins_overflow_get",
+        "summary": "Get the overflow map and bin fullness status.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "bins"
+        ],
+        "operationId": "post_api_bins_overflow_set",
+        "summary": "Set the overflow chain mapping and optionally the card limit.",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/bins/card-limit": {
+      "post": {
+        "tags": [
+          "bins"
+        ],
+        "operationId": "post_api_bins_card_limit",
+        "summary": "Set the max cards per physical bin.",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/bins/mark-empty": {
+      "post": {
+        "tags": [
+          "bins"
+        ],
+        "operationId": "post_api_bins_mark_empty",
+        "summary": "Mark a physical bin as emptied (resets card count and full status).",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/bins/fullness": {
+      "get": {
+        "tags": [
+          "bins"
+        ],
+        "operationId": "get_api_bins_fullness",
+        "summary": "Lightweight endpoint: just bin card counts and full status.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sort/modes": {
+      "get": {
+        "tags": [
+          "sort"
+        ],
+        "operationId": "get_api_sort_modes",
+        "summary": "api_sort_modes",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sort/configs": {
+      "get": {
+        "tags": [
+          "sort"
+        ],
+        "operationId": "get_api_sort_configs",
+        "summary": "List all sort preset files with metadata.",
+        "description": "Phase 0.1: this is the single source for the preset dropdown. We ship\n    description + bin_count + builtin so the client can render a rich\n    option list without re-reading every file.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sort/configs/{filename}": {
+      "get": {
+        "tags": [
+          "sort"
+        ],
+        "operationId": "get_api_sort_config_get",
+        "summary": "api_sort_config_get",
+        "parameters": [
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "sort"
+        ],
+        "operationId": "post_api_sort_config_save",
+        "summary": "api_sort_config_save",
+        "parameters": [
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "sort"
+        ],
+        "operationId": "delete_api_sort_config_delete",
+        "summary": "api_sort_config_delete",
+        "parameters": [
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/sort/configs/{filename}/duplicate": {
+      "post": {
+        "tags": [
+          "sort"
+        ],
+        "operationId": "post_api_sort_config_duplicate",
+        "summary": "Copy an existing preset to a new filename.",
+        "description": "Body: {\"target\": \"new_name\"} — \".txt\" is appended if missing. If the\n    target already exists, respond 409 so the UI can prompt the user for\n    a different name instead of silently clobbering.",
+        "parameters": [
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/sort/validate-query": {
+      "post": {
+        "tags": [
+          "sort"
+        ],
+        "operationId": "post_api_sort_validate_query",
+        "summary": "api_sort_validate_query",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/sort/current": {
+      "get": {
+        "tags": [
+          "sort"
+        ],
+        "operationId": "get_api_sort_current",
+        "summary": "Return the active SortConfig's per-bin routing, if any.",
+        "description": "Used by the Dashboard \"Bin Routing\" card (Phase 4.23) to show\n    which query is targeting which bin alongside live card counts.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session/start": {
+      "post": {
+        "tags": [
+          "session"
+        ],
+        "operationId": "post_api_session_start",
+        "summary": "api_session_start",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/session/confirm-staging-capture": {
+      "post": {
+        "tags": [
+          "session"
+        ],
+        "operationId": "post_api_session_confirm_staging_capture",
+        "summary": "User confirms the staging platform is clear — unblock the worker.",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/session/staging-snapshot": {
+      "get": {
+        "tags": [
+          "session"
+        ],
+        "operationId": "get_api_staging_snapshot",
+        "summary": "Return the snapshot captured for staging ROI drawing.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session/confirm-focus": {
+      "post": {
+        "tags": [
+          "session"
+        ],
+        "operationId": "post_api_session_confirm_focus",
+        "summary": "User confirms the live feed is in focus — lock autofocus and proceed.",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/session/set-staging-roi": {
+      "post": {
+        "tags": [
+          "session"
+        ],
+        "operationId": "post_api_set_staging_roi",
+        "summary": "User submits 4 corner points for the staging platform ROI. Expects JSON: { \"corners\": [[x1,y1], [x2,y2], [x3,y3], [x4,y4]] } Coordinates are in pixel space of the staging snapshot.",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/session/detect": {
+      "post": {
+        "tags": [
+          "session"
+        ],
+        "operationId": "post_api_session_detect",
+        "summary": "api_session_detect",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/session/pause": {
+      "post": {
+        "tags": [
+          "session"
+        ],
+        "operationId": "post_api_session_pause",
+        "summary": "api_session_pause",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/session/resume": {
+      "post": {
+        "tags": [
+          "session"
+        ],
+        "operationId": "post_api_session_resume",
+        "summary": "api_session_resume",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/session/stop": {
+      "post": {
+        "tags": [
+          "session"
+        ],
+        "operationId": "post_api_session_stop",
+        "summary": "api_session_stop",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/session/status": {
+      "get": {
+        "tags": [
+          "session"
+        ],
+        "operationId": "get_api_session_status",
+        "summary": "api_session_status",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session/continuous/start": {
+      "post": {
+        "tags": [
+          "session"
+        ],
+        "operationId": "post_api_continuous_start",
+        "summary": "api_continuous_start",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/session/continuous/stop": {
+      "post": {
+        "tags": [
+          "session"
+        ],
+        "operationId": "post_api_continuous_stop",
+        "summary": "api_continuous_stop",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/session/undo": {
+      "post": {
+        "tags": [
+          "session"
+        ],
+        "operationId": "post_api_session_undo",
+        "summary": "api_session_undo",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/test-scan/start": {
+      "post": {
+        "tags": [
+          "test-scan"
+        ],
+        "operationId": "post_api_test_scan_start",
+        "summary": "api_test_scan_start",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/test-scan/stop": {
+      "post": {
+        "tags": [
+          "test-scan"
+        ],
+        "operationId": "post_api_test_scan_stop",
+        "summary": "api_test_scan_stop",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/session/wishlist-bin": {
+      "post": {
+        "tags": [
+          "session"
+        ],
+        "operationId": "post_api_session_wishlist_bin",
+        "summary": "api_session_wishlist_bin",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/session/priority-bin": {
+      "post": {
+        "tags": [
+          "session"
+        ],
+        "operationId": "post_api_session_priority_bin",
+        "summary": "Configure the priority-bin route.  Body: {\"bin\": <int|null>, \"wishlist_source\": \"moxfield:<user>\"|null} Both null => disabled.",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/integrations/moxfield/wishlist/list": {
+      "get": {
+        "tags": [
+          "integrations"
+        ],
+        "operationId": "get_api_integrations_moxfield_wishlist_list",
+        "summary": "List cached Moxfield wishlist sources (for UI dropdown).",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/moxfield/wishlist/upsert": {
+      "post": {
+        "tags": [
+          "integrations"
+        ],
+        "operationId": "post_api_integrations_moxfield_wishlist_upsert",
+        "summary": "Create or replace a cached Moxfield wishlist.  Body: {\"source_key\": \"moxfield:<user>\", \"username\": \"<user>\", \"display_name\": \"...\", \"cards\": [{\"oracle_id\": \"...\", \"name\": \"...\", \"set_code\": \"...\", \"image_uri\": \"...\"}]}",
+        "description": "Used by tests and by the (future) Moxfield sync worker.  Basic\n    lands are filtered out at upsert time.",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/integrations/moxfield/wishlist/paste": {
+      "post": {
+        "tags": [
+          "integrations"
+        ],
+        "operationId": "post_api_integrations_moxfield_wishlist_paste",
+        "summary": "Ingest a Moxfield plain-text decklist and cache it as a wishlist source.",
+        "description": "Replaces the auth'd API pull: user pastes text from Moxfield's\n    \"Export deck\" (or wishlist) and we resolve names → oracle_ids against\n    the local Scryfall bulk cache.\n\n    Body:\n        {\"source_key\": \"moxfield:<label>\",   # required, e.g. \"moxfield:my-edh\"\n         \"display_name\": \"...\",              # optional\n         \"text\": \"4 Lightning Bolt\\n...\"}   # required\n\n    Returns:\n        {\"id\": int, \"source_key\": str, \"card_count\": int,\n         \"unresolved\": [name, ...]}",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/translate/scryfall": {
+      "get": {
+        "tags": [
+          "translate"
+        ],
+        "operationId": "get_api_translate_scryfall",
+        "summary": "Translate our internal sort-config DSL into a Scryfall search query.",
+        "description": "Drives the bin-query \"view on Scryfall\" link in the sort-config\n    builder and the Query Helper's \"view on Scryfall\" cross-link.\n\n    Query params:\n        q:  the DSL string (required)\n\n    Returns:\n        {\"q\":       \"<scryfall query string>\",\n         \"url\":     \"https://scryfall.com/search?q=...\",   // empty if q is empty\n         \"dropped\": [\"<predicate>  — <reason>\", ...]      // partial translations\n        }",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/moxfield/export-text": {
+      "get": {
+        "tags": [
+          "integrations"
+        ],
+        "operationId": "get_api_integrations_moxfield_export_text",
+        "summary": "Render current inventory as Moxfield plain-text for copy/paste into Moxfield.",
+        "description": "Query params:\n        box:       optional — filter inventory to a single box\n        min_qty:   optional int, default 1\n\n    Returns text/plain body.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session/rehome-interval": {
+      "post": {
+        "tags": [
+          "session"
+        ],
+        "operationId": "post_api_session_rehome_interval",
+        "summary": "api_session_rehome_interval",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/session/scan-images/{scan_num}": {
+      "get": {
+        "tags": [
+          "session"
+        ],
+        "operationId": "get_api_session_scan_image",
+        "summary": "Serve a scan image for the current session.",
+        "parameters": [
+          {
+            "name": "scan_num",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/motion/move-x": {
+      "post": {
+        "tags": [
+          "motion"
+        ],
+        "operationId": "post_api_motion_move_x",
+        "summary": "api_motion_move_x",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/motion/move-z": {
+      "post": {
+        "tags": [
+          "motion"
+        ],
+        "operationId": "post_api_motion_move_z",
+        "summary": "api_motion_move_z",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/motion/position": {
+      "get": {
+        "tags": [
+          "motion"
+        ],
+        "operationId": "get_api_motion_position",
+        "summary": "api_motion_position",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/motion/detection-position": {
+      "post": {
+        "tags": [
+          "motion"
+        ],
+        "operationId": "post_api_motion_detection",
+        "summary": "api_motion_detection",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/sim/test-run": {
+      "post": {
+        "tags": [
+          "sim"
+        ],
+        "operationId": "post_api_sim_test_run",
+        "summary": "api_sim_test_run",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/sim/stop": {
+      "post": {
+        "tags": [
+          "sim"
+        ],
+        "operationId": "post_api_sim_stop",
+        "summary": "api_sim_stop",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/sim/status": {
+      "get": {
+        "tags": [
+          "sim"
+        ],
+        "operationId": "get_api_sim_status",
+        "summary": "api_sim_status",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cards/autocomplete": {
+      "get": {
+        "tags": [
+          "cards"
+        ],
+        "operationId": "get_api_cards_autocomplete",
+        "summary": "api_cards_autocomplete",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/card/overlay-info": {
+      "get": {
+        "tags": [
+          "card"
+        ],
+        "operationId": "get_api_card_overlay_info",
+        "summary": "Return the minimal card-info payload for the Sort Session live overlay (Phase 4 item 4.19).",
+        "description": "Query params (at least one of `id` or `name` is required):\n      - id   (preferred): Scryfall UUID — picks the exact printing\n      - name (legacy):    card name (case-insensitive)\n      - set  (optional):  Scryfall set code; used only with `name` to\n                          prefer a specific printing\n\n    Response body: see `_build_card_overlay_info`. Returns 400 if neither\n    `id` nor `name` is supplied, 404 if no matching card exists in the\n    local Scryfall bulk cache.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cards/printings": {
+      "get": {
+        "tags": [
+          "cards"
+        ],
+        "operationId": "get_api_cards_printings",
+        "summary": "api_cards_printings",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/collection/stats": {
+      "get": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "get_api_collection_stats",
+        "summary": "api_collection_stats",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/collection/inventory": {
+      "get": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "get_api_collection_inventory",
+        "summary": "api_collection_inventory",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "post_api_collection_add_item",
+        "summary": "api_collection_add_item",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/collection/filter": {
+      "get": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "get_api_collection_filter",
+        "summary": "Filter the inventory table using a Scryfall-like query string.",
+        "description": "Query params:\n      q         — compiled query (e.g. \"staple:universal usd<1.00\").\n                  Empty or missing means no filter (full inventory).\n      page      — 1-indexed page number\n      per_page  — page size (default 50)\n      sort/dir  — forwarded to collection_db.get_inventory\n\n    Returns: {items, total, page, per_page, pages, query, error?}",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/collection/sessions": {
+      "get": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "get_api_collection_sessions",
+        "summary": "List sessions, most-recent-first.",
+        "description": "Optional `?limit=N` caps the response. Used by the Sort tab's\n    post-sort \"View past sessions\" modal, which typically pulls 25.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/collection/sessions/{session_id}": {
+      "get": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "get_api_collection_session_detail",
+        "summary": "api_collection_session_detail",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "delete_api_collection_delete_session",
+        "summary": "api_collection_delete_session",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/collection/export/csv": {
+      "get": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "get_api_collection_export_csv",
+        "summary": "api_collection_export_csv",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/collection/export/decklist": {
+      "get": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "get_api_collection_export_decklist",
+        "summary": "api_collection_export_decklist",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/collection/inventory/{item_id}": {
+      "delete": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "delete_api_collection_delete_item",
+        "summary": "api_collection_delete_item",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/collection/inventory/{item_id}/increment": {
+      "post": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "post_api_collection_increment_item",
+        "summary": "api_collection_increment_item",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/collection/reset": {
+      "post": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "post_api_collection_reset",
+        "summary": "api_collection_reset",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/collection/wishlist": {
+      "get": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "get_api_collection_wishlist",
+        "summary": "api_collection_wishlist",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "post_api_collection_wishlist_add",
+        "summary": "api_collection_wishlist_add",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/collection/wishlist/{item_id}": {
+      "delete": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "delete_api_collection_wishlist_delete",
+        "summary": "api_collection_wishlist_delete",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/collection/wishlist/{item_id}/found": {
+      "post": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "post_api_collection_wishlist_found",
+        "summary": "api_collection_wishlist_found",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/collection/boxes/labels": {
+      "get": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "get_api_collection_box_labels",
+        "summary": "api_collection_box_labels",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/collection/boxes": {
+      "get": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "get_api_collection_boxes",
+        "summary": "api_collection_boxes",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/collection/boxes/summary": {
+      "get": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "get_api_collection_box_summary",
+        "summary": "api_collection_box_summary",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/collection/inventory/{item_id}/box": {
+      "put": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "put_api_collection_assign_box",
+        "summary": "api_collection_assign_box",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/collection/locate": {
+      "get": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "get_api_collection_locate",
+        "summary": "Physical locator (Phase 2.11).",
+        "description": "Query params:\n      q: Scryfall-like query string (same syntax as sort bin queries).\n\n    Returns JSON:\n      { \"query\": \"<q>\",\n        \"total_cards\": N,\n        \"groups\": [ {box_name, divider_label, divider_id, box_id,\n                     count, unique_cards, oracle_ids}, ... ] }\n\n    Empty/whitespace `q` returns 400 to match the convention used by\n    /api/sort/validate-query and /api/collection/inventory POST.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/locator/query": {
+      "post": {
+        "tags": [
+          "locator"
+        ],
+        "operationId": "post_api_locator_query",
+        "summary": "Physical locator — POST variant (Phase 2.11 acceptance-criteria path).",
+        "description": "Request body (JSON):\n      { \"q\": \"<scryfall-style query>\" }\n\n    Returns JSON identical to GET /api/collection/locate:\n      { \"query\": \"<q>\",\n        \"total_cards\": N,\n        \"groups\": [ {box_name, divider_label, divider_id, box_id,\n                     count, unique_cards, oracle_ids}, ... ] }\n\n    Empty or missing `q` returns 400.",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/collection/boxes/manage": {
+      "get": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "get_api_collection_boxes_manage",
+        "summary": "List or create first-class boxes (Phase 2.12).",
+        "description": "This sits alongside `/api/collection/boxes` (which returns the legacy\n    free-form box-name list derived from inventory.box). The /manage\n    endpoints operate on the first-class `boxes` table introduced by\n    2.12 and are what the upcoming Collection-tab UI will use.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "post_api_collection_boxes_manage",
+        "summary": "List or create first-class boxes (Phase 2.12).",
+        "description": "This sits alongside `/api/collection/boxes` (which returns the legacy\n    free-form box-name list derived from inventory.box). The /manage\n    endpoints operate on the first-class `boxes` table introduced by\n    2.12 and are what the upcoming Collection-tab UI will use.",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/collection/boxes/manage/{box_id}": {
+      "delete": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "delete_api_collection_boxes_manage_one",
+        "summary": "api_collection_boxes_manage_one",
+        "parameters": [
+          {
+            "name": "box_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "put_api_collection_boxes_manage_one",
+        "summary": "api_collection_boxes_manage_one",
+        "parameters": [
+          {
+            "name": "box_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/collection/dividers": {
+      "get": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "get_api_collection_dividers",
+        "summary": "List or create dividers (Phase 2.12).",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "post_api_collection_dividers",
+        "summary": "List or create dividers (Phase 2.12).",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/collection/dividers/{divider_id}": {
+      "delete": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "delete_api_collection_dividers_one",
+        "summary": "api_collection_dividers_one",
+        "parameters": [
+          {
+            "name": "divider_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "put_api_collection_dividers_one",
+        "summary": "api_collection_dividers_one",
+        "parameters": [
+          {
+            "name": "divider_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/collection/import/csv": {
+      "post": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "post_api_collection_import_csv",
+        "summary": "api_collection_import_csv",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/collection/cull-candidates": {
+      "get": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "get_api_collection_cull_candidates",
+        "summary": "Return dead-weight cull candidates from the owned collection.",
+        "description": "Query parameters:\n        max_price    float   Maximum market price to include (default 1.0)\n        max_buylist  float   Maximum CK buylist price to include (default 0.05)\n        min_qty      int     Minimum quantity owned (default 1)\n        preset       str     \"default\" | \"strict\" (strict = price must be 0)\n        staples      str     \"exclude\" (default) | \"include\"",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/collection/cull-candidates/export": {
+      "get": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "get_api_collection_cull_candidates_export",
+        "summary": "Export cull candidates as CSV.",
+        "description": "Query parameters: same as GET /api/collection/cull-candidates.\n    CSV columns: oracle_id, name, set_code, type_line, price_usd, quantity,\n                 buylist_price, salt_score, is_universal_staple,\n                 is_archetype_staple, is_cedh_staple, commander_popularity,\n                 suggested_action, location, cull_reasons",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/review/crop/{session_name}/{scan_num}": {
+      "get": {
+        "tags": [
+          "review"
+        ],
+        "operationId": "get_api_review_crop_image",
+        "summary": "Serve a card crop image for the review queue.",
+        "parameters": [
+          {
+            "name": "session_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "scan_num",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/review/scan/{session_name}/{scan_num}": {
+      "get": {
+        "tags": [
+          "review"
+        ],
+        "operationId": "get_api_review_scan_image",
+        "summary": "Serve the full camera scan image for the review queue.",
+        "parameters": [
+          {
+            "name": "session_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "scan_num",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/review/diagnostics-file/{session_name}/{scan_num}": {
+      "get": {
+        "tags": [
+          "review"
+        ],
+        "operationId": "get_api_review_diagnostics_file",
+        "summary": "Serve saved per-channel hash diagnostics for a scan. These are computed at scan time and saved alongside card crops.",
+        "parameters": [
+          {
+            "name": "session_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "scan_num",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/review/lookup": {
+      "get": {
+        "tags": [
+          "review"
+        ],
+        "operationId": "get_api_review_lookup",
+        "summary": "Look up a card by name for the review queue. Returns card details + image URL for confirmation.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/database/status": {
+      "get": {
+        "tags": [
+          "database"
+        ],
+        "operationId": "get_api_database_status",
+        "summary": "api_database_status",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/database/check-update": {
+      "post": {
+        "tags": [
+          "database"
+        ],
+        "operationId": "post_api_database_check_update",
+        "summary": "api_database_check_update",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/database/update": {
+      "post": {
+        "tags": [
+          "database"
+        ],
+        "operationId": "post_api_database_update",
+        "summary": "api_database_update",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/database/refresh-prices": {
+      "post": {
+        "tags": [
+          "database"
+        ],
+        "operationId": "post_api_database_refresh_prices",
+        "summary": "Fast prices-only refresh: download latest bulk data JSON, rebuild printings map, update config, reload card data in place. Skips image download and hash DB regeneration. Takes about a minute vs 30+ for a full update.",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/database/update/stop": {
+      "post": {
+        "tags": [
+          "database"
+        ],
+        "operationId": "post_api_database_update_stop",
+        "summary": "api_database_update_stop",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/calibration/start": {
+      "post": {
+        "tags": [
+          "calibration"
+        ],
+        "operationId": "post_api_calibration_start",
+        "summary": "Start ArUco bin calibration sweep.",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/calibration/cancel": {
+      "post": {
+        "tags": [
+          "calibration"
+        ],
+        "operationId": "post_api_calibration_cancel",
+        "summary": "Cancel a running calibration sweep.",
+        "description": "Crucial: this must NOT go through the worker queue. The worker thread\n    is busy running the sweep, so any queued cancel would only execute\n    AFTER the sweep finishes, defeating the whole point. Instead we set\n    the calibrator's cancel flag directly (it's just a bool) and also\n    call the worker's abort helper so _cmd_new_hardware_setup knows to\n    stop before proceeding into the probe phase.",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/calibration/new-hardware-setup": {
+      "post": {
+        "tags": [
+          "calibration"
+        ],
+        "operationId": "post_api_new_hardware_setup",
+        "summary": "Full 'fresh install' routine: clear cached state, home, ArUco sweep, probe every destination bin. Run this any time the physical bin layout changes (new bins, repositioned trays, rebuilt X carriage, etc.).",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/calibration/drop-tuner/start": {
+      "post": {
+        "tags": [
+          "calibration"
+        ],
+        "operationId": "post_api_drop_tuner_start",
+        "summary": "api_drop_tuner_start",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/calibration/drop-tuner/pickup": {
+      "post": {
+        "tags": [
+          "calibration"
+        ],
+        "operationId": "post_api_drop_tuner_pickup",
+        "summary": "api_drop_tuner_pickup",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/calibration/drop-tuner/step-z": {
+      "post": {
+        "tags": [
+          "calibration"
+        ],
+        "operationId": "post_api_drop_tuner_step_z",
+        "summary": "api_drop_tuner_step_z",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/calibration/drop-tuner/test-drop": {
+      "post": {
+        "tags": [
+          "calibration"
+        ],
+        "operationId": "post_api_drop_tuner_test_drop",
+        "summary": "api_drop_tuner_test_drop",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/calibration/drop-tuner/save": {
+      "post": {
+        "tags": [
+          "calibration"
+        ],
+        "operationId": "post_api_drop_tuner_save",
+        "summary": "api_drop_tuner_save",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/calibration/drop-tuner/cancel": {
+      "post": {
+        "tags": [
+          "calibration"
+        ],
+        "operationId": "post_api_drop_tuner_cancel",
+        "summary": "api_drop_tuner_cancel",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/calibration/drop-tuner/status": {
+      "get": {
+        "tags": [
+          "calibration"
+        ],
+        "operationId": "get_api_drop_tuner_status",
+        "summary": "Return current Z_DROP_OFFSET so the UI can display it on load.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/calibration/last-setup": {
+      "get": {
+        "tags": [
+          "calibration"
+        ],
+        "operationId": "get_api_calibration_last_setup_get",
+        "summary": "Return the auto-saved last hardware setup, if one exists.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/calibration/last-setup/reload": {
+      "post": {
+        "tags": [
+          "calibration"
+        ],
+        "operationId": "post_api_calibration_last_setup_reload",
+        "summary": "Re-apply the auto-saved last setup to the live machine state.",
+        "description": "Useful if the user tweaked something at runtime and wants to get\n    back to the saved calibration without re-running the full sweep.",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/calibration/last-setup/save-as": {
+      "post": {
+        "tags": [
+          "calibration"
+        ],
+        "operationId": "post_api_calibration_last_setup_save_as",
+        "summary": "Copy the last auto-saved setup to a named file the user can keep.",
+        "description": "Saved copies live alongside _last_setup.json as `setup_<name>.json`\n    so they don't collide with the bin_configs directory used by the\n    old bin-config save flow.",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/calibration/last-setup/list": {
+      "get": {
+        "tags": [
+          "calibration"
+        ],
+        "operationId": "get_api_calibration_last_setup_list",
+        "summary": "Return metadata for every `setup_<name>.json` file on disk.",
+        "description": "Used by the calibration tab to populate the 'Load saved setup'\n    dropdown. Lightweight — only reads the top-level fields, no bin\n    position decoding.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/calibration/last-setup/load": {
+      "post": {
+        "tags": [
+          "calibration"
+        ],
+        "operationId": "post_api_calibration_last_setup_load",
+        "summary": "Load a named setup file and apply it to the live machine state.",
+        "description": "Body: {\"name\": \"<saved name>\"}  OR  {\"filename\": \"setup_<safe>.json\"}\n\n    Mirrors /reload but lets the UI pick from the list of saved\n    setups instead of always loading the auto-save. Same hardware\n    readiness guard so we don't try to push positions to a\n    disconnected board.",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/calibration/last-setup/delete": {
+      "post": {
+        "tags": [
+          "calibration"
+        ],
+        "operationId": "post_api_calibration_last_setup_delete",
+        "summary": "Delete a named setup file.",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/calibration/retry": {
+      "post": {
+        "tags": [
+          "calibration"
+        ],
+        "operationId": "post_api_calibration_retry",
+        "summary": "Re-run the new hardware setup with the same params as last time.",
+        "description": "Convenience wrapper — the calibration tab's Retry button calls this\n    so the user doesn't have to re-type bin counts if they just want\n    another pass at the sweep.",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/calibration/status": {
+      "get": {
+        "tags": [
+          "calibration"
+        ],
+        "operationId": "get_api_calibration_status",
+        "summary": "Combined calibration status — both the ArUco sweep-in-progress state and the per-step \"is this step already satisfied\" booleans used by the calibration wizard (Phase 4 item 4.22).",
+        "description": "The old ``calibrator.get_status()`` shape (running/progress/message/\n    bins_found/discovered) is preserved for backward compatibility. The\n    wizard consumes the new booleans under ``wizard``:\n\n        wizard.machine_connected    — serial port open\n        wizard.camera_connected     — camera device active\n        wizard.bin_x_calibrated     — ArUco sweep has run + saved bin X positions\n        wizard.bin_z_probed         — every bin has a probe_results entry\n        wizard.staging_roi_set      — staging_roi.json exists\n        wizard.focus_locked         — camera has locked its autofocus\n\n    Top-level booleans are also mirrored so lightweight consumers can\n    read e.g. ``machine_connected`` directly without digging in.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/calibration/wizard/lock-focus": {
+      "post": {
+        "tags": [
+          "calibration"
+        ],
+        "operationId": "post_api_wizard_lock_focus",
+        "summary": "Standalone focus-lock endpoint used by the calibration wizard.",
+        "description": "The existing ``/api/session/confirm-focus`` only works mid-session\n    (it releases a worker-side Event waited on by the sort loop). The\n    wizard needs to lock focus in isolation, before any session exists,\n    so we call ``camera.lock_focus()`` directly. The camera must be\n    running for the underlying cv2.VideoCapture property write to take\n    effect.",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/calibration/detect-markers": {
+      "post": {
+        "tags": [
+          "calibration"
+        ],
+        "operationId": "post_api_calibration_detect_markers",
+        "summary": "Detect ArUco markers in the current camera frame (one-shot).",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/calibration/check-empty": {
+      "post": {
+        "tags": [
+          "calibration"
+        ],
+        "operationId": "post_api_calibration_check_empty",
+        "summary": "Check if source bins are empty using ArUco detection.",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/calibration/source-bins": {
+      "get": {
+        "tags": [
+          "calibration"
+        ],
+        "operationId": "get_api_calibration_source_bins",
+        "summary": "Get information about calibrated source bins.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/calibration/offset": {
+      "get": {
+        "tags": [
+          "calibration"
+        ],
+        "operationId": "get_api_calibration_offset",
+        "summary": "Get or set the camera X offset.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "calibration"
+        ],
+        "operationId": "post_api_calibration_offset",
+        "summary": "Get or set the camera X offset.",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/calibration/max-sweep": {
+      "get": {
+        "tags": [
+          "calibration"
+        ],
+        "operationId": "get_api_calibration_max_sweep",
+        "summary": "Get or set the maximum sweep distance.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "calibration"
+        ],
+        "operationId": "post_api_calibration_max_sweep",
+        "summary": "Get or set the maximum sweep distance.",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/calibration/generate-markers": {
+      "get": {
+        "tags": [
+          "calibration"
+        ],
+        "operationId": "get_api_calibration_generate_markers",
+        "summary": "Generate printable ArUco marker images as an HTML page.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/collection/review-queue": {
+      "get": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "get_api_review_queue",
+        "summary": "Get scans with borderline hash distances for manual review.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/collection/review-queue/{scan_id}/confirm": {
+      "post": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "post_api_review_confirm",
+        "summary": "Confirm a borderline scan is correct — no action needed.",
+        "parameters": [
+          {
+            "name": "scan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/collection/review-queue/{scan_id}/correct": {
+      "post": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "post_api_review_correct",
+        "summary": "Correct a misidentified scan: update scan_history and inventory.",
+        "parameters": [
+          {
+            "name": "scan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/collection/review-queue/{scan_id}/dismiss": {
+      "post": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "post_api_review_dismiss",
+        "summary": "Dismiss a scan from the review queue (remove from inventory if unrecognized).",
+        "parameters": [
+          {
+            "name": "scan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/detection-reviews/counts": {
+      "get": {
+        "tags": [
+          "detection-reviews"
+        ],
+        "operationId": "get_api_detection_review_counts",
+        "summary": "Pending + reviewed counts per variable. Used to populate tab badges.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/detection-reviews/seed": {
+      "post": {
+        "tags": [
+          "detection-reviews"
+        ],
+        "operationId": "post_api_detection_reviews_seed",
+        "summary": "Ensure detection_reviews rows exist for every scan (one per variable). Idempotent — safe to call repeatedly. No detector modifications; rows where the detector can't supply confidence surface with confidence=NULL (sorted first in the queue so the human reviews the most important cases first).",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/detection-reviews/{variable}": {
+      "get": {
+        "tags": [
+          "detection-reviews"
+        ],
+        "operationId": "get_api_detection_reviews_list",
+        "summary": "Queue items for one variable, ordered by ascending confidence (NULLs first). `?include_reviewed=1` shows items that already have a verdict.",
+        "parameters": [
+          {
+            "name": "variable",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/detection-reviews/recent": {
+      "get": {
+        "tags": [
+          "detection-reviews"
+        ],
+        "operationId": "get_api_detection_reviews_recent",
+        "summary": "Detection-review queue items for the most-recently-ended session (or most-recently-started if none has ended cleanly). Used by the Sort tab's post-sort hero to surface what needs review without making the user switch to Setup.",
+        "description": "Limit param caps the response; default 20 is enough for the\n    inline preview in the post-sort hero.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/detection-reviews/{review_id}/verdict": {
+      "patch": {
+        "tags": [
+          "detection-reviews"
+        ],
+        "operationId": "patch_api_detection_review_verdict",
+        "summary": "Record a user's verdict on a review row. Body: { \"verdict\": \"correct\" | \"wrong\" | \"skip\", \"correction\": \"optional free-text if wrong\" } Idempotent — repeating the same verdict refreshes reviewed_at.",
+        "parameters": [
+          {
+            "name": "review_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "detection-reviews"
+        ],
+        "operationId": "post_api_detection_review_verdict",
+        "summary": "Record a user's verdict on a review row. Body: { \"verdict\": \"correct\" | \"wrong\" | \"skip\", \"correction\": \"optional free-text if wrong\" } Idempotent — repeating the same verdict refreshes reviewed_at.",
+        "parameters": [
+          {
+            "name": "review_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/collection/prices/update": {
+      "post": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "post_api_price_update_start",
+        "summary": "api_price_update_start",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/collection/prices/stop": {
+      "post": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "post_api_price_update_stop",
+        "summary": "api_price_update_stop",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/collection/prices/status": {
+      "get": {
+        "tags": [
+          "collection"
+        ],
+        "operationId": "get_api_price_update_status",
+        "summary": "api_price_update_status",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reset-after-estop": {
+      "post": {
+        "tags": [
+          "reset-after-estop"
+        ],
+        "operationId": "post_api_reset_after_estop",
+        "summary": "api_reset_after_estop",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/session/discard-stale": {
+      "post": {
+        "tags": [
+          "session"
+        ],
+        "operationId": "post_api_discard_stale_session",
+        "summary": "api_discard_stale_session",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/session/resume-stale": {
+      "post": {
+        "tags": [
+          "session"
+        ],
+        "operationId": "post_api_resume_stale_session",
+        "summary": "Phase 4 part 5 — full power-loss-resume. Rebuilds the worker's tracker + sort_config_obj from the session's saved metadata and lands in 'paused' so the user clicks Resume.",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/source-bin/calibrate-empty": {
+      "post": {
+        "tags": [
+          "source-bin"
+        ],
+        "operationId": "post_api_calibrate_empty_source_bin",
+        "summary": "api_calibrate_empty_source_bin",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/self-test/run": {
+      "post": {
+        "tags": [
+          "self-test"
+        ],
+        "operationId": "post_api_run_self_test",
+        "summary": "Trigger the hardware diagnostic sequence. Streams results via self_test_step / self_test_complete socket events.",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/support/bundle": {
+      "get": {
+        "tags": [
+          "support"
+        ],
+        "operationId": "get_api_support_bundle",
+        "summary": "Return a zip with logs, recent scan sessions, runtime state, and version info. See support_bundle.py for what's included and (more importantly) what's intentionally NOT included.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/source-bin/state": {
+      "get": {
+        "tags": [
+          "source-bin"
+        ],
+        "operationId": "get_api_source_bin_state",
+        "summary": "Return current empty-Z reference + last probed Z + estimate. Useful for the UI to populate its source-bin gauge on page load without waiting for the next probe-driven event.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/label": {
+      "get": {
+        "tags": [
+          "pages"
+        ],
+        "operationId": "get_label_page",
+        "summary": "label_page",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/label/sessions": {
+      "get": {
+        "tags": [
+          "label"
+        ],
+        "operationId": "get_label_sessions",
+        "summary": "List sessions that have card crops available.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/label/cards/{session_name}": {
+      "get": {
+        "tags": [
+          "label"
+        ],
+        "operationId": "get_label_cards",
+        "summary": "Get all card crops from a session with scan data and existing labels.",
+        "parameters": [
+          {
+            "name": "session_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/label/image/{session_name}/{filename}": {
+      "get": {
+        "tags": [
+          "label"
+        ],
+        "operationId": "get_label_image",
+        "summary": "Serve a card crop image.",
+        "parameters": [
+          {
+            "name": "session_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/label/set": {
+      "post": {
+        "tags": [
+          "label"
+        ],
+        "operationId": "post_label_set",
+        "summary": "Set the foil/nonfoil label for a card image.",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/label/stats": {
+      "get": {
+        "tags": [
+          "label"
+        ],
+        "operationId": "get_label_stats",
+        "summary": "Get labeling stats.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/enrichment/sources": {
+      "get": {
+        "tags": [
+          "enrichment"
+        ],
+        "operationId": "get_api_enrichment_sources",
+        "summary": "List every registered source with its cron, last-run state, and coverage summary. Used by the Database subsection in the UI.",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/enrichment/refresh/{source}": {
+      "post": {
+        "tags": [
+          "enrichment"
+        ],
+        "operationId": "post_api_enrichment_refresh",
+        "summary": "Manually trigger a refresh. Returns 202 immediately; the actual refresh runs on a background thread and emits enrichment_refresh_progress + enrichment_refresh_complete events.",
+        "parameters": [
+          {
+            "name": "source",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/enrichment/probes/run": {
+      "post": {
+        "tags": [
+          "enrichment"
+        ],
+        "operationId": "post_api_enrichment_probes_run",
+        "summary": "Run every probe script synchronously and return the summary. Use sparingly — each probe may hit its real endpoint in Phase 0B+.",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/enrichment/card/{oracle_id}": {
+      "get": {
+        "tags": [
+          "enrichment"
+        ],
+        "operationId": "get_api_enrichment_card",
+        "summary": "Return the full enrichment payload for one oracle_id, or 404.",
+        "parameters": [
+          {
+            "name": "oracle_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/moxfield/deck/import": {
+      "post": {
+        "tags": [
+          "integrations"
+        ],
+        "operationId": "post_api_moxfield_deck_import",
+        "summary": "Fetch a public Moxfield deck by URL and cache it.",
+        "description": "Body (JSON):\n      {\n        \"deck_url\":          \"<full Moxfield URL or bare deck ID>\",\n        \"printing_mode\":     \"any\" | \"exact\"   (default \"any\"),\n        \"include_sideboard\": false,\n        \"use_cache\":         true\n      }\n\n    Basic lands are excluded from the returned card list regardless of\n    printing_mode.\n\n    Returns 200 with:\n      { deck_id, deck_name, format, owner, printing_mode, card_count,\n        warnings, cards: [{oracle_id, name, quantity, set,\n                            collector_number, scryfall_id, board,\n                            printing_mode}] }\n\n    Returns 400 if deck_url is missing/unparseable or printing_mode invalid.\n    Returns 404 if Moxfield returns 404 (deck not found / private).\n    Returns 503 if the network request fails (Moxfield unreachable).",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    },
+    "/api/integrations/moxfield/deck/{deck_id}/cache": {
+      "get": {
+        "tags": [
+          "integrations"
+        ],
+        "operationId": "get_api_moxfield_deck_cache",
+        "summary": "Return the cached import payload for a deck, or 404 if not cached.",
+        "description": "Query params: ?printing_mode=any|exact  (default \"any\")\n\n    Does NOT hit the Moxfield API — returns only what is already stored in\n    enrichment.db.  Use /import to fetch-and-cache a new deck.",
+        "parameters": [
+          {
+            "name": "deck_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/moxfield/wishlist/import": {
+      "post": {
+        "tags": [
+          "integrations"
+        ],
+        "operationId": "post_api_moxfield_wishlist_import",
+        "summary": "Fetch a user's public Moxfield wishlist and cache it.",
+        "description": "Body (JSON):\n      {\n        \"username\":      \"<Moxfield username>\",\n        \"printing_mode\": \"any\" | \"exact\"   (default \"any\"),\n        \"use_cache\":     true\n      }\n\n    Basic lands are excluded from the returned card list regardless of\n    printing_mode.\n\n    Authentication: public wishlists only (no OAuth in v1).  Users whose\n    wishlist is set to private will receive a 401 from Moxfield, surfaced\n    here as 401.\n\n    Wishlist API endpoint used:\n      GET https://api2.moxfield.com/v2/users/<username>/wishlist\n\n    Returns 200 with:\n      { username, printing_mode, card_count, warnings,\n        cards: [{oracle_id, name, quantity, set, collector_number,\n                 scryfall_id, printing_mode}] }\n\n    Returns 400 if username is missing or printing_mode invalid.\n    Returns 401 if the wishlist is private (Moxfield returns 401).\n    Returns 404 if the user or wishlist does not exist on Moxfield.\n    Returns 503 if the network request fails.",
+        "requestBody": {
+          "description": "JSON body. Hand-edit docs/openapi-overlay.yaml to add a precise schema for this endpoint.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericObject"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CSRFFailed"
+          }
+        }
+      }
+    }
+  }
+}
