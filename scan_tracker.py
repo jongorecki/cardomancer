@@ -34,8 +34,15 @@ class ScanTracker:
     def __init__(self):
         self.session_dir = None
         self.session_meta = {}
-        self.scans = []
+        # `bins` is a per-bin list of cards (kept for the live UI's bin
+        # contents drawer); its size is bounded by total cards landed in
+        # destination bins, which is the same as scan_count. We do NOT
+        # keep a separate `self.scans` list — that used to mirror the
+        # CSV + DB but added another N-sized buffer in memory on long
+        # sessions. Running counters cover what get_stats() needs.
         self.bins = {}
+        # Running totals so get_stats() doesn't have to iterate scans.
+        self.session_total_value = 0.0
         self.scan_count = 0
         self.unrecognized_count = 0
         self._csv_writer = None
@@ -91,8 +98,8 @@ class ScanTracker:
             config_text=config_text,
         )
 
-        self.scans = []
         self.bins = {}
+        self.session_total_value = 0.0
         self.scan_count = 0
         self.unrecognized_count = 0
 
@@ -135,30 +142,18 @@ class ScanTracker:
             collector_number = card_data.get('collector_number', '')
             type_line = card_data.get('type_line', types)
 
-        # --- Session scan record ---
-        scan_record = {
-            "scan_num": self.scan_count,
-            "timestamp": timestamp,
-            "name": name,
-            "set": set_code,
-            "all_sets": all_sets,
-            "collector_number": collector_number,
-            "colors": colors,
-            "cmc": cmc,
-            "type_line": type_line,
-            "rarity": rarity,
-            "price_usd": price,
-            "bin": bin_num,
-            "method": method or '',
-            "hash_distance": hash_distance,
-            "recognized": recognized,
-            "is_foil": bool(is_foil),
-            "foil_confidence": foil_confidence,
-            "frame": frame or '',
-            "border_color": border_color or '',
-            "frame_effects": frame_effects or [],
-        }
-        self.scans.append(scan_record)
+        # Maintain a running total of card value so get_stats() doesn't
+        # have to walk every scan ever recorded — that was a memory leak
+        # on long (10k+) sessions and a CPU cost on every stats poll.
+        # The CSV + DB still hold the per-scan history; the in-memory
+        # state only needs aggregates plus the per-bin lists below.
+        try:
+            if price and price != 'N/A':
+                self.session_total_value += float(
+                    str(price).replace('$', '')
+                )
+        except (ValueError, TypeError):
+            pass
 
         fe = frame_effects or []
         # --- Write CSV row ---
@@ -235,16 +230,13 @@ class ScanTracker:
         return dict(self.bins)
 
     def get_stats(self):
-        """Get session statistics."""
-        total_value = 0.0
-        for scan in self.scans:
-            try:
-                price = scan.get('price_usd', '')
-                if price and price != 'N/A':
-                    total_value += float(str(price).replace('$', ''))
-            except (ValueError, TypeError):
-                pass
+        """Get session statistics.
 
+        Reads aggregate counters (scan_count, unrecognized_count,
+        session_total_value) — does NOT iterate per-scan records. On
+        long sessions this used to walk an O(N) self.scans list every
+        time the dashboard polled stats; now it's O(bins).
+        """
         return {
             "total_scans": self.scan_count,
             "recognized": self.scan_count - self.unrecognized_count,
@@ -257,7 +249,7 @@ class ScanTracker:
             "cards_per_bin": {
                 k: len(v) for k, v in sorted(self.bins.items(), key=lambda x: int(x[0]))
             },
-            "total_value": f"${total_value:.2f}",
+            "total_value": f"${self.session_total_value:.2f}",
         }
 
     def print_status(self):
@@ -406,7 +398,8 @@ class ScanTracker:
             "frame_effects",
         ])
 
-        self.scans = []
+        # No in-memory scan list to clear (resume picks up bins + count
+        # from the DB and starts fresh CSV/TXT files for new scans).
         logger.info(f"Resumed session #{session_id}: "
                     f"{self.scan_count} prior scans, {len(self.bins)} bins.")
         return True
@@ -460,16 +453,10 @@ class ScanTracker:
             f.write(f"{'=' * 50}\n")
             f.write(f"Full Scan Log\n")
             f.write(f"{'=' * 50}\n\n")
-            for scan in self.scans:
-                num = scan['scan_num']
-                name = scan['name'] or 'UNRECOGNIZED'
-                sset = scan['set']
-                bbin = scan['bin']
-                method = scan['method']
-                dist = scan['hash_distance']
-                dist_str = f"dist={dist:.1f}" if dist is not None else ""
-                f.write(f"  #{num:3d}: {name} ({sset}) -> bin {bbin} "
-                        f"[{method}] {dist_str}\n")
+            f.write(f"  See scans.csv in this session directory for the\n"
+                    f"  full per-scan record. (The CSV is the canonical\n"
+                    f"  per-scan store and avoids holding every scan in\n"
+                    f"  memory for the duration of long sessions.)\n")
 
 
 # ---------------------------------------------------------------------------
