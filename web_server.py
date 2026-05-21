@@ -50,6 +50,58 @@ from web_enrichment.buylist_ck import CardKingdomBuylistSource
 # ---------------------------------------------------------------------------
 # Logging — rotating file + stdout tee for post-mortem debugging
 # ---------------------------------------------------------------------------
+#
+# Recursion guard. The stdout/stderr tee below routes writes through the
+# root logger. If a handler errors (e.g. RotatingFileHandler can't rename
+# the log file on Windows), Python's default `handleError` writes the
+# traceback to sys.stderr — which on this app IS the tee. That puts us
+# back into logging, the handler errors again, and we loop until the
+# stack blows.
+#
+# `_tee_recursion.active` flips True while we're already inside a
+# tee-driven log call; the write() method respects it and bypasses
+# logging on re-entry, so logging failures degrade quietly instead of
+# avalanching.
+import threading as _threading
+_tee_recursion = _threading.local()
+
+
+class _SafeRotatingFileHandler(logging.handlers.RotatingFileHandler):
+    """RotatingFileHandler that survives Windows rename failures.
+
+    Windows treats `os.rename(open_file, ...)` as a sharing violation,
+    and the same applies if any external process (antivirus scanner,
+    `tail -f` in another shell, the editor preview) has a transient
+    handle to the file at the rotation moment. The default behaviour
+    is to surface the error via `handleError` which writes to
+    sys.stderr — and our stderr is the logger tee, so the error
+    triggers another rotation attempt, which fails again. Infinite
+    loop.
+
+    Subclassing rotate() so we catch the OS error, write a single
+    note to the *real* stderr (bypassing the tee via sys.__stderr__),
+    and return cleanly. Logging continues; the existing file keeps
+    growing past maxBytes until the next rotation attempt succeeds.
+    A bloated log file is a better failure mode than a stack-blown
+    process.
+    """
+
+    def rotate(self, source, dest):
+        try:
+            super().rotate(source, dest)
+        except (PermissionError, OSError) as exc:
+            # NEVER route this through logging or sys.stderr — both
+            # would re-enter the handler. The real underlying stream
+            # is what the operator sees in the launcher window.
+            try:
+                sys.__stderr__.write(
+                    f"[card_sorter] log rotation skipped "
+                    f"({type(exc).__name__}: {exc}); "
+                    f"file will keep growing until next attempt.\n"
+                )
+            except Exception:
+                pass
+
 
 def _setup_logging():
     """
@@ -66,14 +118,21 @@ def _setup_logging():
         return
 
     log_path = os.path.join(logs_dir, 'card_sorter.log')
-    handler = logging.handlers.RotatingFileHandler(
+    handler = _SafeRotatingFileHandler(
         log_path, maxBytes=5 * 1024 * 1024, backupCount=5, encoding='utf-8')
     handler.setFormatter(logging.Formatter(
         '%(asctime)s [%(levelname)s] %(message)s'))
 
     root = logging.getLogger()
     root.setLevel(logging.INFO)
-    # Avoid duplicate handlers on reload.
+    # Belt-and-suspenders: stop the default handleError → sys.stderr
+    # path from ever firing in production. If a handler emit fails, it
+    # fails silently rather than dumping a traceback into the tee. The
+    # tee's own recursion guard would catch the loop anyway, but
+    # turning raiseExceptions off keeps the operator console clean.
+    logging.raiseExceptions = False
+    # Avoid duplicate handlers on reload (cover both the original
+    # RotatingFileHandler class and our subclass).
     root.handlers = [h for h in root.handlers
                      if not isinstance(h, logging.handlers.RotatingFileHandler)]
     root.addHandler(handler)
@@ -129,7 +188,17 @@ def _setup_logging():
                 pass
             if not msg:
                 return
+            # Recursion guard. If we're already inside a log call that
+            # came from this tee (because a handler error wrote to
+            # sys.stderr, which is also us), don't re-enter logging —
+            # just forward to the original stream and stop. This is
+            # the lock that breaks the rotate-fail → handleError →
+            # stderr → log → rotate-fail loop that used to lock up
+            # the kiosk during a database update.
+            if getattr(_tee_recursion, 'active', False):
+                return
             try:
+                _tee_recursion.active = True
                 self._buffer += msg
                 while '\n' in self._buffer:
                     line, self._buffer = self._buffer.split('\n', 1)
@@ -138,6 +207,8 @@ def _setup_logging():
             except Exception:
                 # Never let a logging failure break the write path.
                 self._buffer = ''
+            finally:
+                _tee_recursion.active = False
 
         def writelines(self, lines):
             for line in lines:
