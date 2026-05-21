@@ -1,4 +1,4 @@
-/* style.css — MTG Card Sorter Web UI
+﻿/* style.css â€” MTG Card Sorter Web UI
  * Dark theme with proper contrast (WCAG AA compliant)
  */
 
@@ -7,10 +7,10 @@
  * ========================================================================= */
 
 /* ---------------------------------------------------------------------------
- * Semantic color tokens — map onto the brand palette in tokens.css.
+ * Semantic color tokens â€” map onto the brand palette in tokens.css.
  *
  * Operator UI is dark by default. Page background is indigo-900 (the
- * darkest brand value), surfaces step lighter through indigo-800 → custom
+ * darkest brand value), surfaces step lighter through indigo-800 â†’ custom
  * elevated card. Foreground uses near-parchment for primary text so it
  * harmonizes with the indigo wash without losing AA contrast.
  *
@@ -39,7 +39,7 @@
     --accent-sigil: var(--amber-500);   /* ritual/sigil pop, used sparingly */
 }
 
-/* Light theme overrides — parchment + ink instead of indigo + parchment.
+/* Light theme overrides â€” parchment + ink instead of indigo + parchment.
  * Marketing aesthetic if/when the operator UI is run in light mode. */
 [data-theme="light"] {
     --bg-page: var(--parchment-100);
@@ -84,7 +84,7 @@ body {
 }
 
 /* =========================================================================
- * Phase 4 — staged Sort tab.
+ * Phase 4 â€” staged Sort tab.
  *
  * #tab-sort gets a data-sort-stage attribute (pre / running / post) from
  * static/modules/sortStage.js. Each stage-specific section in
@@ -106,7 +106,7 @@ body {
 }
 
 /* =========================================================================
- * Phase 4 part 3 — bin tile grid (Running/Post stage Sort tab).
+ * Phase 4 part 3 â€” bin tile grid (Running/Post stage Sort tab).
  *
  * Replaces the previous vertical expand/collapse list with a responsive
  * grid of tiles. Each tile is one destination bin and shows count,
@@ -133,7 +133,7 @@ body {
     background: var(--bg-card-header);
 }
 /* Keyboard-only focus ring for the bin-tile pseudo-buttons. The
- * hover treatment alone isn't enough — sighted keyboard users need
+ * hover treatment alone isn't enough â€” sighted keyboard users need
  * a clearly visible focus indicator. Uses the sigil amber so it
  * pops against both indigo (dark) and parchment (light) surfaces. */
 .bin-tile:focus-visible {
@@ -143,7 +143,7 @@ body {
 }
 /* Headings used as focus landing points for stage transitions take
  * a programmatic tabindex=-1; suppress the default focus outline
- * since they aren't actually interactive — the focus move is only
+ * since they aren't actually interactive â€” the focus move is only
  * so screen readers re-orient. */
 #pre-sort-heading:focus,
 #post-sort-heading:focus,
@@ -229,7 +229,7 @@ button:focus-visible,
 }
 
 /* =========================================================================
- * Phase 3 polish — empty-state + skeleton-loader components.
+ * Phase 3 polish â€” empty-state + skeleton-loader components.
  *
  * Used by static/modules/components.js. Sigils live in
  * static/branding/sigils/ and render as inline <img>s.
@@ -254,7 +254,7 @@ button:focus-visible,
 .cm-empty-sigil {
     opacity: 0.55;
     /* Use the brand accent for the sigil tint. SVGs are single-color so
-     * we re-color them via filter — works without re-authoring the asset. */
+     * we re-color them via filter â€” works without re-authoring the asset. */
     filter: brightness(0.9);
 }
 [data-theme="light"] .cm-empty-sigil {
@@ -270,7 +270,7 @@ button:focus-visible,
     max-width: 38ch;
 }
 
-/* Skeleton loaders — gentle horizontal shimmer in the brand-tinted
+/* Skeleton loaders â€” gentle horizontal shimmer in the brand-tinted
  * surface color so panels under load read as "filling in" rather than
  * "broken". */
 @keyframes cm-skeleton-shimmer {
@@ -771,7 +771,7 @@ button:focus-visible,
     color: var(--text-primary);
 }
 
-/* Force table cells transparent — Bootstrap 5.3 defaults --bs-table-bg to
+/* Force table cells transparent â€” Bootstrap 5.3 defaults --bs-table-bg to
    var(--bs-body-bg) (#fff) in its compiled light-mode CSS.  Our .table rule
    sets --bs-table-bg:transparent but the ID selector here guarantees the win
    regardless of cascade ordering. */
@@ -1106,7 +1106,7 @@ tr.price-mythic { border-left: 3px solid var(--accent-red); }
 }
 
 /* =========================================================================
- * Sort Configuration — override bins + readonly theming (feature/sort-override)
+ * Sort Configuration â€” override bins + readonly theming (feature/sort-override)
  * ========================================================================= */
 
 /* Override row: star prefix + yellow left-border glow */
@@ -1128,7 +1128,7 @@ tr.price-mythic { border-left: 3px solid var(--accent-red); }
     color: var(--text-primary);
 }
 
-/* Fix readonly / disabled inputs in dark theme — Bootstrap leaves them with
+/* Fix readonly / disabled inputs in dark theme â€” Bootstrap leaves them with
    a light bg + inherited light text, making them invisible. */
 .form-control[readonly],
 .form-select[disabled],
@@ -1175,178 +1175,463 @@ tr.price-mythic { border-left: 3px solid var(--accent-red); }
     border-color: var(--accent-green);
 }
 
+
 /* =========================================================================
- * Home tab — welcome / landing page
+ * Home tab - welcome / landing page (Claude Design redesign)
  *
- * Three-part layout:
- *   1. cm-home-hero        wordmark + tagline + subtitle
- *   2. cm-home-status      one-line "Hardware · Collection · Last session"
- *   3. cm-home-actions     three large action tiles routing to the
- *                          Sort / Collection / Setup tabs
+ * Adapted from cardomancer-design-system/project/ui_kits/sorter/welcome/
+ * index.html. Class names preserved (cm-home-*) so home.js status
+ * wiring continues to work without modification.
  *
- * Plus an optional cm-home-getting-started banner that surfaces on
- * fresh installs (no saved calibration) pointing the operator at the
- * calibration wizard before they wander into Sort.
+ * Four layers, back-to-front:
+ *   1. cm-backdrop          slowly-rotating card sigils + vignette
+ *   2. cm-home-hero         eyebrow + display title + tagline + subtitle
+ *   3. cm-home-status       glass-backed strip with mono numerals
+ *   4. cm-home-actions      three numbered (I/II/III) tiles
+ *   + cm-home-getting-started banner (fresh install)
+ *   + cm-home-footer (small flourish)
  * ========================================================================= */
 
-.cm-home-hero {
+/* ---- Backdrop: slowly drifting + rotating card sigils ---- */
+
+.cm-backdrop {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    /* Sit BEHIND #tab-home content but ABOVE body bg. The host page is
+     * the kiosk's tabbed UI, not a standalone HTML doc, so we anchor
+     * to the viewport rather than a wrapping element. The navbar +
+     * tabs nav sit ABOVE the backdrop via the z-index rules below;
+     * they're global chrome and should never be obscured by the home-
+     * tab atmosphere. */
+    z-index: 0;
+    overflow: hidden;
     background:
-        linear-gradient(135deg,
-            rgba(40, 35, 90, 0.55) 0%,
-            rgba(20, 18, 50, 0.92) 100%),
-        var(--bg-card);
-    border-color: var(--border-card);
+        radial-gradient(ellipse at 30% 10%, rgba(83, 74, 183, 0.18), transparent 55%),
+        radial-gradient(ellipse at 80% 90%, rgba(212, 165, 55, 0.06), transparent 60%),
+        #0A0A1C;
+}
+
+/* Lift the navbar and tabs nav above the cm-backdrop. position:
+ * relative gives them a stacking context for z-index. The tabs nav
+ * also gets a subtle backing so its labels stay legible against the
+ * deeper-than-default home-tab backdrop. Other tabs (Sort/Collection/
+ * Setup) inherit the same nav styling but don't render the backdrop,
+ * so the backing is harmless there. */
+body > nav.navbar { position: relative; z-index: 20; }
+#mainTabs {
+    position: relative;
+    z-index: 10;
+    background: rgba(20, 20, 46, 0.85);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+}
+.tab-content      { position: relative; z-index: 10; }
+
+.cm-backdrop-vignette {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,0.55) 100%);
+    pointer-events: none;
+}
+
+.cm-backdrop svg.sigil {
+    position: absolute;
+    color: var(--indigo-500);
+    opacity: 0.10;
+    animation: cm-sigil-spin 60s linear infinite;
+    transform-origin: center;
+    will-change: transform;
+}
+
+.cm-backdrop svg.sigil.amber {
+    color: var(--amber-500);
+    opacity: 0.07;
+}
+
+@keyframes cm-sigil-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+
+/* Per-sigil placement, size, speed, direction. The .sg-5 (center
+ * sigil) is the biggest and slowest, and uses a separate keyframe
+ * because it carries a translate(-50%, -50%) to keep itself anchored. */
+.cm-backdrop .sg-1 { top: 4%;    left: 6%;    width: 220px; height: 308px; animation-duration: 90s; }
+.cm-backdrop .sg-2 { top: 14%;   right: 8%;   width: 160px; height: 224px; animation-duration: 75s; animation-direction: reverse; }
+.cm-backdrop .sg-3 { bottom: 8%;  left: 12%;  width: 190px; height: 266px; animation-duration: 110s; }
+.cm-backdrop .sg-4 { bottom: 18%; right: 14%; width: 140px; height: 196px; animation-duration: 65s; animation-direction: reverse; }
+.cm-backdrop .sg-5 {
+    top: 46%; left: 48%; width: 320px; height: 448px;
+    opacity: 0.05;
+    animation: cm-sigil-spin-center 150s linear infinite;
+}
+.cm-backdrop .sg-6 { top: 60%; left: 4%;  width: 100px; height: 140px; animation-duration: 50s; animation-direction: reverse; }
+.cm-backdrop .sg-7 { top: 8%;  left: 50%; width: 110px; height: 154px; animation-duration: 70s; }
+
+@keyframes cm-sigil-spin-center {
+    from { transform: translate(-50%, -50%) rotate(0deg); }
+    to   { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+/* Respect reduced motion. Setting animation: none stops both keyframe
+ * variants; we manually restore the centred sigil's translate so it
+ * doesn't snap to the keyframe origin. */
+@media (prefers-reduced-motion: reduce) {
+    .cm-backdrop svg.sigil { animation: none !important; }
+    .cm-backdrop .sg-5    { transform: translate(-50%, -50%); }
+}
+
+/* ---- Layout shell ---- */
+
+.cm-home {
+    position: relative;
+    z-index: 1;
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 56px 32px 72px;
+}
+
+/* ---- Hero ---- */
+
+.cm-home-hero {
+    text-align: center;
+    margin-bottom: 56px;
+}
+
+.cm-home-eyebrow {
+    font-family: var(--font-sans);
+    font-size: 11px;
+    letter-spacing: 0.36em;
+    text-transform: uppercase;
+    color: var(--amber-300);
+    font-weight: 500;
+    margin: 0 0 18px;
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.cm-home-eyebrow::before,
+.cm-home-eyebrow::after {
+    content: "";
+    display: inline-block;
+    width: 36px;
+    height: 1px;
+    background: var(--amber-500);
+    opacity: 0.6;
 }
 
 .cm-home-title {
     font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 2.4rem;
-    color: var(--text-primary);
+    font-weight: 400;
+    font-size: 76px;
+    line-height: 1.0;
+    color: #fff;
+    margin: 0 0 18px;
     letter-spacing: 0.005em;
-    line-height: 1.1;
 }
 
 .cm-home-tagline {
     font-family: var(--font-display);
     font-style: italic;
     font-weight: 500;
-    font-size: 1.1rem;
-    color: var(--accent-sigil);
-    letter-spacing: 0.04em;
+    font-size: 18px;
+    color: var(--amber-300);
+    margin: 0 0 8px;
 }
 
 .cm-home-subtitle {
-    font-size: 1rem;
-    color: var(--text-secondary);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    color: #B6B3CD;
+    max-width: 520px;
+    margin: 0 auto;
+    line-height: 1.55;
 }
 
-/* Quick-status strip */
+/* ---- Status strip ---- */
 
-.cm-home-status .card-body {
-    /* Tighter padding so the strip reads as info banner, not card. */
-    padding-top: 0.55rem;
-    padding-bottom: 0.55rem;
+.cm-home-status {
+    background: rgba(20, 20, 46, 0.7);
+    border: 1px solid var(--indigo-700);
+    border-radius: 8px;
+    padding: 14px 24px;
+    margin-bottom: 40px;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
 }
 
 .cm-home-status-cell {
-    color: var(--text-secondary);
-    padding: 0.15rem 0.5rem;
-}
-
-.cm-home-status-cell strong {
-    color: var(--text-primary);
-    margin-left: 0.35rem;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 12px;
+    justify-content: center;
 }
 
 .cm-home-status-icon {
-    color: var(--accent-blue);
-    margin-right: 0.4rem;
-    font-size: 1.05em;
+    color: var(--indigo-300);
+    font-size: 13px;
 }
 
 .cm-home-status-label {
-    color: var(--text-muted);
+    color: #807DA0;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    font-size: 0.78rem;
+    letter-spacing: 0.12em;
+    font-size: 10px;
     font-weight: 500;
 }
 
-/* Action tiles */
+.cm-home-status-cell strong {
+    color: #ECEAF6;
+    font-weight: 600;
+    font-family: var(--font-mono);
+    font-size: 12px;
+}
+
+/* Status modifiers driven by home.js — toggle .ok/.warn/.bad/.muted
+ * on the <strong> when the operator's state changes. */
+.cm-home-status-cell strong.ok    { color: #7BD9A6; }
+.cm-home-status-cell strong.warn  { color: var(--amber-300); }
+.cm-home-status-cell strong.bad   { color: var(--accent-red, #E05050); }
+.cm-home-status-cell strong.muted { color: #807DA0; font-weight: 400; }
+
+/* ---- Action tiles ---- */
 
 .cm-home-actions {
-    /* Slightly more breathing room than the default Bootstrap row gap. */
-    margin-top: 0.25rem;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+    margin-bottom: 32px;
 }
 
 .cm-home-tile {
-    width: 100%;
-    height: 100%;
-    min-height: 220px;
+    /* `all: unset` zeros the inherited Bootstrap button + browser
+     * default look so the tile reads as a card. We re-add only
+     * cursor, focus, and typography below. */
+    all: unset;
+    cursor: pointer;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
-    text-align: left;
-    padding: 1.5rem 1.5rem 1.25rem;
-    background: var(--bg-card);
-    border: 1px solid var(--border-card);
-    border-radius: var(--radius-md, 6px);
-    color: var(--text-primary);
-    cursor: pointer;
-    transition: border-color 120ms ease,
-                box-shadow 120ms ease,
-                transform 120ms ease;
+    min-height: 280px;
+    padding: 28px 26px 24px;
+    background: linear-gradient(160deg, #181838 0%, #14142E 100%);
+    border: 1px solid var(--indigo-700);
+    border-radius: 12px;
+    color: #ECEAF6;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 220ms ease,
+                transform 220ms ease,
+                box-shadow 220ms ease;
+}
+
+.cm-home-tile::before {
+    /* Faint inset card silhouette in the corner. Rotates and brightens
+     * on hover. Encoded as a data URI so the tile owns its own art. */
+    content: "";
+    position: absolute;
+    right: -30px;
+    bottom: -30px;
+    width: 140px;
+    height: 196px;
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 96" fill="none" stroke="%23534AB7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><g transform="rotate(-8 32 48)"><rect x="4" y="4" width="56" height="88" rx="6"/><line x1="32" y1="20" x2="32" y2="80"/><line x1="22" y1="28" x2="42" y2="28"/><path d="M22 50 L32 42 L42 50"/><path d="M28 64 L32 60 L36 64 L32 68 Z" fill="%23534AB7"/><circle cx="32" cy="78" r="2" fill="%23534AB7"/></g></svg>');
+    background-repeat: no-repeat;
+    background-size: contain;
+    opacity: 0.08;
+    pointer-events: none;
+    transition: opacity 220ms ease, transform 220ms ease;
 }
 
 .cm-home-tile:hover {
-    border-color: var(--accent-blue);
-    box-shadow: 0 4px 18px rgba(91, 91, 200, 0.18);
-    /* Subtle lift; not so much that the layout shifts. */
-    transform: translateY(-2px);
+    border-color: var(--amber-500);
+    transform: translateY(-3px);
+    box-shadow:
+        0 12px 32px rgba(0, 0, 0, 0.4),
+        0 0 0 1px rgba(212, 165, 55, 0.18),
+        0 0 28px rgba(212, 165, 55, 0.10);
+}
+
+.cm-home-tile:hover::before {
+    opacity: 0.20;
+    transform: rotate(8deg) translate(-6px, -6px);
 }
 
 .cm-home-tile:focus-visible {
-    outline: 2px solid var(--accent-sigil);
+    outline: 2px solid var(--amber-500);
     outline-offset: 3px;
-    border-color: var(--accent-sigil);
+}
+
+.cm-home-tile-sigil-wrap {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: rgba(120, 120, 216, 0.10);
+    border: 1px solid var(--indigo-500);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 22px;
+    color: var(--amber-300);
+    transition: background 220ms ease, border-color 220ms ease;
+}
+
+.cm-home-tile:hover .cm-home-tile-sigil-wrap {
+    background: rgba(212, 165, 55, 0.12);
+    border-color: var(--amber-500);
 }
 
 .cm-home-tile-sigil {
-    width: 56px;
-    height: 56px;
-    margin-bottom: 0.85rem;
-    /* Sigils ship as monochrome SVG using the indigo brand. The home
-     * tiles deserve the amber pop — recolour with a CSS filter rather
-     * than maintaining duplicate SVG files. */
-    filter: brightness(0) saturate(100%) invert(73%) sepia(85%)
-            saturate(490%) hue-rotate(2deg) brightness(96%) contrast(95%);
-    opacity: 0.92;
+    width: 28px;
+    height: 28px;
+    display: block;
+}
+
+.cm-home-tile-num {
+    position: absolute;
+    top: 20px;
+    right: 24px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--amber-500);
+    letter-spacing: 0.18em;
+    opacity: 0.5;
 }
 
 .cm-home-tile-title {
     font-family: var(--font-display);
-    font-size: 1.45rem;
-    font-weight: 600;
-    color: var(--text-primary);
-    margin: 0 0 0.4rem 0;
+    font-weight: 400;
+    font-size: 30px;
+    line-height: 1.1;
+    color: #fff;
+    margin: 0 0 12px;
+    letter-spacing: 0.005em;
 }
 
 .cm-home-tile-body {
-    font-size: 0.92rem;
-    color: var(--text-secondary);
-    line-height: 1.45;
-    margin: 0 0 0.85rem 0;
+    font-size: 13px;
+    color: #B6B3CD;
+    line-height: 1.6;
+    margin: 0 0 16px;
     flex-grow: 1;
+    max-width: 92%;
 }
 
 .cm-home-tile-cta {
-    font-size: 0.88rem;
-    color: var(--accent-blue);
-    font-weight: 500;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--amber-300);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
     margin-top: auto;
 }
 
-.cm-home-tile:hover .cm-home-tile-cta {
-    color: var(--accent-sigil);
+.cm-home-tile-cta::after {
+    content: "\2192";   /* right arrow */
+    transition: transform 180ms ease;
 }
 
-/* Getting-started banner (fresh install) */
+.cm-home-tile:hover .cm-home-tile-cta::after {
+    transform: translateX(4px);
+}
+
+/* ---- Getting-started banner (fresh install) ---- */
 
 .cm-home-getting-started {
-    background: var(--bg-card);
-    border: 1px solid var(--accent-sigil);
+    margin-top: 28px;
+    background: linear-gradient(135deg,
+        rgba(212, 165, 55, 0.08) 0%,
+        rgba(31, 31, 74, 0.4) 100%);
+    border: 1px solid var(--amber-500);
+    border-radius: 10px;
+    padding: 18px 24px;
+    display: flex;
+    align-items: center;
+    gap: 18px;
 }
 
 .cm-home-getting-started-sigil {
-    filter: brightness(0) saturate(100%) invert(73%) sepia(85%)
-            saturate(490%) hue-rotate(2deg) brightness(96%) contrast(95%);
-    opacity: 0.95;
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    color: var(--amber-500);
 }
 
-@media (max-width: 768px) {
-    .cm-home-title { font-size: 1.9rem; }
-    .cm-home-tile { min-height: 180px; padding: 1.2rem; }
-    .cm-home-tile-sigil { width: 44px; height: 44px; }
-    .cm-home-status-cell { margin-bottom: 0.25rem; }
+.cm-home-getting-started-title {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 20px;
+    color: #fff;
+    margin: 0 0 2px;
+}
+
+.cm-home-getting-started-body {
+    font-size: 12px;
+    color: #B6B3CD;
+    margin: 0;
+    line-height: 1.5;
+}
+
+.cm-home-getting-started-btn {
+    margin-left: auto;
+    background: var(--amber-500);
+    color: var(--indigo-900);
+    border: none;
+    padding: 10px 18px;
+    border-radius: 6px;
+    font-family: var(--font-sans);
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    transition: filter 180ms ease;
+    flex-shrink: 0;
+}
+
+.cm-home-getting-started-btn:hover {
+    filter: brightness(1.08);
+}
+
+/* ---- Footer flourish ---- */
+
+.cm-home-footer {
+    text-align: center;
+    margin-top: 48px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: #5A586F;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+}
+
+.cm-home-footer::before,
+.cm-home-footer::after {
+    content: "";
+    flex: 0 0 80px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--indigo-700), transparent);
+}
+
+/* ---- Responsive ---- */
+
+@media (max-width: 880px) {
+    .cm-home              { padding: 32px 16px 48px; }
+    .cm-home-title        { font-size: 56px; }
+    .cm-home-actions      { grid-template-columns: 1fr; }
+    .cm-home-status       { grid-template-columns: 1fr; gap: 6px; }
+    .cm-home-status-cell  { justify-content: flex-start; }
+    .cm-home-getting-started     { flex-wrap: wrap; }
+    .cm-home-getting-started-btn { margin-left: 0; width: 100%; }
 }
