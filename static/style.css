@@ -29,7 +29,12 @@
     --border-card: #2A2C46;
     --text-primary: #ECEAF6;
     --text-secondary: #B6B3CD;
-    --text-muted: #807DA0;
+    /* --text-muted lifted from #807DA0 (4.14:1 on bg-card, 3.65:1 on
+     * bg-card-header — both failed WCAG AA body text) to #9A97B8
+     * (5.06:1 on bg-card, 4.54:1 on bg-card-header — both clear AA).
+     * Still reads "muted" against the indigo wash; just no longer
+     * unreadable for low-contrast eyes. */
+    --text-muted: #9A97B8;
     --text-label: #C7C4DD;
     --accent-blue: var(--indigo-400);   /* mid-violet; primary action accent */
     --accent-green: var(--status-green);
@@ -1379,7 +1384,7 @@ body > nav.navbar { position: relative; z-index: 20; }
 }
 
 .cm-home-status-label {
-    color: #807DA0;
+    color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.12em;
     font-size: 10px;
@@ -1398,7 +1403,7 @@ body > nav.navbar { position: relative; z-index: 20; }
 .cm-home-status-cell strong.ok    { color: #7BD9A6; }
 .cm-home-status-cell strong.warn  { color: var(--amber-300); }
 .cm-home-status-cell strong.bad   { color: var(--accent-red, #E05050); }
-.cm-home-status-cell strong.muted { color: #807DA0; font-weight: 400; }
+.cm-home-status-cell strong.muted { color: var(--text-muted); font-weight: 400; }
 
 /* ---- Action tiles ---- */
 

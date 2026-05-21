@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+import unittest.mock as _mock
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,49 @@ import pytest
 _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
+
+
+# ---------------------------------------------------------------------------
+# Hardware-module mock (gcode_control)
+# ---------------------------------------------------------------------------
+#
+# Several test files need to import web_server (and its transitive
+# imports — web_worker, web_camera, etc.) without a connected machine.
+# The pattern across the suite has been a per-file `_install_hw_mocks()`
+# that swaps `sys.modules['gcode_control']` for a MagicMock with the
+# attributes web_server reads at import time.
+#
+# CRITICAL GOTCHA: this function MUST be called from inside `setUpClass`
+# (or a per-test setUp), NEVER at module top level. Calling it at module
+# top-level fires during pytest's collection phase, BEFORE other test
+# modules have imported gcode_control. Those later imports then bind to
+# the MagicMock instead of the real module — silently breaking unrelated
+# tests (we've hit this bug once already; see commit 9c8b539's notes).
+#
+# Centralizing the helper here gives us ONE place to add new mock attrs
+# when web_server starts reading something new, and lets per-file
+# _install_hw_mocks() functions stay thin pass-throughs.
+
+def install_gcode_control_mock() -> None:
+    """Replace sys.modules['gcode_control'] with a MagicMock if it's
+    not already mocked. **Call inside setUpClass or setUp — never at
+    module top level** (see GOTCHA in module docstring).
+
+    Idempotent: subsequent calls are no-ops once a mock is installed.
+    """
+    existing = sys.modules.get('gcode_control')
+    if isinstance(existing, _mock.MagicMock):
+        return
+    gcode_mock = _mock.MagicMock()
+    gcode_mock.is_connected = lambda: False
+    gcode_mock.ser = None
+    gcode_mock.SERIAL_PORT = 'COM3'
+    gcode_mock.X_SOURCE_BIN = 547.1
+    gcode_mock.X_STAGING_POSITION = 427.9
+    gcode_mock.CAMERA_X_OFFSET = 100.0
+    gcode_mock.get_bin_locations = lambda: {0: 547.1, 1: 100.0}
+    gcode_mock._last_serial_error = None
+    sys.modules['gcode_control'] = gcode_mock
 
 
 @pytest.fixture

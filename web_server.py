@@ -2077,8 +2077,9 @@ def _bulk_fetch_enrichment(enr_conn, oracle_ids):
                 f"WHERE vendor='ck' AND oracle_id IN ({placeholders})",
                 chunk,
             ).fetchall()
-        except Exception as e:
-            logger.warning(f"_bulk_fetch_enrichment batch failed: {e}")
+        except Exception:
+            logger.warning("_bulk_fetch_enrichment batch failed",
+                           exc_info=True)
             continue
 
         for oid in chunk:
@@ -4705,8 +4706,9 @@ def _load_default_bin_config():
                                              spacing=spacing)
                 logger.info(f"Loaded default bin config: {count} bins, "
                             f"start={start_x}mm, spacing={spacing}mm")
-        except Exception as e:
-            logger.warning(f"failed to load default bin config: {e}")
+        except Exception:
+            logger.warning("failed to load default bin config",
+                           exc_info=True)
 
 
 # =========================================================================
