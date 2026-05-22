@@ -504,6 +504,20 @@ def api_openapi_json():
     return jsonify(build_spec(app))
 
 
+@app.route('/tome')
+def tome_of_knowledge():
+    """The Tome of Knowledge — operator manual.
+
+    Currently a placeholder page with section anchors seeded so help
+    popovers throughout the operator UI can deep-link to specific
+    topics (`/tome#query-syntax` etc.). Each anchor renders a short
+    "coming soon" card. Sections will be filled in as the manual is
+    written.
+    """
+    from config import APP_NAME
+    return render_template('tome.html', app_name=APP_NAME)
+
+
 @app.route('/docs')
 def api_docs_page():
     """Swagger UI page rendered against /api/openapi.json."""

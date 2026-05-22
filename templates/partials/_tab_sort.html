@@ -1,3 +1,4 @@
+{% import "partials/_macros.html" as macros %}
             <!-- ============================================================ -->
             <!-- SORT TAB -->
             <!-- Folds the previous Sort Session, Bin Setup, and the relevant -->
@@ -225,14 +226,30 @@
                                                    onchange="onSortConfigBinCountChange()">
                                         </div>
                                         <div class="col-auto">
-                                            <label class="form-label" for="sc-fallback">Fallback bin</label>
+                                            <label class="form-label" for="sc-fallback">
+                                                Fallback bin
+                                                {{ macros.help_btn(
+                                                    "fallback-bin",
+                                                    "Fallback bin",
+                                                    "<p>The fallback bin catches every card that didn&rsquo;t match any other query. Without one, an unmatched card crashes the sort.</p><p>Pick a bin number you&rsquo;ve left unused — e.g. the last destination bin on your machine.</p>",
+                                                    tome_anchor="fallback-bin"
+                                                ) }}
+                                            </label>
                                             <input type="number" class="form-control form-control-sm"
                                                    id="sc-fallback" value="10" min="1"
                                                    style="width:75px;"
                                                    onchange="markSortConfigDirty()">
                                         </div>
                                         <div class="col-auto">
-                                            <label class="form-label" for="sc-bin-limit">Bin limit</label>
+                                            <label class="form-label" for="sc-bin-limit">
+                                                Bin limit
+                                                {{ macros.help_btn(
+                                                    "card-limit",
+                                                    "Per-bin card limit",
+                                                    "<p>Once a bin fills past this many cards, the machine pauses and asks for the bin to be emptied. Set it by the physical depth of your bin minus a small safety margin.</p><p>Leave empty for unlimited (only use if your bins are tall and you&rsquo;ll never run out of room mid-sort).</p>",
+                                                    tome_anchor="card-limit"
+                                                ) }}
+                                            </label>
                                             <input type="number" class="form-control form-control-sm"
                                                    id="sc-bin-limit" placeholder="unlimited" min="1"
                                                    style="width:110px;"
@@ -247,8 +264,24 @@
                                             <thead>
                                                 <tr>
                                                     <th style="width:3.5rem;">Bin</th>
-                                                    <th>Query</th>
-                                                    <th style="width:6.5rem;" class="text-center">Override</th>
+                                                    <th>
+                                                        Query
+                                                        {{ macros.help_btn(
+                                                            "query-syntax",
+                                                            "Bin queries",
+                                                            "<p>Each bin gets one query. Cards matching the query land in that bin.</p><p>Examples: <code>c:r</code> for red, <code>t:creature</code>, <code>usd&gt;=1</code>, <code>r:mythic</code>. The grammar mirrors Scryfall&rsquo;s.</p><p>Local-only tokens (<code>staple</code>, <code>salt</code>, <code>buylist:ck</code>) need an enrichment refresh first.</p>",
+                                                            tome_anchor="query-syntax"
+                                                        ) }}
+                                                    </th>
+                                                    <th style="width:6.5rem;" class="text-center">
+                                                        Override
+                                                        {{ macros.help_btn(
+                                                            "bin-overrides",
+                                                            "Override bins",
+                                                            "<p>Checking <strong>Override</strong> makes a bin evaluate <em>before</em> the rest.</p><p>Use it for high-priority routes — e.g. &ldquo;anything over $1&rdquo; — that should bypass the color or rarity sort underneath.</p>",
+                                                            tome_anchor="bin-overrides"
+                                                        ) }}
+                                                    </th>
                                                     <th style="width:3rem;"></th>
                                                 </tr>
                                             </thead>

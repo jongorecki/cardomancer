@@ -1,0 +1,50 @@
+{# =====================================================================
+   Cardomancer template macros — shared snippets used across partials.
+
+   Loaded at the top of any partial that needs them via:
+       {% import "partials/_macros.html" as macros %}
+   and invoked as:
+       {{ macros.help_btn("query-syntax", "Bin queries", "<p>...</p>") }}
+   ===================================================================== #}
+
+
+{# -----------------------------------------------------------------
+   help_btn — clickable `?` glyph with a Bootstrap popover.
+
+   Standard inline-help affordance throughout the operator UI. Click
+   the glyph to reveal a 1-2 paragraph explanation; click anywhere
+   else to dismiss. Works on touch (Bootstrap's `trigger="focus"`).
+
+   Arguments:
+     id            stable string for telemetry / Tome anchor matching
+     title         popover headline (plain text, will be HTML-escaped
+                   by Bootstrap)
+     body          popover body (HTML allowed — wrap in <p> for
+                   paragraphs; <code> for inline code)
+     tome_anchor   (optional) anchor id under the Tome of Knowledge
+                   page. When present, the popover appends a "Read
+                   more in the Tome →" link to /tome#<anchor>.
+
+   Visual:
+     Small amber ringed circle with a `?`. Sits inline at baseline
+     with surrounding label text. Has aria-label so screen readers
+     describe its purpose ("Help: <title>").
+   ----------------------------------------------------------------- #}
+{% macro help_btn(id, title, body, tome_anchor=None) %}
+{% set rendered_body = body %}
+{% if tome_anchor %}
+{% set rendered_body = rendered_body ~ '<a class="cm-help-tome-link" href="/tome#' ~ tome_anchor ~ '">Read more in the Tome &rarr;</a>' %}
+{% endif %}
+<button type="button"
+        class="cm-help-btn"
+        data-cm-help-id="{{ id }}"
+        data-bs-toggle="popover"
+        data-bs-trigger="focus"
+        data-bs-html="true"
+        data-bs-placement="auto"
+        data-bs-custom-class="cm-help-popover"
+        data-bs-title="{{ title }}"
+        data-bs-content="{{ rendered_body }}"
+        aria-label="Help: {{ title }}"
+        tabindex="0">?</button>
+{%- endmacro %}
