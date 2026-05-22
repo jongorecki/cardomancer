@@ -356,7 +356,15 @@ class DatabaseUpdater:
         self.emit_progress('hash_v1', total, total, 'v1 hash database complete')
 
     def _step_generate_v2_hashes(self):
-        """Step 5: Generate v2 hash database."""
+        """Step 5: Generate v2 hash database.
+
+        Delegates to create_card_hashes_v2.create_v2_hash_database()
+        so the layout-map work (per-card art region for sagas /
+        classes / cases / battles) happens in one place. The prior
+        inline implementation built a 3-tuple per file and crashed
+        when process_image was extended to take a 4th `layout`
+        argument — see commit message for the bug fix detail.
+        """
         images_dir = os.path.join(SCRIPT_DIR, 'downloaded_cards')
         if not os.path.isdir(images_dir):
             self.emit_progress('hash_v2', 0, 0, 'No images directory found')
@@ -367,29 +375,28 @@ class DatabaseUpdater:
         self.emit_progress('hash_v2', 0, total,
                           f'Generating v2 hashes for {total} images...')
 
-        # Use the existing v2 hash creation main()
-        from create_card_hashes_v2 import process_image, ART_REGION, HASH_SIZE
-        from concurrent.futures import ProcessPoolExecutor
+        from create_card_hashes_v2 import create_v2_hash_database
 
-        args_list = [(f, images_dir, HASH_SIZE) for f in files]
-        hash_db = {}
-        done = 0
+        # Bridge create_v2_hash_database's progress_callback to the
+        # web socket emit_progress signature. The callback fires every
+        # 5000 cards inside the worker, same cadence as before.
+        def _on_progress(idx, total_, msg):
+            self.emit_progress('hash_v2', idx, total_,
+                               f'v2 hashing: {idx}/{total_}')
 
-        with ProcessPoolExecutor() as executor:
-            for result in executor.map(process_image, args_list):
-                card_id, card_hashes, error_msg = result
-                if card_id and card_hashes:
-                    hash_db[card_id] = card_hashes
-                done += 1
-                if done % 5000 == 0:
-                    self.emit_progress('hash_v2', done, total,
-                                      f'v2 hashing: {done}/{total}')
-
-        with open(HASH_DB_V2_PATH, 'w', encoding='utf-8') as f:
-            json.dump(hash_db, f, ensure_ascii=False)
+        count = create_v2_hash_database(
+            images_dir=images_dir,
+            output_json=HASH_DB_V2_PATH,
+            # cards_json gives per-card layout hints. Without it every
+            # card uses the normal art region, which is wrong for
+            # sagas / classes / cases / battles. CARDS_JSON_PATH points
+            # at the most recent Scryfall bulk on disk.
+            cards_json=CARDS_JSON_PATH,
+            progress_callback=_on_progress,
+        )
 
         self.emit_progress('hash_v2', total, total,
-                          f'v2 hash database complete ({len(hash_db)} entries)')
+                          f'v2 hash database complete ({count} entries)')
 
     def _step_update_config(self):
         """Step 6: Update config.py to point to new bulk data file."""

@@ -139,75 +139,89 @@ def process_image(args):
         return None, None, f"Failed to process {filename}: {e}"
 
 
-def main():
-    images_dir = "downloaded_cards"
-    output_json = "card_hashes_v2.json"
-    cards_json = "default-cards-20260315090814.json"
-    hash_size = HASH_SIZE
+def _build_layout_map(cards_json):
+    """Build {card_id: layout_string} from the Scryfall bulk data.
 
+    Used to attach a per-card art-region hint to each process_image()
+    call. Two passes:
+      1. Scryfall-native layouts (saga / class / case) tagged by `layout`.
+      2. Battles tagged by type_line containing "Battle" — battles
+         ship under layout=transform on Scryfall, so the layout key
+         alone misses them.
+    """
+    layout_map = {}
+    if not os.path.exists(cards_json):
+        return layout_map
+    with open(cards_json, 'r', encoding='utf-8') as f:
+        cards_data = json.load(f)
+    for card in cards_data:
+        cid = card.get('id', '')
+        if not cid:
+            continue
+        layout = card.get('layout', 'normal')
+
+        # Pass 1: native Scryfall layout tags (saga/class/case)
+        if layout in LAYOUT_ART_REGIONS and layout != "battle":
+            layout_map[cid] = layout
+            continue
+
+        # Pass 2: battle detection by type_line. Check top-level
+        # type_line first; for multi-face cards (transform-layout
+        # battles), Scryfall puts the type on card_faces[0].type_line.
+        type_line = (card.get('type_line') or "").lower()
+        if not type_line:
+            faces = card.get('card_faces') or []
+            if faces:
+                type_line = (faces[0].get('type_line') or "").lower()
+        if "battle" in type_line:
+            layout_map[cid] = "battle"
+    return layout_map
+
+
+def create_v2_hash_database(images_dir, output_json, cards_json=None,
+                             hash_size=None, max_workers=None,
+                             progress_callback=None):
+    """Generate the v2 hash DB at `output_json` from images in
+    `images_dir`. Uses the layout-aware art regions when `cards_json`
+    points at a Scryfall bulk file.
+
+    Args:
+        images_dir:        directory of .png card images
+        output_json:       path to write the resulting hash DB JSON
+        cards_json:        optional Scryfall bulk JSON path (gives
+                           per-card layout hints for sagas / classes /
+                           cases / battles). When None, every card
+                           uses the normal art region.
+        hash_size:         override HASH_SIZE (default: module constant)
+        max_workers:       passed to ProcessPoolExecutor
+        progress_callback: optional fn(idx, total, message) called
+                           every 5000 cards. Used by the web_database
+                           updater to emit SocketIO progress events.
+
+    Returns the number of cards successfully hashed.
+    """
+    if hash_size is None:
+        hash_size = HASH_SIZE
     if not os.path.isdir(images_dir):
-        print(f"ERROR: Directory '{images_dir}' not found.")
-        print("Run the card download script first.")
-        return
+        raise FileNotFoundError(f"images_dir not found: {images_dir}")
 
-    # Load Scryfall card data for layout info
-    #
-    # Two passes:
-    #   1. Scryfall-native layouts (saga / class / case) — tag by `layout`.
-    #   2. Battles — tag by type_line containing "Battle" regardless of
-    #      Scryfall layout. Battles store their printable data under
-    #      layout=transform, and `download_cards._lift_face_variants` lifts
-    #      the face-level image up to the top level for the downloader. The
-    #      resulting on-disk filename uses the card's top-level id, which
-    #      matches `card['id']` here.
-    layout_map = {}  # card_id -> layout string ("saga"/"class"/"case"/"battle")
-    if os.path.exists(cards_json):
-        print(f"Loading card data from {cards_json} for layout info...")
-        with open(cards_json, 'r', encoding='utf-8') as f:
-            cards_data = json.load(f)
-        for card in cards_data:
-            cid = card.get('id', '')
-            if not cid:
-                continue
-            layout = card.get('layout', 'normal')
-
-            # Pass 1: native Scryfall layout tags (saga/class/case)
-            if layout in LAYOUT_ART_REGIONS and layout != "battle":
-                layout_map[cid] = layout
-                continue
-
-            # Pass 2: battle detection by type_line. Check top-level type_line
-            # first; for multi-face cards (transform-layout battles), Scryfall
-            # puts the type on card_faces[0].type_line.
-            type_line = (card.get('type_line') or "").lower()
-            if not type_line:
-                faces = card.get('card_faces') or []
-                if faces:
-                    type_line = (faces[0].get('type_line') or "").lower()
-            if "battle" in type_line:
-                layout_map[cid] = "battle"
-
+    layout_map = _build_layout_map(cards_json) if cards_json else {}
+    if layout_map:
         counts = {k: sum(1 for v in layout_map.values() if v == k)
                   for k in ("saga", "class", "case", "battle")}
-        print(f"  {len(layout_map)} cards with non-standard layouts "
-              f"(saga: {counts['saga']}, class: {counts['class']}, "
+        print(f"[v2-hash] {len(layout_map)} cards with non-standard "
+              f"layouts (saga: {counts['saga']}, class: {counts['class']}, "
               f"case: {counts['case']}, battle: {counts['battle']})")
-        del cards_data  # Free memory
-    else:
-        print(f"WARNING: {cards_json} not found — all cards will use normal art region")
+    elif cards_json:
+        print(f"[v2-hash] cards JSON {cards_json!r} missing — all "
+              f"cards will use the normal art region")
 
     files = [f for f in os.listdir(images_dir) if f.lower().endswith('.png')]
     total = len(files)
-    print(f"Found {total} PNG files in {images_dir}")
-    print(f"Art regions: normal={ART_REGION}, saga={ART_REGION_SAGA}, class={ART_REGION_CLASS}")
-    print(f"Hash size: {hash_size} ({hash_size**2} bits per hash)")
-    print(f"Hash types: phash + dhash + whash (9 hashes per card)")
-    print(f"CLAHE: clip={CLAHE_CLIP_LIMIT}, grid={CLAHE_GRID_SIZE}")
-    print()
+    print(f"[v2-hash] {total} PNG files in {images_dir}")
 
     def _layout_for(filename):
         stem = os.path.splitext(filename)[0]
-        # Back-face files look up layout under the canonical (real) card id.
         if stem.endswith(BACK_FACE_SUFFIX):
             stem = stem[:-len(BACK_FACE_SUFFIX)]
         return layout_map.get(stem, "normal")
@@ -217,12 +231,13 @@ def main():
     errors = 0
     start_time = time.time()
 
-    with ProcessPoolExecutor() as executor:
-        for idx, result in enumerate(executor.map(process_image, args_list), start=1):
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        for idx, result in enumerate(
+                executor.map(process_image, args_list), start=1):
             card_id, card_hashes, error_msg = result
             if error_msg:
                 errors += 1
-                if errors <= 20:  # Don't spam console
+                if errors <= 20:
                     print(f"  ERROR: {error_msg}")
             else:
                 hash_db[card_id] = card_hashes
@@ -231,20 +246,38 @@ def main():
                 elapsed = time.time() - start_time
                 rate = idx / elapsed
                 eta = (total - idx) / rate if rate > 0 else 0
-                print(f"[{idx}/{total}] {idx/total*100:.1f}% "
-                      f"({rate:.0f} cards/sec, ETA {eta:.0f}s)")
+                msg = (f"[{idx}/{total}] {idx/total*100:.1f}% "
+                       f"({rate:.0f} cards/sec, ETA {eta:.0f}s)")
+                print(msg)
+                if progress_callback is not None:
+                    try:
+                        progress_callback(idx, total, msg)
+                    except Exception:
+                        pass  # don't let a logging callback kill the build
 
     elapsed = time.time() - start_time
-    print(f"\nDone in {elapsed:.1f}s ({total/elapsed:.0f} cards/sec)")
-    print(f"  Processed: {len(hash_db)}")
-    print(f"  Errors: {errors}")
+    print(f"[v2-hash] Done in {elapsed:.1f}s "
+          f"({total/elapsed:.0f} cards/sec). "
+          f"Processed: {len(hash_db)}, errors: {errors}")
 
-    print(f"Saving to {output_json}...")
     with open(output_json, 'w', encoding='utf-8') as f:
         json.dump(hash_db, f, ensure_ascii=False)
-
     size_mb = os.path.getsize(output_json) / (1024 * 1024)
-    print(f"Saved {output_json} ({size_mb:.1f} MB, {len(hash_db)} entries)")
+    print(f"[v2-hash] Saved {output_json} ({size_mb:.1f} MB, "
+          f"{len(hash_db)} entries)")
+    return len(hash_db)
+
+
+def main():
+    """CLI entry point — keeps the hardcoded paths for standalone
+    invocation. The web app calls create_v2_hash_database() directly
+    with kiosk-specific paths."""
+    create_v2_hash_database(
+        images_dir="downloaded_cards",
+        output_json="card_hashes_v2.json",
+        cards_json="default-cards-20260315090814.json",
+        hash_size=HASH_SIZE,
+    )
 
 
 if __name__ == "__main__":
