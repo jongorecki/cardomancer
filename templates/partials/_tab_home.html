@@ -255,9 +255,17 @@
                     </p>
 
                     <!-- Footer flourish. app_version is the git short SHA
-                         when running from a checkout, "dev" otherwise. -->
+                         when running from a checkout, "dev" otherwise.
+                         The "Tome of Knowledge" link is the operator
+                         manual; opens in a new tab so the kiosk page
+                         doesn't lose state. -->
                     <div class="cm-home-footer">
-                        v{{ app_version }} &middot; scan, divine, route
+                        <span>v{{ app_version }}</span>
+                        <span>scan, divine, route</span>
+                        <a href="/tome" target="_blank" rel="noopener"
+                           class="cm-home-footer-link">
+                            The Tome of Knowledge
+                        </a>
                     </div>
 
                 </main>

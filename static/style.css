@@ -2020,3 +2020,123 @@ body > nav.navbar { position: relative; z-index: 20; }
     color: var(--amber-500);
     text-decoration-color: var(--amber-500);
 }
+
+/* =========================================================================
+ * Help button + popover (cm-help-btn / cm-help-popover)
+ *
+ * Standard inline-help affordance: a small amber `?` glyph that opens
+ * a Bootstrap popover with a 1-2 paragraph explanation. Click anywhere
+ * outside the popover (or focus the trigger button) to dismiss.
+ *
+ * Used via the Jinja help_btn macro in templates/partials/_macros.html.
+ * Initialized by static/modules/help.js.
+ * ========================================================================= */
+
+.cm-help-btn {
+    /* Compact circular glyph that sits at baseline with surrounding
+     * label text. Doesn't disrupt line height; amber so it reads as
+     * an opt-in affordance, not a primary control. */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    margin-left: 6px;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid var(--amber-500);
+    background: transparent;
+    color: var(--amber-300);
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+    vertical-align: baseline;
+    transition: background 160ms ease, color 160ms ease;
+}
+
+.cm-help-btn:hover,
+.cm-help-btn:focus-visible {
+    background: rgba(212, 165, 55, 0.15);
+    color: var(--amber-500);
+    outline: none;
+}
+
+/* Bootstrap puts data-bs-custom-class="cm-help-popover" on the .popover
+ * root when we set it via the macro. These rules override Bootstrap's
+ * default light styling to fit the dark operator UI. */
+.popover.cm-help-popover {
+    --bs-popover-bg:        #1C1F33;
+    --bs-popover-border-color: var(--indigo-500);
+    --bs-popover-header-bg: rgba(212, 165, 55, 0.08);
+    --bs-popover-header-color: #fff;
+    --bs-popover-body-color: #ECEAF6;
+    --bs-popover-max-width: 320px;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+}
+
+.popover.cm-help-popover .popover-header {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 16px;
+    letter-spacing: 0.005em;
+    border-bottom: 1px solid var(--indigo-700);
+}
+
+.popover.cm-help-popover .popover-body {
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--text-secondary);
+}
+
+.popover.cm-help-popover .popover-body p:last-child {
+    margin-bottom: 0;
+}
+
+.popover.cm-help-popover .popover-body code {
+    background: rgba(120, 120, 216, 0.18);
+    border: 1px solid var(--indigo-500);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-size: 0.85em;
+    color: #fff;
+}
+
+.popover.cm-help-popover .popover-arrow::before,
+.popover.cm-help-popover .popover-arrow::after {
+    border-color: var(--indigo-500) transparent !important;
+}
+
+/* "Read more in the Tome →" link inside a popover. */
+.cm-help-tome-link {
+    display: inline-block;
+    margin-top: 8px;
+    color: var(--amber-300);
+    font-size: 12px;
+    font-weight: 500;
+    text-decoration: none;
+    border-bottom: 1px solid rgba(236, 201, 123, 0.4);
+    padding-bottom: 1px;
+    transition: color 140ms ease, border-color 140ms ease;
+}
+
+.cm-help-tome-link:hover {
+    color: var(--amber-500);
+    border-bottom-color: var(--amber-500);
+}
+
+.cm-home-footer-link {
+    color: var(--amber-300);
+    text-decoration: none;
+    border-bottom: 1px solid rgba(236, 201, 123, 0.3);
+    padding-bottom: 1px;
+    letter-spacing: 0.18em;
+    transition: color 140ms ease, border-color 140ms ease;
+}
+
+.cm-home-footer-link:hover {
+    color: var(--amber-500);
+    border-bottom-color: var(--amber-500);
+}

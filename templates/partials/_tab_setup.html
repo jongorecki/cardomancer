@@ -1,3 +1,4 @@
+{% import "partials/_macros.html" as macros %}
             <!-- ============================================================ -->
             <!-- SETUP TAB -->
             <!-- Folds the previous Calibration tab + Session Review tab +    -->
@@ -190,7 +191,15 @@
                 <div class="row mt-2">
                     <div class="col-md-6">
                         <div class="card">
-                            <div class="card-header">ArUco Auto-Calibration</div>
+                            <div class="card-header">
+                                ArUco Auto-Calibration
+                                {{ macros.help_btn(
+                                    "aruco-calibration",
+                                    "ArUco auto-calibration",
+                                    "<p>Place an ArUco marker in the bottom of each bin (IDs 0&ndash;9 for sources, 10&ndash;49 for destinations).</p><p>The machine sweeps the X axis with the camera, spots each marker, and records the bin's X position automatically.</p><p>Run this once per physical layout. The result persists as &ldquo;Last setup&rdquo;.</p>",
+                                    tome_anchor="aruco-calibration"
+                                ) }}
+                            </div>
                             <div class="card-body">
                                 <p class="small text-secondary mb-2">
                                     Place ArUco markers in the bottom of each bin. Source bins use IDs 0-9,
@@ -311,7 +320,15 @@
                 <div class="row mt-2">
                     <div class="col-md-12">
                         <div class="card" id="drop-tuner-card">
-                            <div class="card-header">Drop height tuning</div>
+                            <div class="card-header">
+                                Drop height tuning
+                                {{ macros.help_btn(
+                                    "drop-tuner",
+                                    "Drop-height tuner",
+                                    "<p>Dials in <code>Z_DROP_OFFSET</code> &mdash; the height above a bin from which cards are released.</p><p>Drop too high and the card flutters; drop too low and the vacuum head bumps the bin walls. The tuner walks you through one card at a time so you can pick the offset that lands cards cleanly.</p><p>Run once per physical bin layout; the value persists across sessions.</p>",
+                                    tome_anchor="drop-tuner"
+                                ) }}
+                            </div>
                             <div class="card-body">
                                 <p class="small text-muted mb-2">
                                     Tunes the Z height at which cards are released into destination bins.
@@ -359,7 +376,15 @@
                 <div class="row mt-3">
                     <div class="col-12">
                         <div class="card">
-                            <div class="card-header">Session Review</div>
+                            <div class="card-header">
+                                Session Review
+                                {{ macros.help_btn(
+                                    "detection-review",
+                                    "Detection review queues",
+                                    "<p>Scans that crossed the low-confidence threshold land here &mdash; one queue per detection variable (identity, foil, border, set symbol).</p><p>Mark each row <strong>Correct</strong>, <strong>Wrong</strong>, or <strong>Skip</strong>. Verdicts persist and feed future detector tuning.</p><p>Items the detector was least sure about (or didn't score at all) surface first.</p>",
+                                    tome_anchor="detection-review"
+                                ) }}
+                            </div>
                             <div class="card-body">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
                                     <ul class="nav nav-pills" id="detection-review-subnav" role="tablist">

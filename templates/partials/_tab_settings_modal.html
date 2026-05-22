@@ -1,3 +1,4 @@
+{% import "partials/_macros.html" as macros %}
             <!-- ============================================================ -->
             <!-- SETTINGS MODAL                                               -->
             <!-- Triggered by the gear icon in the navbar.                    -->
@@ -31,7 +32,15 @@
                     <!-- Data &amp; Sources (was Dashboard card)        -->
                     <!-- ============================================== -->
                     <div class="card mb-3">
-                        <div class="card-header">Data &amp; Sources</div>
+                        <div class="card-header">
+                            Data &amp; Sources
+                            {{ macros.help_btn(
+                                "enrichment-sources",
+                                "Enrichment sources",
+                                "<p>External data feeds layered on top of the local Scryfall card data. Each one refreshes on its own cadence and surfaces in queries via tokens.</p><p>Examples: <code>staple:universal</code>, <code>salt&gt;3</code>, <code>buylist:ck&gt;=1</code>, <code>edhrec_top:200</code>.</p><p>Click <em>Refresh status</em> to see when each source last ran.</p>",
+                                tome_anchor="enrichment-sources"
+                            ) }}
+                        </div>
                         <div class="card-body">
                             <p class="text-muted small mb-2">
                                 External enrichment sources &mdash; Scryfall Tagger,
@@ -63,7 +72,15 @@
                     <!-- one place.                                     -->
                     <!-- ============================================== -->
                     <div class="card mb-3">
-                        <div class="card-header">Card data (Scryfall)</div>
+                        <div class="card-header">
+                            Card data (Scryfall)
+                            {{ macros.help_btn(
+                                "card-data-update",
+                                "Card data update",
+                                "<p><strong>Refresh prices</strong> pulls the latest Scryfall bulk and re-prices the inventory in ~1 minute.</p><p><strong>Run full update</strong> additionally downloads new card images and rebuilds the pHash and DINOv2 embedding databases. Slow (~30+ min) &mdash; only needed when new sets release.</p>",
+                                tome_anchor="card-data-update"
+                            ) }}
+                        </div>
                         <div class="card-body">
                             <p class="small text-muted mb-2">
                                 The local Scryfall card database powers
@@ -147,6 +164,13 @@
                                href="/api/support/bundle"
                                download>
                                 Download support bundle
+                            </a>
+                            <a class="btn btn-outline-secondary ms-2"
+                               href="/tome"
+                               target="_blank"
+                               rel="noopener"
+                               title="The operator manual. Opens in a new tab.">
+                                Open the Tome of Knowledge
                             </a>
                         </div>
                     </div>
