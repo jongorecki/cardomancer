@@ -78,26 +78,58 @@ class _SafeRotatingFileHandler(logging.handlers.RotatingFileHandler):
     triggers another rotation attempt, which fails again. Infinite
     loop.
 
-    Subclassing rotate() so we catch the OS error, write a single
-    note to the *real* stderr (bypassing the tee via sys.__stderr__),
-    and return cleanly. Logging continues; the existing file keeps
-    growing past maxBytes until the next rotation attempt succeeds.
-    A bloated log file is a better failure mode than a stack-blown
-    process.
+    Two protections layered together:
+
+    1. `rotate()` swallows PermissionError / OSError so logging keeps
+       running. The existing file just grows past maxBytes; a bloated
+       log is a better failure mode than a stack-blown process.
+
+    2. `shouldRollover()` is debounced via `_rotation_cooldown_until`.
+       Once a rotation FAILS, we suppress further size-check attempts
+       for ROTATION_COOLDOWN_SECONDS. Without this, every subsequent
+       emit() on a file over maxBytes triggers a fresh doomed-rotation
+       attempt — and we hit that path tens of thousands of times
+       during a hash rebuild that prints per-card progress. The
+       cooldown collapses that into one warning per minute.
+
+    Each warning is written to the REAL sys.__stderr__ (the
+    launcher fd, never the tee) so a rotation failure can never
+    re-enter logging.
     """
+
+    ROTATION_COOLDOWN_SECONDS = 60.0
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._rotation_cooldown_until = 0.0
+
+    def shouldRollover(self, record):
+        # Honor the cooldown set by the last failed rotate(). During
+        # the cooldown window we refuse to try again — the file keeps
+        # growing but we stop spamming the launcher window.
+        if time.time() < self._rotation_cooldown_until:
+            return False
+        return super().shouldRollover(record)
 
     def rotate(self, source, dest):
         try:
             super().rotate(source, dest)
+            # Success — clear the cooldown so the NEXT rotation check
+            # fires on its own merits.
+            self._rotation_cooldown_until = 0.0
         except (PermissionError, OSError) as exc:
             # NEVER route this through logging or sys.stderr — both
             # would re-enter the handler. The real underlying stream
             # is what the operator sees in the launcher window.
+            self._rotation_cooldown_until = (
+                time.time() + self.ROTATION_COOLDOWN_SECONDS
+            )
             try:
                 sys.__stderr__.write(
                     f"[card_sorter] log rotation skipped "
                     f"({type(exc).__name__}: {exc}); "
-                    f"file will keep growing until next attempt.\n"
+                    f"file will keep growing. Next attempt in "
+                    f"{self.ROTATION_COOLDOWN_SECONDS:.0f}s.\n"
                 )
             except Exception:
                 pass
@@ -118,8 +150,15 @@ def _setup_logging():
         return
 
     log_path = os.path.join(logs_dir, 'card_sorter.log')
+    # 50 MB ceiling — the prior 5 MB was hit fast on long ops (a
+    # 60k-card hash rebuild dumps tens of MB of progress lines through
+    # the stdout tee). At 50 MB rotation rarely fires in practice and
+    # when it does the rotated file carries enough context to be
+    # useful in a support bundle. backupCount kept at 5 → 250 MB
+    # total ceiling for the rotated set.
     handler = _SafeRotatingFileHandler(
-        log_path, maxBytes=5 * 1024 * 1024, backupCount=5, encoding='utf-8')
+        log_path, maxBytes=50 * 1024 * 1024,
+        backupCount=5, encoding='utf-8')
     handler.setFormatter(logging.Formatter(
         '%(asctime)s [%(levelname)s] %(message)s'))
 

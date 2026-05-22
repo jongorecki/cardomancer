@@ -144,6 +144,90 @@ class SafeRotatingFileHandlerTests(unittest.TestCase):
         finally:
             h.close()
 
+    def test_failed_rotation_sets_cooldown(self):
+        """After a failed rotate(), the cooldown window kicks in so
+        subsequent shouldRollover() calls return False until the
+        cooldown expires. This collapses the 60,000-warnings-per-
+        hash-build spam into one warning per minute."""
+        src = os.path.join(self.tmpdir, 'locked4.log')
+        with open(src, 'w', encoding='utf-8') as f:
+            f.write('x' * 100)
+        h = web_server._SafeRotatingFileHandler(
+            src, maxBytes=1, backupCount=1, encoding='utf-8',
+        )
+        try:
+            self.assertEqual(h._rotation_cooldown_until, 0.0,
+                             "Cooldown should start at 0 (never failed)")
+            with mock.patch(
+                'logging.handlers.RotatingFileHandler.rotate',
+                side_effect=PermissionError(32, 'sim'),
+            ):
+                h.rotate(src, src + '.1')
+            self.assertGreater(
+                h._rotation_cooldown_until, 0.0,
+                "Cooldown should be set after a failed rotate()",
+            )
+            # The cooldown is roughly ROTATION_COOLDOWN_SECONDS in the
+            # future. Allow a small clock-skew margin.
+            import time as _t
+            self.assertGreaterEqual(
+                h._rotation_cooldown_until - _t.time(),
+                web_server._SafeRotatingFileHandler.ROTATION_COOLDOWN_SECONDS - 2,
+            )
+        finally:
+            h.close()
+
+    def test_cooldown_suppresses_shouldRollover(self):
+        """While the cooldown is active, shouldRollover() returns False
+        even when the file is over maxBytes — the whole point is to
+        stop hammering rotate() during the cooldown window."""
+        src = os.path.join(self.tmpdir, 'locked5.log')
+        h = web_server._SafeRotatingFileHandler(
+            src, maxBytes=1, backupCount=1, encoding='utf-8',
+            delay=True,
+        )
+        try:
+            # Force the cooldown to a moment in the future.
+            import time as _t
+            h._rotation_cooldown_until = _t.time() + 30.0
+            # Fake a log record big enough to exceed maxBytes if checked
+            record = logging.LogRecord(
+                name='x', level=logging.INFO, pathname='', lineno=0,
+                msg='a' * 5000, args=(), exc_info=None,
+            )
+            self.assertFalse(
+                h.shouldRollover(record),
+                "Cooldown must suppress shouldRollover() — that's the "
+                "whole point of the rate-limit",
+            )
+        finally:
+            h.close()
+
+    def test_successful_rotation_clears_cooldown(self):
+        """When a rotate() succeeds, the cooldown is cleared so future
+        size checks resume normal cadence."""
+        src = os.path.join(self.tmpdir, 'success.log')
+        dst = os.path.join(self.tmpdir, 'success.log.1')
+        with open(src, 'w', encoding='utf-8') as f:
+            f.write('x')
+        h = web_server._SafeRotatingFileHandler(
+            src, maxBytes=1, backupCount=1, encoding='utf-8',
+            delay=True,
+        )
+        try:
+            import time as _t
+            # Simulate a previously failed rotation: cooldown active.
+            h._rotation_cooldown_until = _t.time() + 60.0
+            # Now succeed.
+            h.rotate(src, dst)
+            self.assertEqual(
+                h._rotation_cooldown_until, 0.0,
+                "Successful rotation should clear the cooldown so the "
+                "next size check fires on its own merits",
+            )
+        finally:
+            h.close()
+
 
 class TeeRecursionGuardTests(unittest.TestCase):
     """The threading-local recursion guard inside `_StreamToLogger`.
