@@ -1582,16 +1582,25 @@ body > nav.navbar { position: relative; z-index: 20; }
     gap: 12px;
     align-items: baseline;
     padding: 10px 0;
+    /* Reset browser <button> defaults — without these the rows render
+     * as light-grey pill buttons on top of the dark panel. */
+    background: transparent;
+    border: 0;
     border-top: 1px solid var(--indigo-700);
+    border-radius: 0;
+    width: 100%;
+    text-align: left;
+    font: inherit;
     color: #ECEAF6;
     font-size: 13px;
     cursor: pointer;
-    transition: color 160ms ease;
+    transition: color 160ms ease, background 160ms ease;
 }
 
 .cm-home-recent-row:hover,
 .cm-home-recent-row:focus-visible {
     color: var(--amber-300);
+    background: rgba(212, 165, 55, 0.06);
     outline: none;
 }
 
@@ -1872,8 +1881,11 @@ body > nav.navbar { position: relative; z-index: 20; }
     background: rgba(10, 10, 28, 0.72);
     backdrop-filter: blur(2px);
     -webkit-backdrop-filter: blur(2px);
-    /* Block clicks to the underlying page so the operator can't
-     * accidentally fire a Start Session while reading the tour. */
+    /* clip-path is set dynamically by tour.js to punch a hole around
+     * the current step's target so the highlighted control stays
+     * sharp and unblurred. Transitioning clip-path is animatable in
+     * modern Chromium and degrades cleanly elsewhere. */
+    transition: clip-path 220ms ease;
 }
 
 .cm-tour-highlight {
@@ -1883,6 +1895,7 @@ body > nav.navbar { position: relative; z-index: 20; }
         0 0 0 4px rgba(212, 165, 55, 0.18),
         0 0 28px rgba(212, 165, 55, 0.25);
     pointer-events: none;
+    z-index: 1;
     transition: top 220ms ease, left 220ms ease,
                 width 220ms ease, height 220ms ease;
 }
@@ -1897,6 +1910,9 @@ body > nav.navbar { position: relative; z-index: 20; }
         0 16px 40px rgba(0, 0, 0, 0.45),
         0 0 0 1px rgba(212, 165, 55, 0.20);
     font-family: var(--font-sans);
+    /* Sit above the highlight ring; otherwise the ring's glow
+     * overlaps the tip text. */
+    z-index: 2;
     /* width set inline by JS so we can flip near viewport edges */
 }
 
@@ -1910,10 +1926,13 @@ body > nav.navbar { position: relative; z-index: 20; }
 }
 
 .cm-tour-tip-title {
-    font-family: var(--font-display);
-    font-weight: 400;
-    font-size: 22px;
-    line-height: 1.15;
+    /* Sans, not display serif — at 22px the Cormorant capital Y reads
+     * as an X to some operators ("Xou're ready"). Tour tip headings
+     * are functional labels, not brand headlines, so legibility wins. */
+    font-family: var(--font-sans);
+    font-weight: 600;
+    font-size: 20px;
+    line-height: 1.2;
     letter-spacing: 0.005em;
     color: #fff;
     margin: 0 0 10px;

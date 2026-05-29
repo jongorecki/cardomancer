@@ -554,7 +554,14 @@ def tome_of_knowledge():
     written.
     """
     from config import APP_NAME
-    return render_template('tome.html', app_name=APP_NAME)
+    from support_bundle import _git_head_sha
+    try:
+        version = _git_head_sha(SCRIPT_DIR) or 'dev'
+    except Exception:
+        version = 'dev'
+    return render_template(
+        'tome.html', app_name=APP_NAME, app_version=version,
+    )
 
 
 @app.route('/docs')

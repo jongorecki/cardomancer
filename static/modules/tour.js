@@ -160,6 +160,7 @@
                 _drawHighlight(target);
                 _positionTip(tip, target);
             } else {
+                _clearClipHole();
                 tip.style.position = 'fixed';
                 tip.style.left = '50%';
                 tip.style.top = '50%';
@@ -190,6 +191,43 @@
         ring.style.top    = (r.top    - PAD) + 'px';
         ring.style.width  = (r.width  + PAD * 2) + 'px';
         ring.style.height = (r.height + PAD * 2) + 'px';
+        // Punch a transparent hole through the dim+blur overlay so
+        // the highlighted control is sharp and readable. Without this
+        // the operator sees a blurred version of the thing the tour
+        // is asking them to look at, which defeats the point.
+        _setClipHole(r, PAD);
+    }
+
+    // Carve the target rect out of the overlay using a CSS clip-path
+    // polygon. The polygon traces the viewport (clockwise) and then
+    // the inner rect (counter-clockwise); under the nonzero fill rule
+    // the inner rect becomes a hole, so both the dim background AND
+    // the backdrop-filter blur stop applying inside it.
+    function _setClipHole(rect, pad) {
+        if (!_overlay) return;
+        const PAD = pad || 0;
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        const x1 = Math.max(0, Math.floor(rect.left   - PAD));
+        const y1 = Math.max(0, Math.floor(rect.top    - PAD));
+        const x2 = Math.min(w, Math.ceil (rect.right  + PAD));
+        const y2 = Math.min(h, Math.ceil (rect.bottom + PAD));
+        _overlay.style.clipPath =
+            'polygon(' +
+                '0 0, 100% 0, 100% 100%, 0 100%, 0 0, ' +
+                x1 + 'px ' + y1 + 'px, ' +
+                x1 + 'px ' + y2 + 'px, ' +
+                x2 + 'px ' + y2 + 'px, ' +
+                x2 + 'px ' + y1 + 'px, ' +
+                x1 + 'px ' + y1 + 'px' +
+            ')';
+        _overlay.style.webkitClipPath = _overlay.style.clipPath;
+    }
+
+    function _clearClipHole() {
+        if (!_overlay) return;
+        _overlay.style.clipPath = '';
+        _overlay.style.webkitClipPath = '';
     }
 
     function _positionTip(tip, target) {
