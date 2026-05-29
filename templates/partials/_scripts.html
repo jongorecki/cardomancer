@@ -3,33 +3,36 @@
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <!-- Phase 0 module split: foundations first, features after, bootstrap last -->
-    <script src="/static/modules/util.js"></script>
-    <script src="/static/modules/errors.js"></script>
-    <script src="/static/modules/components.js"></script>
-    <script src="/static/modules/api.js"></script>
-    <script src="/static/modules/theme.js"></script>
-    <script src="/static/modules/state.js"></script>
-    <script src="/static/modules/estop.js"></script>
-    <script src="/static/modules/camera.js"></script>
-    <script src="/static/modules/motion.js"></script>
-    <script src="/static/modules/bins.js"></script>
-    <script src="/static/modules/sortConfig.js"></script>
-    <script src="/static/modules/session.js"></script>
-    <script src="/static/modules/simulation.js"></script>
-    <script src="/static/modules/collection.js"></script>
-    <script src="/static/modules/boxes.js"></script>
-    <script src="/static/modules/cull.js"></script>
-    <script src="/static/modules/locator.js"></script>
-    <script src="/static/modules/wishlist.js"></script>
-    <script src="/static/modules/moxfield.js"></script>
-    <script src="/static/modules/sessionHistory.js"></script>
-    <script src="/static/modules/review.js"></script>
-    <script src="/static/modules/calibration.js"></script>
-    <script src="/static/modules/enrichment.js"></script>
-    <script src="/static/modules/sortStage.js"></script>
-    <script src="/static/modules/home.js"></script>
-    <script src="/static/modules/tour.js"></script>
-    <script src="/static/modules/help.js"></script>
-    <script src="/static/modules/socket.js"></script>
-    <script src="/static/app.js"></script>
-    <script src="/static/calibration_wizard.js"></script>
+    <!-- ?v={{ app_version }} cache-busts on every build so operators don't
+         need a hard-reload after a deploy. CDN URLs are versioned in-path
+         and don't need it. -->
+    <script src="/static/modules/util.js?v={{ app_version }}"></script>
+    <script src="/static/modules/errors.js?v={{ app_version }}"></script>
+    <script src="/static/modules/components.js?v={{ app_version }}"></script>
+    <script src="/static/modules/api.js?v={{ app_version }}"></script>
+    <script src="/static/modules/theme.js?v={{ app_version }}"></script>
+    <script src="/static/modules/state.js?v={{ app_version }}"></script>
+    <script src="/static/modules/estop.js?v={{ app_version }}"></script>
+    <script src="/static/modules/camera.js?v={{ app_version }}"></script>
+    <script src="/static/modules/motion.js?v={{ app_version }}"></script>
+    <script src="/static/modules/bins.js?v={{ app_version }}"></script>
+    <script src="/static/modules/sortConfig.js?v={{ app_version }}"></script>
+    <script src="/static/modules/session.js?v={{ app_version }}"></script>
+    <script src="/static/modules/simulation.js?v={{ app_version }}"></script>
+    <script src="/static/modules/collection.js?v={{ app_version }}"></script>
+    <script src="/static/modules/boxes.js?v={{ app_version }}"></script>
+    <script src="/static/modules/cull.js?v={{ app_version }}"></script>
+    <script src="/static/modules/locator.js?v={{ app_version }}"></script>
+    <script src="/static/modules/wishlist.js?v={{ app_version }}"></script>
+    <script src="/static/modules/moxfield.js?v={{ app_version }}"></script>
+    <script src="/static/modules/sessionHistory.js?v={{ app_version }}"></script>
+    <script src="/static/modules/review.js?v={{ app_version }}"></script>
+    <script src="/static/modules/calibration.js?v={{ app_version }}"></script>
+    <script src="/static/modules/enrichment.js?v={{ app_version }}"></script>
+    <script src="/static/modules/sortStage.js?v={{ app_version }}"></script>
+    <script src="/static/modules/home.js?v={{ app_version }}"></script>
+    <script src="/static/modules/tour.js?v={{ app_version }}"></script>
+    <script src="/static/modules/help.js?v={{ app_version }}"></script>
+    <script src="/static/modules/socket.js?v={{ app_version }}"></script>
+    <script src="/static/app.js?v={{ app_version }}"></script>
+    <script src="/static/calibration_wizard.js?v={{ app_version }}"></script>
