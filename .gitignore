@@ -76,20 +76,7 @@ tests/probe_snapshots/*_20*.json
 # Keep plan.csv in VCS so the fixture set is reproducible.
 tests/fixtures/frame_classifier/**/*.png
 
-# Agent worktrees (created by subagent tool, local-only)
-.claude/worktrees/
-
-# Scratch directory used by diag_* scripts and PNG caches
-tmp/
-
-# _foil_tune.py output dumps
-tune_run*.txt
-
-# OS
-Thumbs.db
-.DS_Store
-
-# IDE
-.vscode/
-.idea/
-*.swp
+# Claude Code tooling — purely local agent state, never part of the project.
+# Covers per-user settings, subagent defs, launch config, scheduled-task
+# locks, and worktrees. A developer not using Claude Code would never have
+# these. If you ever want 
