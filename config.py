@@ -13,7 +13,7 @@ APP_NAME = "Cardomancer"
 
 # --- Paths ---
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-CARDS_JSON_PATH = os.path.join(SCRIPT_DIR, "default-cards-20260424090836.json")
+CARDS_JSON_PATH = os.path.join(SCRIPT_DIR, "default-cards-20260521210656.json")
 HASH_DB_PATH = os.path.join(SCRIPT_DIR, "card_hashes.json")
 PRINTINGS_MAP_PATH = os.path.join(SCRIPT_DIR, "printings_map.json")
 BOUNDING_BOX_PATH = os.path.join(SCRIPT_DIR, "bounding_box.json")
