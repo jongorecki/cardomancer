@@ -9,6 +9,22 @@ imagehash
 pyserial
 flask-cors
 
+# Vision / ML — DINOv2 ViT-B/14 second-opinion identifier.
+# card_identify_v2.py and build_embedding_db.py load the model via
+#   torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14')
+# and use torchvision.transforms. Without these, the hybrid identifier's
+# DINOv2 fallback path fails to import.
+#
+# NOT minor-pinned on purpose: torch/torchvision wheels are platform- and
+# CUDA-specific, and this box already has a working GPU build. A hard pin
+# here could silently downgrade or break that install on `pip install -r`.
+# Floors below are the minimum versions that support DINOv2 via torch.hub;
+# install the build matching your CUDA/CPU from https://pytorch.org first,
+# then run this file. Keep torch and torchvision on a compatible pair
+# (e.g. torch 2.2.x ↔ torchvision 0.17.x).
+torch>=2.0
+torchvision>=0.15
+
 # Enrichment & integrations (added Phase 0A):
 httpx==0.27.*
 gql[requests]==3.5.*
