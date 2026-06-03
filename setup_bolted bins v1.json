@@ -35,5 +35,6 @@
   },
   "camera_x_offset": 100.0,
   "dest_bin_count": 7,
-  "source_bin_count": 1
+  "source_bin_count": 1,
+  "name": "bolted bins v1"
 }
