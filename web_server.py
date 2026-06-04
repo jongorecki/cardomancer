@@ -5257,13 +5257,64 @@ def _preload_heavy_modules():
     print()
 
 
+def _ensure_single_instance(port=5000):
+    """Refuse to start if another web_server is already on the port.
+
+    Prevents the "I edited a template and nothing changed" trap: an
+    old server process is still listening on :5000, the new launch
+    silently fails (or the OS reuses the bind in a confusing way),
+    and the browser keeps hitting the stale build.
+
+    Cheap check: try to bind a transient socket on the target port.
+    OSError (WSAEADDRINUSE on Windows, EADDRINUSE on POSIX) means
+    something is already there. We close immediately, so Werkzeug's
+    real bind a few seconds later is uncontested.
+    """
+    import socket as _socket
+    s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+    try:
+        s.bind(('0.0.0.0', port))
+    except OSError as e:
+        sys.stderr.write(
+            "\n" + ("=" * 60) + "\n"
+            "  Cardomancer web server NOT started.\n"
+            "  Port {p} is already in use - another instance is\n"
+            "  probably still running. If you keep seeing stale UI\n"
+            "  after editing templates/JS, this is almost certainly\n"
+            "  the cause.\n\n"
+            "  On Windows, find + stop the other instance:\n"
+            "      netstat -ano | findstr :{p}\n"
+            "      taskkill /PID <pid> /F\n\n"
+            "  (OSError: {e})\n"
+            .format(p=port, e=e)
+            + ("=" * 60) + "\n\n"
+        )
+        sys.exit(1)
+    finally:
+        s.close()
+
+
 def main():
+    # Single-instance guard FIRST — before any heavy preload — so the
+    # operator gets an immediate error instead of waiting 30s for
+    # DINOv2 to load before discovering the second process can't bind.
+    _ensure_single_instance(port=5000)
+
     print("=" * 60)
     print("  MTG Card Sorter — Web Server")
     print("=" * 60)
     print()
-    print("  Open http://localhost:5000 in your browser")
-    print("  Press Ctrl+C to stop the server")
+    # Surface the build SHA so the operator can confirm the browser is
+    # talking to this process (compare against the ?v= query in
+    # DevTools → Network). Defensive: never fail startup over this.
+    try:
+        from support_bundle import _git_head_sha
+        _sha = _git_head_sha(SCRIPT_DIR) or 'dev'
+    except Exception:
+        _sha = 'dev'
+    print(f"  Build:    {_sha}")
+    print(f"  Open http://localhost:5000 in your browser")
+    print(f"  Press Ctrl+C to stop the server")
     print()
 
     # Startup health check — warn about missing files / serial ports etc.
