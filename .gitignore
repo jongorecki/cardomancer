@@ -79,4 +79,21 @@ tests/fixtures/frame_classifier/**/*.png
 # Claude Code tooling — purely local agent state, never part of the project.
 # Covers per-user settings, subagent defs, launch config, scheduled-task
 # locks, and worktrees. A developer not using Claude Code would never have
-# these. If you ever want 
+# these. If you ever want to share agent/command defs, add an explicit
+# !.claude/<thing> exception below.
+.claude/
+
+# Scratch directory used by diag_* scripts and PNG caches
+tmp/
+
+# _foil_tune.py output dumps
+tune_run*.txt
+
+# OS
+Thumbs.db
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
