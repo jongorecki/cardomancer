@@ -4,6 +4,7 @@ title: 'Setup schema v2: replace staging with upcam block + migration'
 status: To Do
 assignee: []
 created_date: '2026-09-27 18:20'
+updated_date: '2026-09-27 20:09'
 labels:
   - redesign
   - config
@@ -27,3 +28,9 @@ ordinal: 28000
 - [ ] #1 v1 files still load (staging ignored)
 - [ ] #2 Schema versioned and tested
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Reversibility: keep the staging block alongside upcam (don't drop it on migration).
+<!-- SECTION:NOTES:END -->

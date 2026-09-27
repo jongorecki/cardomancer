@@ -4,6 +4,7 @@ title: 'New sort cycle: pick -> image while held -> place (no staging)'
 status: To Do
 assignee: []
 created_date: '2026-09-27 18:22'
+updated_date: '2026-09-27 20:09'
 labels:
   - redesign
   - worker
@@ -33,4 +34,5 @@ Rewrite _cmd_detect_and_sort; port _cmd_test_scan and hardware-setup onto the sa
 - [ ] #2 End-to-end 100-card sort
 - [ ] #3 Unit tests with mocked camera + serial
 - [ ] #4 Cycle time measured vs M2 baseline
+- [ ] #5 Selected by sort_cycle=upcam (default staging); the staging cycle is left intact and still passes its tests; switching back needs no code change (docs/design/up_camera.md#reversibility)
 <!-- AC:END -->

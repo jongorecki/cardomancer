@@ -4,6 +4,7 @@ title: Delete legacy staging artifacts and update plans
 status: To Do
 assignee: []
 created_date: '2026-09-27 18:22'
+updated_date: '2026-09-27 20:09'
 labels:
   - redesign
   - cleanup
@@ -31,3 +32,9 @@ calibrate_staging.py, calibrate_camera_height.py, generate_staging_mat.py, card_
 - [ ] #1 No staging code/config remains
 - [ ] #2 sort_flow_stages, z_bounce_retry, autonomy_ladder, cycle-time docs updated
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Gated on owner sign-off that the up-camera cycle is proven (docs/design/up_camera.md#reversibility).
+<!-- SECTION:NOTES:END -->

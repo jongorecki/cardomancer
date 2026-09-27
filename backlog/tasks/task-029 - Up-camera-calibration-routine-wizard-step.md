@@ -4,6 +4,7 @@ title: Up-camera calibration routine + wizard step
 status: To Do
 assignee: []
 created_date: '2026-09-27 18:20'
+updated_date: '2026-09-27 20:09'
 labels:
   - redesign
   - calibration
@@ -31,3 +32,9 @@ Pick a printed ChArUco card, servo X until centred, compute px/mm, rotation, mir
 - [ ] #2 Self-test rejects a mirrored configuration
 - [ ] #3 Wizard step replaces the staging ROI step
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Owner: calibration must also detect/record the up-camera's physical position (X, and image-to-head offset).
+<!-- SECTION:NOTES:END -->

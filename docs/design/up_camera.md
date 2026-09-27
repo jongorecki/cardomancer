@@ -25,3 +25,14 @@ Cards are loaded face-down. The head picks the top card, moves it over a new upw
 - Foil work (TASK-101) is scoped to the two-position approach first.
 - Double-pick detection (TASK-098) must not rely on a vacuum sensor or firmware changes. The first candidate is comparing the stack-top Z between consecutive source probes.
 - Speed work comes from fewer sleeps, no staging, and computing while the machine moves. It never comes from overlapping axes.
+
+## Reversibility (owner requirement, 2026-09-27)
+
+The staging-platform cycle must stay fully working until the up-camera cycle has proven itself on real cards. Switching back must be a settings change plus swapping the hardware mount back, with no code changes.
+
+- **One switch.** The `sort_cycle` setting (`staging` | `upcam`, default `staging`) picks the per-card cycle. The new cycle lives in its own function or module next to the existing one. The staging path is not edited, except for bug fixes that apply to both.
+- **Camera role.** `id_role` in `camera_config.json` (`down` | `up`) picks the identification camera. `sort_cycle: upcam` requires `id_role: up`, and the session preflight enforces this.
+- **Keep the staging data.** Setup schema v2 keeps the `staging` block alongside the new `upcam` block. Staging calibration files are not deleted.
+- **Shared code is additive.** Motion primitives, the detector and tests for the new cycle are new code. Existing primitives are not changed to suit the new cycle.
+- **Deletion comes last.** TASK-103 (delete the staging artifacts) only happens after the owner signs off on the up-camera cycle.
+- **Git as a backstop.** Each step goes on its own branch or PR, so any step can be reverted on its own.
