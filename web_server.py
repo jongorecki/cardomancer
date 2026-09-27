@@ -750,9 +750,10 @@ def api_camera_settings(role):
     try:
         saved = web_camera.save_camera_settings(role, request.get_json() or {})
     except KeyError as e:
-        return jsonify({'error': str(e)}), 404
+        return jsonify({'error': 'unknown_camera', 'message': str(e)}), 404
     except (ValueError, TypeError) as e:
-        return jsonify({'error': str(e)}), 400
+        return jsonify({'error': 'invalid_camera_settings',
+                        'message': str(e)}), 400
     return jsonify({'role': role, 'settings': saved,
                     'status': web_camera.cameras[role].get_status()})
 

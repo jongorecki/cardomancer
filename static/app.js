@@ -102,15 +102,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }).catch(() => {});
 
-    // Camera status poll
-    setInterval(async () => {
-        try {
-            const data = await apiGet('/api/camera/status');
-            document.getElementById('cam-status').textContent = data.active ? 'Active' : 'Inactive';
-            document.getElementById('cam-fps').textContent = data.fps || '--';
-        } catch (e) {}
-    }, 5000);
-
     updateStateBadge();
 
     // Phase 0A: enrichment sources panel + collection sub-nav

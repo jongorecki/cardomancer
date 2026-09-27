@@ -957,6 +957,12 @@ class CameraManager:
             "active": self.is_active,
             "device_index": self.device_index,
             "device_name": self.device_name,
+            "rotate_degrees": {None: 0, cv2.ROTATE_90_CLOCKWISE: 90,
+                               cv2.ROTATE_180: 180,
+                               cv2.ROTATE_90_COUNTERCLOCKWISE: 270
+                               }.get(self.rotate, 0),
+            "flip_name": {None: 'none', 1: 'h', 0: 'v', -1: 'hv'
+                          }.get(self.flip, 'none'),
             "resolution": [self.target_width, self.target_height],
             "target_fps": self.target_fps,
             "controls": dict(self.controls),

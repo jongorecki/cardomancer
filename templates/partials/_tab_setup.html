@@ -93,23 +93,13 @@
                             </div>
                         </div>
                     </div>
-                    <div class="col-md-6">
-                        <div class="card">
-                            <div class="card-header">Camera</div>
-                            <div class="card-body">
-                                <p class="small mb-2">
-                                    Status: <span id="cam-status">Inactive</span>
-                                    &middot; FPS: <span id="cam-fps">--</span>
-                                </p>
-                                <div class="btn-group">
-                                    <button class="btn btn-success btn-sm" onclick="apiPost('/api/camera/start')">Start camera</button>
-                                    <button class="btn btn-secondary btn-sm" onclick="apiPost('/api/camera/stop')">Stop camera</button>
-                                </div>
-                                <div class="mt-2">
-                                    <img id="dashboard-preview" src="" class="img-fluid" style="max-height:200px; display:none;">
-                                </div>
-                            </div>
-                        </div>
+                </div>
+
+                <!-- Cameras: one card per role (cameraSettings.js) -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <h2 class="h6 mb-2">Cameras</h2>
+                        <div class="row g-2" id="camera-settings-panel">Loading cameras…</div>
                     </div>
                 </div>
 
