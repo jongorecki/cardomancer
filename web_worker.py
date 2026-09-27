@@ -1548,7 +1548,8 @@ class SortWorker:
             gcode_control.quick_drop(self._get_fallback_x())
             if self.continuous_sorting and self.state == 'sorting':
                 time.sleep(self.continuous_delay)
-                from web_camera import camera as cam
+                from web_camera import id_camera
+                cam = id_camera()
                 self.enqueue('detect_and_sort', camera=cam)
             return
 
@@ -1581,7 +1582,8 @@ class SortWorker:
             if self.continuous_sorting and self.state == 'sorting':
                 self.log("Retrying from source...")
                 time.sleep(self.continuous_delay)
-                from web_camera import camera as cam
+                from web_camera import id_camera
+                cam = id_camera()
                 self.enqueue('detect_and_sort', camera=cam)
             return
 
@@ -1841,7 +1843,8 @@ class SortWorker:
             self.emit('motion_update', motion_tracker.get_state())
             if self.continuous_sorting and self.state == 'sorting':
                 time.sleep(self.continuous_delay)
-                from web_camera import camera as cam
+                from web_camera import id_camera
+                cam = id_camera()
                 self.enqueue('detect_and_sort', camera=cam)
             return
 
@@ -2079,7 +2082,8 @@ class SortWorker:
         # --- Continuous sort: queue next card ---
         if self.continuous_sorting and self.state == 'sorting':
             time.sleep(self.continuous_delay)
-            from web_camera import camera as cam
+            from web_camera import id_camera
+            cam = id_camera()
             self.enqueue('detect_and_sort', camera=cam)
 
     # --- Continuous Sort Commands ---
@@ -2199,7 +2203,8 @@ class SortWorker:
         # Resume continuous if it was running
         if was_continuous:
             self.continuous_sorting = True
-            from web_camera import camera as cam
+            from web_camera import id_camera
+            cam = id_camera()
             self.enqueue('detect_and_sort', camera=cam)
 
     # --- Image Capture ---
@@ -2290,7 +2295,8 @@ class SortWorker:
         exists (sorting continues with just the primary crop).
         """
         from card_detect import warp_with_offset, get_staging_px_per_mm
-        from web_camera import camera as cam
+        from web_camera import id_camera
+        cam = id_camera()
         import gcode_control
 
         if cam is None or corners is None:
@@ -2912,7 +2918,8 @@ class SortWorker:
 
         # Re-arm continuous sort if it was active before pause.
         if self.continuous_sorting:
-            from web_camera import camera as cam
+            from web_camera import id_camera
+            cam = id_camera()
             self.enqueue('detect_and_sort', camera=cam)
 
     def _cmd_stop_session(self, **kwargs):
@@ -2967,7 +2974,8 @@ class SortWorker:
         # session's ROI capture (the platform distance may differ if
         # the user adjusts the setup between sessions).
         try:
-            from web_camera import camera
+            from web_camera import id_camera
+            camera = id_camera()
             camera.unlock_focus()
         except Exception as e:
             self.log(f"Warning: could not unlock camera focus: {e}")
@@ -3465,7 +3473,8 @@ class SortWorker:
         cam = kwargs.get('camera')
         if cam is None:
             try:
-                from web_camera import camera as _cam
+                from web_camera import id_camera
+                _cam = id_camera()
                 cam = _cam
             except Exception:
                 cam = None

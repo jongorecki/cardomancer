@@ -97,3 +97,7 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# Machine-specific camera setup (web_camera.py registry)
+camera_config.json
+camera_config.json.tmp

@@ -26,6 +26,7 @@ except ImportError:
 from flask import Flask, render_template, request, jsonify, Response, send_file
 from flask_socketio import SocketIO
 
+import web_camera
 from web_camera import camera
 from web_worker import worker
 from web_motion_sim import motion_tracker, simulator
@@ -643,25 +644,48 @@ def api_status():
 # Camera API
 # =========================================================================
 
+def _camera_from_request():
+    """Camera named by ?cam=<role> (default 'down', the carriage camera).
+
+    'id' selects whichever camera currently does card identification.
+    Returns (camera, None) or (None, error_response).
+    """
+    role = request.args.get('cam') or 'down'
+    try:
+        return web_camera.get_camera(role), None
+    except KeyError as e:
+        return None, (jsonify({'error': str(e)}), 404)
+
+
 @app.route('/api/camera/start', methods=['POST'])
 def api_camera_start():
-    ok = camera.start()
-    return jsonify({'started': ok})
+    cam, err = _camera_from_request()
+    if err:
+        return err
+    ok = cam.start()
+    return jsonify({'started': ok, 'role': cam.role,
+                    'error': None if ok else cam.get_status()['last_error']})
 
 
 @app.route('/api/camera/stop', methods=['POST'])
 def api_camera_stop():
-    camera.stop()
-    return jsonify({'stopped': True})
+    cam, err = _camera_from_request()
+    if err:
+        return err
+    cam.stop()
+    return jsonify({'stopped': True, 'role': cam.role})
 
 
 @app.route('/api/camera/feed')
 def api_camera_feed():
     """MJPEG stream for live camera view."""
-    if not camera.is_active:
-        camera.start()
+    cam, err = _camera_from_request()
+    if err:
+        return err
+    if not cam.is_active:
+        cam.start()
     return Response(
-        camera.generate_mjpeg(quality=70, max_fps=15),
+        cam.generate_mjpeg(quality=70, max_fps=15),
         mimetype='multipart/x-mixed-replace; boundary=frame'
     )
 
@@ -674,10 +698,13 @@ def api_camera_feed_aruco():
     verify that markers are visible to the camera before (and during) a
     sweep.
     """
-    if not camera.is_active:
-        camera.start()
+    cam, err = _camera_from_request()
+    if err:
+        return err
+    if not cam.is_active:
+        cam.start()
     return Response(
-        camera.generate_mjpeg_with_aruco(quality=70, max_fps=12),
+        cam.generate_mjpeg_with_aruco(quality=70, max_fps=12),
         mimetype='multipart/x-mixed-replace; boundary=frame'
     )
 
@@ -685,7 +712,10 @@ def api_camera_feed_aruco():
 @app.route('/api/camera/snapshot', methods=['POST'])
 def api_camera_snapshot():
     """Capture a single frame as JPEG."""
-    jpeg = camera.get_jpeg(quality=90)
+    cam, err = _camera_from_request()
+    if err:
+        return err
+    jpeg = cam.get_jpeg(quality=90)
     if jpeg is None:
         return jsonify({'error': 'No frame available'}), 503
     return Response(jpeg, mimetype='image/jpeg')
@@ -693,7 +723,38 @@ def api_camera_snapshot():
 
 @app.route('/api/camera/status')
 def api_camera_status():
-    return jsonify(camera.get_status())
+    cam, err = _camera_from_request()
+    if err:
+        return err
+    return jsonify(cam.get_status())
+
+
+@app.route('/api/cameras')
+def api_cameras():
+    """All configured cameras, the ID role, and attached device names."""
+    return jsonify({
+        'id_role': web_camera.id_role(),
+        'cameras': {role: cam.get_status()
+                    for role, cam in web_camera.cameras.items()},
+        'devices': web_camera.list_video_devices(),
+    })
+
+
+@app.route('/api/cameras/<role>', methods=['POST'])
+def api_camera_settings(role):
+    """Update and persist one camera's settings (camera_config.json).
+
+    Body: any of enabled, device_index, device_name, rotate (0/90/180/270),
+    flip (none/h/v/hv), width, height, fps, controls {name: value}.
+    """
+    try:
+        saved = web_camera.save_camera_settings(role, request.get_json() or {})
+    except KeyError as e:
+        return jsonify({'error': str(e)}), 404
+    except (ValueError, TypeError) as e:
+        return jsonify({'error': str(e)}), 400
+    return jsonify({'role': role, 'settings': saved,
+                    'status': web_camera.cameras[role].get_status()})
 
 
 # =========================================================================
@@ -1261,11 +1322,13 @@ def api_session_start():
                         'New Hardware Setup (Calibration tab) or load a '
                         'saved bin config before starting a session.'),
         }), 409
-    if not camera.is_active:
+    id_cam = web_camera.id_camera()
+    if not id_cam.is_active:
         return jsonify({
             'error': 'camera_not_active',
-            'message': ('Camera is not active. Start the camera on the '
-                        'Dashboard before starting a session.'),
+            'message': (f"The card-ID camera ('{id_cam.role}') is not "
+                        f"active. Start it on the Dashboard before "
+                        f"starting a session."),
         }), 409
 
     # Preflight: require a source bin so we have somewhere to pick from.
@@ -3732,15 +3795,18 @@ def api_wizard_lock_focus():
     running for the underlying cv2.VideoCapture property write to take
     effect.
     """
-    if not camera.is_active:
-        camera.start()
+    cam, err = _camera_from_request()
+    if err:
+        return err
+    if not cam.is_active:
+        cam.start()
         import time
         time.sleep(0.5)
     try:
-        camera.lock_focus()
+        cam.lock_focus()
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
-    return jsonify({'ok': camera.focus_locked, 'focus_locked': camera.focus_locked})
+    return jsonify({'ok': cam.focus_locked, 'focus_locked': cam.focus_locked})
 
 
 @app.route('/api/calibration/detect-markers', methods=['POST'])
@@ -5078,13 +5144,14 @@ def _graceful_shutdown(reason='shutdown'):
     except Exception:
         pass
 
-    # 3. Stop the camera thread.
-    try:
-        if camera.is_active:
-            camera.stop()
-            logger.info("Camera stopped")
-    except Exception as e:
-        logger.warning(f"camera.stop failed: {e}")
+    # 3. Stop the camera threads.
+    for _cam in web_camera.cameras.values():
+        try:
+            if _cam.is_active:
+                _cam.stop()
+                logger.info(f"Camera '{_cam.role}' stopped")
+        except Exception as e:
+            logger.warning(f"camera '{_cam.role}' stop failed: {e}")
 
     # 4. Stop the worker thread (drains queue, joins).
     try:
@@ -5297,6 +5364,120 @@ def _ensure_single_instance(port=5000):
         s.close()
 
 
+def _install_camera_health_listeners(grace_seconds=12.0):
+    """Wire every camera's health changes to the UI, and auto-pause a
+    running sort when the card-ID camera stays unhealthy."""
+    # Camera health listener — auto-pause the sort if the camera
+    # ACTUALLY stays dead mid-session. We can't recognize cards
+    # without a live feed, so continuing would drop cards into the
+    # wrong bins.
+    #
+    # Important nuance: the camera's watchdog can briefly flip health
+    # to 'stalled' or 'dead' whenever it triggers a reconnect, even
+    # though it recovers within 1-2 seconds on attempt 1. The old
+    # handler auto-paused on every such flip, which killed the sort
+    # session the first time anything (heavy JSON parse, CPU spike)
+    # momentarily starved the capture thread. Instead we use a grace
+    # window: only auto-pause after health has been continuously
+    # non-ok for GRACE_SECONDS and the camera is still not healthy.
+    import threading as _cam_thr_mod
+
+    GRACE_SECONDS = grace_seconds
+    _health_pause_lock = _cam_thr_mod.Lock()
+    _health_pause_state = {'timer': None, 'unhealthy_since': None}
+
+    def _cancel_pause_timer():
+        t = _health_pause_state.get('timer')
+        if t is not None:
+            try:
+                t.cancel()
+            except Exception:
+                pass
+            _health_pause_state['timer'] = None
+        _health_pause_state['unhealthy_since'] = None
+
+    def _do_auto_pause(reason):
+        # Re-check state at fire time so a late-arriving recovery wins.
+        id_cam = web_camera.id_camera()
+        with _health_pause_lock:
+            if id_cam.health == 'ok':
+                logger.info(f"Camera recovered before grace expired "
+                            f"— not pausing")
+                _cancel_pause_timer()
+                return
+            if worker.state != 'sorting':
+                _cancel_pause_timer()
+                return
+            logger.warning(f"Camera '{id_cam.role}' still {id_cam.health} after "
+                           f"{GRACE_SECONDS:.0f}s grace — auto-pausing sort")
+            try:
+                worker.request_abort('camera freeze')
+                worker.enqueue('pause')
+                socketio.emit('error', {
+                    'message': (f'Camera {id_cam.health} for '
+                                f'{GRACE_SECONDS:.0f}s during sort — '
+                                f'session auto-paused. Check camera '
+                                f'and resume.'),
+                })
+            except Exception:
+                logger.exception("auto-pause failed")
+            _cancel_pause_timer()
+
+    def _on_camera_health(role, old, new):
+        try:
+            socketio.emit('camera_health', {
+                'role': role,
+                'old': old,
+                'new': new,
+            })
+        except Exception:
+            pass
+
+        # Only the camera that identifies cards can stall a sort; the
+        # other one going dark doesn't stop cards being recognised.
+        if role != web_camera.id_role():
+            return
+
+        with _health_pause_lock:
+            if new == 'ok':
+                # Healthy again — cancel any pending auto-pause.
+                if _health_pause_state['timer'] is not None:
+                    logger.info(f"Camera recovered ({old}->ok) "
+                                f"— cancelling auto-pause timer")
+                _cancel_pause_timer()
+                return
+
+            # Non-ok transition. Only meaningful during an active sort.
+            if worker.state != 'sorting':
+                return
+
+            # Already have a timer running from an earlier transition?
+            # Leave it alone — it started the grace countdown already.
+            if _health_pause_state['timer'] is not None:
+                return
+
+            _health_pause_state['unhealthy_since'] = time.time()
+            timer = _cam_thr_mod.Timer(
+                GRACE_SECONDS,
+                _do_auto_pause,
+                args=(f'{old}->{new}',),
+            )
+            timer.daemon = True
+            _health_pause_state['timer'] = timer
+            timer.start()
+            logger.warning(f"Camera health {old}->{new} during sort — "
+                           f"starting {GRACE_SECONDS:.0f}s grace window before "
+                           f"auto-pause")
+    import functools as _functools
+    for _role, _cam in web_camera.cameras.items():
+        try:
+            _cam.add_health_listener(
+                _functools.partial(_on_camera_health, _role))
+        except Exception as e:
+            logger.warning(f"could not install '{_role}' camera health "
+                           f"listener: {e}")
+
+
 def main():
     # Single-instance guard FIRST — before any heavy preload — so the
     # operator gets an immediate error instead of waiting 30s for
@@ -5340,104 +5521,7 @@ def main():
         # Windows / non-main-thread limitations
         logger.warning(f"signal handler install partial: {e}")
 
-    # Camera health listener — auto-pause the sort if the camera
-    # ACTUALLY stays dead mid-session. We can't recognize cards
-    # without a live feed, so continuing would drop cards into the
-    # wrong bins.
-    #
-    # Important nuance: the camera's watchdog can briefly flip health
-    # to 'stalled' or 'dead' whenever it triggers a reconnect, even
-    # though it recovers within 1-2 seconds on attempt 1. The old
-    # handler auto-paused on every such flip, which killed the sort
-    # session the first time anything (heavy JSON parse, CPU spike)
-    # momentarily starved the capture thread. Instead we use a grace
-    # window: only auto-pause after health has been continuously
-    # non-ok for GRACE_SECONDS and the camera is still not healthy.
-    import threading as _cam_thr_mod
-
-    GRACE_SECONDS = 12.0
-    _health_pause_lock = _cam_thr_mod.Lock()
-    _health_pause_state = {'timer': None, 'unhealthy_since': None}
-
-    def _cancel_pause_timer():
-        t = _health_pause_state.get('timer')
-        if t is not None:
-            try:
-                t.cancel()
-            except Exception:
-                pass
-            _health_pause_state['timer'] = None
-        _health_pause_state['unhealthy_since'] = None
-
-    def _do_auto_pause(reason):
-        # Re-check state at fire time so a late-arriving recovery wins.
-        with _health_pause_lock:
-            if camera.health == 'ok':
-                logger.info(f"Camera recovered before grace expired "
-                            f"— not pausing")
-                _cancel_pause_timer()
-                return
-            if worker.state != 'sorting':
-                _cancel_pause_timer()
-                return
-            logger.warning(f"Camera still {camera.health} after "
-                           f"{GRACE_SECONDS:.0f}s grace — auto-pausing sort")
-            try:
-                worker.request_abort('camera freeze')
-                worker.enqueue('pause')
-                socketio.emit('error', {
-                    'message': (f'Camera {camera.health} for '
-                                f'{GRACE_SECONDS:.0f}s during sort — '
-                                f'session auto-paused. Check camera '
-                                f'and resume.'),
-                })
-            except Exception:
-                logger.exception("auto-pause failed")
-            _cancel_pause_timer()
-
-    def _on_camera_health(old, new):
-        try:
-            socketio.emit('camera_health', {
-                'old': old,
-                'new': new,
-            })
-        except Exception:
-            pass
-
-        with _health_pause_lock:
-            if new == 'ok':
-                # Healthy again — cancel any pending auto-pause.
-                if _health_pause_state['timer'] is not None:
-                    logger.info(f"Camera recovered ({old}->ok) "
-                                f"— cancelling auto-pause timer")
-                _cancel_pause_timer()
-                return
-
-            # Non-ok transition. Only meaningful during an active sort.
-            if worker.state != 'sorting':
-                return
-
-            # Already have a timer running from an earlier transition?
-            # Leave it alone — it started the grace countdown already.
-            if _health_pause_state['timer'] is not None:
-                return
-
-            _health_pause_state['unhealthy_since'] = time.time()
-            timer = _cam_thr_mod.Timer(
-                GRACE_SECONDS,
-                _do_auto_pause,
-                args=(f'{old}->{new}',),
-            )
-            timer.daemon = True
-            _health_pause_state['timer'] = timer
-            timer.start()
-            logger.warning(f"Camera health {old}->{new} during sort — "
-                           f"starting {GRACE_SECONDS:.0f}s grace window before "
-                           f"auto-pause")
-    try:
-        camera.add_health_listener(_on_camera_health)
-    except Exception as e:
-        logger.warning(f"could not install camera health listener: {e}")
+    _install_camera_health_listeners()
 
     # Wire serial error callback so serial dropouts auto-notify the UI.
     try:

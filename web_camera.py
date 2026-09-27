@@ -51,9 +51,26 @@ class CameraManager:
     TARGET_HEIGHT = 1080
     TARGET_FPS = 30
 
-    def __init__(self, device_index=0, rotate=cv2.ROTATE_90_CLOCKWISE):
+    def __init__(self, device_index=0, rotate=cv2.ROTATE_90_CLOCKWISE,
+                 role='down', device_name=None, flip=None, width=None,
+                 height=None, fps=None, controls=None, enabled=True):
+        self.role = role
+        self.enabled = enabled
         self.device_index = device_index
+        # Optional DirectShow friendly name; when set it wins over
+        # device_index, since indexes shuffle when USB devices are
+        # replugged. Resolved on every open.
+        self.device_name = device_name
         self.rotate = rotate
+        # cv2.flip code (1 = horizontal, 0 = vertical, -1 = both) or None.
+        self.flip = flip
+        self.target_width = width or self.TARGET_WIDTH
+        self.target_height = height or self.TARGET_HEIGHT
+        self.target_fps = fps or self.TARGET_FPS
+        # Manual capture controls (exposure, white balance, focus, ...),
+        # re-applied after every open so a reconnect doesn't silently
+        # drop back to auto. Keys are names from CONTROL_PROPS.
+        self.controls = dict(controls or {})
         self._cap = None
         self._frame = None
         self._lock = threading.Lock()
@@ -135,6 +152,11 @@ class CameraManager:
             if self._running:
                 return True
 
+            if not self.enabled:
+                self._last_error = (f"camera '{self.role}' is disabled "
+                                    f"in camera_config.json")
+                return False
+
             if not self._open_capture():
                 return False
 
@@ -152,8 +174,8 @@ class CameraManager:
                 name='camera-watchdog')
             self._watchdog_thread.start()
 
-            logger.info(f"Started on device {self.device_index} "
-                        f"(buffer_size=1, watchdog on)")
+            logger.info(f"[{self.role}] started on device "
+                        f"{self.device_index} (buffer_size=1, watchdog on)")
             return True
 
     def stop(self):
@@ -205,6 +227,7 @@ class CameraManager:
         """
         cap = None
         backends_tried = []
+        self._resolve_device_index()
 
         def try_backend(backend, name):
             try:
@@ -249,13 +272,13 @@ class CameraManager:
             logger.warning(f"could not set FOURCC=MJPG: {e}")
 
         try:
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.TARGET_WIDTH)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.TARGET_HEIGHT)
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.target_width)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.target_height)
         except Exception as e:
             logger.warning(f"could not set resolution: {e}")
 
         try:
-            cap.set(cv2.CAP_PROP_FPS, self.TARGET_FPS)
+            cap.set(cv2.CAP_PROP_FPS, self.target_fps)
         except Exception as e:
             logger.warning(f"could not set FPS: {e}")
 
@@ -265,6 +288,8 @@ class CameraManager:
             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         except Exception:
             pass
+
+        self._apply_controls(cap)
 
         # Read back what we actually got — useful diagnostic if things
         # misbehave. Not all backends report these accurately.
@@ -405,8 +430,10 @@ class CameraManager:
             try:
                 if self.rotate is not None:
                     frame = cv2.rotate(frame, self.rotate)
+                if self.flip is not None:
+                    frame = cv2.flip(frame, self.flip)
             except Exception:
-                logger.exception("rotate exception")
+                logger.exception("rotate/flip exception")
                 continue
 
             now = time.time()
@@ -431,7 +458,7 @@ class CameraManager:
 
                 if self._fps < self.LOW_FPS_WARN_THRESHOLD:
                     self._last_error = (f'low fps {self._fps:.1f} '
-                                        f'(target {self.TARGET_FPS})')
+                                        f'(target {self.target_fps})')
                     if prev_fps >= self.LOW_FPS_WARN_THRESHOLD or prev_fps == 0:
                         logger.warning(f"capture fps={self._fps:.1f} "
                                        f"— check USB bandwidth / format")
@@ -536,6 +563,65 @@ class CameraManager:
         if not ret:
             return None
         return jpeg.tobytes()
+
+    # -------------------------------------------------------------------
+    # Device selection + manual controls
+    # -------------------------------------------------------------------
+
+    # Settings name -> cv2 property. Values pass through in the driver's
+    # units (DirectShow exposure is log2 seconds, e.g. -6 = 1/64 s;
+    # CAP_PROP_AUTO_EXPOSURE is 0.25 manual / 0.75 auto on DirectShow).
+    CONTROL_PROPS = {
+        'auto_exposure': cv2.CAP_PROP_AUTO_EXPOSURE,
+        'exposure': cv2.CAP_PROP_EXPOSURE,
+        'gain': cv2.CAP_PROP_GAIN,
+        'brightness': cv2.CAP_PROP_BRIGHTNESS,
+        'auto_wb': cv2.CAP_PROP_AUTO_WB,
+        'wb_temperature': cv2.CAP_PROP_WB_TEMPERATURE,
+        'autofocus': cv2.CAP_PROP_AUTOFOCUS,
+        'focus': cv2.CAP_PROP_FOCUS,
+    }
+    # Auto modes must be switched off before their manual values stick.
+    _CONTROL_ORDER = ('auto_exposure', 'exposure', 'gain', 'brightness',
+                      'auto_wb', 'wb_temperature', 'autofocus', 'focus')
+
+    def _resolve_device_index(self):
+        """If device_name is set, look up its current DirectShow index."""
+        if not self.device_name:
+            return
+        names = list_video_devices()
+        if self.device_name in names:
+            self.device_index = names.index(self.device_name)
+        elif names:
+            logger.warning(f"[{self.role}] device '{self.device_name}' not "
+                           f"found (have {names}); using index "
+                           f"{self.device_index}")
+
+    def _apply_controls(self, cap):
+        """Push manual controls to the device. Unsupported ones are logged
+        and skipped; many UVC drivers ignore some properties."""
+        controls = dict(self.controls)
+        if self._focus_locked:
+            controls['autofocus'] = 0
+        for name in self._CONTROL_ORDER:
+            if controls.get(name) is None:
+                continue
+            try:
+                if not cap.set(self.CONTROL_PROPS[name], float(controls[name])):
+                    logger.info(f"[{self.role}] driver rejected "
+                                f"{name}={controls[name]}")
+            except Exception as e:
+                logger.warning(f"[{self.role}] could not set {name}: {e}")
+
+    def set_controls(self, **controls):
+        """Update manual controls and apply them to the open device now."""
+        unknown = set(controls) - set(self.CONTROL_PROPS)
+        if unknown:
+            raise ValueError(f"unknown camera controls: {sorted(unknown)}")
+        self.controls.update(controls)
+        cap = self._cap
+        if cap is not None and cap.isOpened():
+            self._apply_controls(cap)
 
     # -------------------------------------------------------------------
     # Focus control
@@ -866,8 +952,14 @@ class CameraManager:
         since_frame = (time.time() - self._last_good_frame_time
                        if self._last_good_frame_time else None)
         return {
+            "role": self.role,
+            "enabled": self.enabled,
             "active": self.is_active,
             "device_index": self.device_index,
+            "device_name": self.device_name,
+            "resolution": [self.target_width, self.target_height],
+            "target_fps": self.target_fps,
+            "controls": dict(self.controls),
             "frame_count": self._frame_count,
             "fps": round(self._fps, 1),
             "health": self._health,
@@ -879,5 +971,176 @@ class CameraManager:
         }
 
 
-# Module-level singleton
-camera = CameraManager()
+# ---------------------------------------------------------------------------
+# Camera registry
+#
+# Cameras are addressed by role:
+#   'down' — the carriage camera looking down (bins, calibration, and card
+#            ID until the up-camera sort cycle lands).
+#   'up'   — the upward-facing camera that images a card held on the head.
+#
+# Settings live in camera_config.json next to this file (machine-specific,
+# gitignored). Env vars override single fields:
+#   CARDOMANCER_CAM_<ROLE>_INDEX / _NAME / _ENABLED
+#   CARDOMANCER_ID_CAMERA   role used for card identification
+# ---------------------------------------------------------------------------
+
+import json
+import os
+
+CAMERA_CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                  'camera_config.json')
+
+DEFAULT_CAMERA_CONFIG = {
+    'id_role': 'down',
+    'cameras': {
+        'down': {'enabled': True, 'device_index': 0, 'rotate': 90},
+        # AOC AC410: 4K30 or 1080p60. Off until it's mounted and set up.
+        'up': {'enabled': False, 'device_index': 1, 'rotate': 0,
+               'width': 1920, 'height': 1080, 'fps': 60},
+    },
+}
+
+_ROTATIONS = {0: None, 90: cv2.ROTATE_90_CLOCKWISE,
+              180: cv2.ROTATE_180, 270: cv2.ROTATE_90_COUNTERCLOCKWISE}
+_FLIPS = {None: None, 'none': None, 'h': 1, 'v': 0, 'hv': -1}
+_SETTING_KEYS = {'enabled', 'device_index', 'device_name', 'rotate', 'flip',
+                 'width', 'height', 'fps', 'controls'}
+
+
+def list_video_devices():
+    """DirectShow device names in index order, or [] if unavailable.
+
+    Needs the optional `pygrabber` package; without it cameras are
+    selected by index only.
+    """
+    try:
+        from pygrabber.dshow_graph import FilterGraph
+        return list(FilterGraph().get_input_devices())
+    except Exception:
+        return []
+
+
+def load_camera_config(path=None):
+    """Defaults, overlaid with camera_config.json, overlaid with env vars."""
+    cfg = json.loads(json.dumps(DEFAULT_CAMERA_CONFIG))
+    path = path or CAMERA_CONFIG_PATH
+    if os.path.exists(path):
+        try:
+            with open(path, encoding='utf-8') as f:
+                saved = json.load(f)
+            cfg['id_role'] = saved.get('id_role', cfg['id_role'])
+            for role, settings in (saved.get('cameras') or {}).items():
+                cfg['cameras'].setdefault(role, {}).update(settings)
+        except Exception as e:
+            logger.error(f"could not read {path}: {e}; using defaults")
+    for role, settings in cfg['cameras'].items():
+        prefix = f'CARDOMANCER_CAM_{role.upper()}_'
+        if os.environ.get(prefix + 'INDEX'):
+            settings['device_index'] = int(os.environ[prefix + 'INDEX'])
+        if os.environ.get(prefix + 'NAME'):
+            settings['device_name'] = os.environ[prefix + 'NAME']
+        if os.environ.get(prefix + 'ENABLED'):
+            settings['enabled'] = os.environ[prefix + 'ENABLED'].lower() in (
+                '1', 'true', 'yes', 'on')
+    cfg['id_role'] = os.environ.get('CARDOMANCER_ID_CAMERA', cfg['id_role'])
+    if cfg['id_role'] not in cfg['cameras']:
+        logger.error(f"id_role '{cfg['id_role']}' has no camera; using 'down'")
+        cfg['id_role'] = 'down'
+    return cfg
+
+
+def _manager_kwargs(settings):
+    rotate = int(settings.get('rotate', 0) or 0)
+    if rotate not in _ROTATIONS:
+        raise ValueError(f"rotate must be one of {sorted(_ROTATIONS)}")
+    flip = settings.get('flip')
+    if flip not in _FLIPS:
+        raise ValueError(f"flip must be one of {sorted(k for k in _FLIPS if k)}")
+    return dict(
+        enabled=bool(settings.get('enabled', True)),
+        device_index=int(settings.get('device_index', 0)),
+        device_name=settings.get('device_name') or None,
+        rotate=_ROTATIONS[rotate],
+        flip=_FLIPS[flip],
+        width=settings.get('width'),
+        height=settings.get('height'),
+        fps=settings.get('fps'),
+        controls=settings.get('controls'),
+    )
+
+
+_config = load_camera_config()
+cameras = {role: CameraManager(role=role, **_manager_kwargs(settings))
+           for role, settings in _config['cameras'].items()}
+
+# Back-compat: existing code imports `camera` and means the down camera.
+camera = cameras['down']
+
+
+def get_camera(role=None):
+    """Camera for `role`; None or 'id' means the identification camera."""
+    if role in (None, '', 'id'):
+        role = _config['id_role']
+    try:
+        return cameras[role]
+    except KeyError:
+        raise KeyError(f"unknown camera role '{role}' "
+                       f"(have {sorted(cameras)})") from None
+
+
+def id_role():
+    return _config['id_role']
+
+
+def id_camera():
+    """The camera card identification reads from."""
+    return cameras[_config['id_role']]
+
+
+def camera_settings(role):
+    return dict(_config['cameras'][role])
+
+
+def save_camera_settings(role, updates, path=None):
+    """Validate, persist and apply settings for one camera.
+
+    Device/format changes (index, name, size, fps) take effect on the next
+    open, so an active camera is restarted. Rotation, flip and manual
+    controls apply immediately.
+    """
+    if role not in cameras:
+        raise KeyError(f"unknown camera role '{role}'")
+    unknown = set(updates) - _SETTING_KEYS
+    if unknown:
+        raise ValueError(f"unknown camera settings: {sorted(unknown)}")
+    merged = {**_config['cameras'][role], **updates}
+    kwargs = _manager_kwargs(merged)  # validates before anything changes
+    unknown_ctl = set(kwargs['controls'] or {}) - set(CameraManager.CONTROL_PROPS)
+    if unknown_ctl:
+        raise ValueError(f"unknown camera controls: {sorted(unknown_ctl)}")
+
+    _config['cameras'][role] = merged
+    path = path or CAMERA_CONFIG_PATH
+    tmp = path + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(_config, f, indent=2)
+    os.replace(tmp, path)
+
+    cam = cameras[role]
+    restart = cam.is_active and any(
+        k in updates for k in ('device_index', 'device_name', 'width',
+                               'height', 'fps', 'enabled'))
+    if restart:
+        cam.stop()
+    for attr in ('enabled', 'device_index', 'device_name', 'rotate', 'flip'):
+        setattr(cam, attr, kwargs[attr])
+    cam.target_width = kwargs['width'] or CameraManager.TARGET_WIDTH
+    cam.target_height = kwargs['height'] or CameraManager.TARGET_HEIGHT
+    cam.target_fps = kwargs['fps'] or CameraManager.TARGET_FPS
+    if 'controls' in updates:
+        cam.controls = {}
+        cam.set_controls(**(kwargs['controls'] or {}))
+    if restart and cam.enabled:
+        cam.start()
+    return camera_settings(role)
