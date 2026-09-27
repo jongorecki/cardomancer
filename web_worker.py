@@ -484,9 +484,10 @@ class SortWorker:
             # Kill both pumps
             gcode_control._send_gcode('M106 P0 S0')
             gcode_control._send_gcode('M106 P1 S0')
-            # Lift Z to safe height
+            # Lift Z to the travel clearance height. Z=0 is fully DOWN
+            # (Z_MAX is the top), so never send 0 here.
             try:
-                gcode_control.move_z(0)
+                gcode_control.move_z(gcode_control.Z_CLEAR_HEIGHT)
             except Exception:
                 pass
             # If we were in sorting state, drop back to paused so the
@@ -1241,7 +1242,9 @@ class SortWorker:
         except Exception:
             pass
 
-        # Reset continuous sort / undo state
+        # Reset continuous sort / undo state, and any abort left over from
+        # a previous session (camera auto-pause, calibration cancel).
+        self._clear_abort()
         self.continuous_sorting = False
         self.undo_available = False
         self.last_scan_id = None
@@ -2091,6 +2094,7 @@ class SortWorker:
             # rapid button clicks before the UI receives the confirmation).
             self.log("Continuous sort already running — ignoring duplicate start")
             return
+        self._clear_abort()
         self.continuous_sorting = True
         self.continuous_delay = float(delay)
         self.log(f"Continuous sort started (delay={self.continuous_delay}s)")
@@ -2877,6 +2881,10 @@ class SortWorker:
         """
         if self.state != 'paused':
             return
+        # A camera auto-pause (or a stray calibration cancel) leaves the
+        # abort flag set; without clearing it every card cycle after
+        # resume would bail at its first _abort_check().
+        self._clear_abort()
         self.state = 'sorting'
         self.log("Session resumed")
 

@@ -9,12 +9,9 @@ function emergencyStop() {
     addLog('!!! EMERGENCY STOP TRIGGERED !!!');
 }
 
-// Keyboard shortcut: Escape key for E-stop
-document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-        emergencyStop();
-    }
-});
+// No keyboard shortcut: Escape also closes modals, popovers and the tour,
+// so binding it here e-stopped the machine whenever a dialog was dismissed
+// mid-sort. Use the on-screen E-STOP button.
 
 async function resetAfterEstop() {
     if (!confirm('Reset the machine after emergency stop?\n\n' +

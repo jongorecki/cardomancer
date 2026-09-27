@@ -3272,7 +3272,10 @@ def api_calibration_cancel():
     except Exception as e:
         logger.warning(f"calibrator.cancel() error: {e}")
     try:
-        worker.request_abort('calibration cancelled via API')
+        # Only abort worker commands when no sort session is running;
+        # a stray cancel mid-sort would otherwise stop every card cycle.
+        if worker.state not in ('sorting', 'paused'):
+            worker.request_abort('calibration cancelled via API')
     except Exception as e:
         logger.warning(f"worker.request_abort() error: {e}")
     return jsonify({'cancelled': True})
