@@ -1150,3 +1150,16 @@ def save_camera_settings(role, updates, path=None):
     if restart and cam.enabled:
         cam.start()
     return camera_settings(role)
+
+
+def set_id_role(role, path=None):
+    """Persist which camera card identification reads from."""
+    if role not in cameras:
+        raise ValueError(f"id_role must be one of {sorted(cameras)}")
+    _config['id_role'] = role
+    path = path or CAMERA_CONFIG_PATH
+    tmp = path + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(_config, f, indent=2)
+    os.replace(tmp, path)
+    return role

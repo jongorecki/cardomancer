@@ -101,3 +101,6 @@ Thumbs.db
 # Machine-specific camera setup (web_camera.py registry)
 camera_config.json
 camera_config.json.tmp
+machine_settings.json
+machine_settings.json.tmp
+sh.exe.stackdump

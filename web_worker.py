@@ -171,6 +171,11 @@ class SortWorker:
         # it (applying positions, probing bins).
         self._abort_requested = False
 
+        # Per-card cycle for the current session ('staging' | 'upcam'),
+        # read from machine_settings at session start and fixed for the
+        # session's lifetime (docs/design/up_camera.md#reversibility).
+        self.sort_cycle = 'staging'
+
         # Snapshot of session state captured at the moment of E-stop.
         # Used by _cmd_reset_after_estop to decide whether to drop
         # back into 'paused' (there was an active session — let the
@@ -1108,8 +1113,13 @@ class SortWorker:
         # rely on pixel-accurate comparisons. Capture a fresh reference
         # at every session start — the platform should be empty at this
         # point since cards go in the source bin.
+        import machine_settings
+        self.sort_cycle = machine_settings.get_sort_cycle()
+        self.log(f"Sort cycle: {self.sort_cycle}")
+
         cam = kwargs.get('camera')
-        if gcode_control.is_connected() and cam is not None:
+        if (self.sort_cycle == 'staging' and gcode_control.is_connected()
+                and cam is not None):
             self._capture_staging_background(gcode_control, cam)
 
         self.sort_mode = mode
@@ -1291,6 +1301,17 @@ class SortWorker:
             'bin_count': bin_count,
         })
 
+    def _detect_and_sort_upcam(self, camera=None, **kwargs):
+        """Per-card cycle for the up-camera build: pick, image the held
+        card from below, place. Not built yet (TASK-097); until it is,
+        stop safely instead of moving anything."""
+        self.continuous_sorting = False
+        self.state = 'paused'
+        msg = ("The up-camera sort cycle isn't built yet. Set Sort cycle "
+               "to 'Staging platform' on the Setup tab to sort.")
+        self.log(msg)
+        self.emit('session_paused', {'reason': msg})
+
     # ------------------------------------------------------------------
     # Staging background capture (called during session start)
     # ------------------------------------------------------------------
@@ -1420,6 +1441,9 @@ class SortWorker:
         if self.state not in ('sorting',):
             self.log("Cannot detect — not in sorting state")
             return
+
+        if self.sort_cycle == 'upcam':
+            return self._detect_and_sort_upcam(camera=camera, **kwargs)
 
         import gcode_control
         import threading

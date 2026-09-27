@@ -335,3 +335,46 @@ document.addEventListener('DOMContentLoaded', () => {
     setInterval(refreshCameraStatus, 2000);
     document.addEventListener('visibilitychange', refreshCameraStatus);
 });
+
+// ---------------------------------------------------------------------------
+// Sort cycle + ID camera (docs/design/up_camera.md#reversibility).
+// Both are locked while a session is running; the server refuses changes.
+// ---------------------------------------------------------------------------
+
+async function loadSortCycle() {
+    const sel = document.getElementById('sort-cycle-select');
+    if (!sel) return;
+    try {
+        const data = await apiGet('/api/machine/sort-cycle');
+        sel.value = data.sort_cycle;
+        document.getElementById('id-camera-select').value = data.id_role;
+        _updateSortCycleHint(data.sort_cycle, data.id_role);
+    } catch (_) {}
+}
+
+function _updateSortCycleHint(cycle, idRole) {
+    const hint = document.getElementById('sort-cycle-hint');
+    if (!hint) return;
+    if (cycle === 'upcam' && idRole !== 'up') {
+        hint.className = 'col-sm-4 small text-warning';
+        hint.textContent = 'Up-camera cycle needs the card camera (up) as ID camera.';
+    } else {
+        hint.className = 'col-sm-4 small text-muted';
+        hint.textContent = 'Takes effect when the next session starts.';
+    }
+}
+
+async function setSortCycle(cycle) {
+    const res = await apiPost('/api/machine/sort-cycle', { sort_cycle: cycle });
+    if (res.ok) addLog(`Sort cycle set to '${cycle}'`);
+    await loadSortCycle();
+}
+
+async function setIdCamera(role) {
+    const res = await apiPost('/api/camera/id-role', { role });
+    if (res.ok) addLog(`Card ID camera set to '${role}'`);
+    await loadSortCycle();
+    await loadCameraSettings();
+}
+
+document.addEventListener('DOMContentLoaded', loadSortCycle);

@@ -729,6 +729,49 @@ def api_camera_status():
     return jsonify(cam.get_status())
 
 
+@app.route('/api/machine/sort-cycle', methods=['GET', 'POST'])
+def api_sort_cycle():
+    """Get or set the per-card sort cycle ('staging' | 'upcam').
+
+    The cycle is fixed for a session's lifetime, so changes are refused
+    while a session is sorting or paused.
+    """
+    import machine_settings
+    if request.method == 'POST':
+        if worker.state in ('sorting', 'paused'):
+            return jsonify({
+                'error': 'session_active',
+                'message': ('End the current session before changing '
+                            'the sort cycle.'),
+            }), 409
+        cycle = (request.get_json() or {}).get('sort_cycle')
+        try:
+            machine_settings.set_sort_cycle(cycle)
+        except ValueError as e:
+            return jsonify({'error': 'invalid_sort_cycle',
+                            'message': str(e)}), 400
+    return jsonify({
+        'sort_cycle': machine_settings.get_sort_cycle(),
+        'choices': list(machine_settings.SORT_CYCLES),
+        'id_role': web_camera.id_role(),
+    })
+
+
+@app.route('/api/camera/id-role', methods=['POST'])
+def api_camera_id_role():
+    """Choose which camera card identification reads from."""
+    if worker.state in ('sorting', 'paused'):
+        return jsonify({'error': 'session_active',
+                        'message': ('End the current session before '
+                                    'changing the ID camera.')}), 409
+    try:
+        role = web_camera.set_id_role((request.get_json() or {}).get('role'))
+    except ValueError as e:
+        return jsonify({'error': 'invalid_camera_role',
+                        'message': str(e)}), 400
+    return jsonify({'id_role': role})
+
+
 @app.route('/api/cameras')
 def api_cameras():
     """All configured cameras, the ID role, and attached device names."""
@@ -1323,6 +1366,16 @@ def api_session_start():
                         'New Hardware Setup (Calibration tab) or load a '
                         'saved bin config before starting a session.'),
         }), 409
+    import machine_settings
+    sort_cycle = machine_settings.get_sort_cycle()
+    if sort_cycle == 'upcam' and web_camera.id_role() != 'up':
+        return jsonify({
+            'error': 'sort_cycle_camera_mismatch',
+            'message': ("Sort cycle is 'upcam' but card identification is "
+                        f"set to the '{web_camera.id_role()}' camera. Set "
+                        "id_role to 'up' in the camera settings, or switch "
+                        "the sort cycle back to 'staging'."),
+        }), 409
     id_cam = web_camera.id_camera()
     if not id_cam.is_active:
         return jsonify({
@@ -1348,7 +1401,7 @@ def api_session_start():
     try:
         staging_x = getattr(gcode_control, 'X_STAGING_POSITION', None)
         camera_x = getattr(gcode_control, 'X_CAMERA_POSITION', None)
-        if staging_x is None or camera_x is None:
+        if sort_cycle == 'staging' and (staging_x is None or camera_x is None):
             return jsonify({
                 'error': 'no_staging_configured',
                 'message': ('Staging position is not configured. Run '

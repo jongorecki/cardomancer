@@ -99,6 +99,25 @@
                 <div class="row mt-3">
                     <div class="col-12">
                         <h2 class="h6 mb-2">Cameras</h2>
+                        <div class="row g-2 align-items-end mb-2" id="sort-cycle-controls">
+                            <div class="col-sm-4">
+                                <label class="form-label small mb-0" for="sort-cycle-select">Sort cycle</label>
+                                <select class="form-select form-select-sm" id="sort-cycle-select"
+                                    onchange="setSortCycle(this.value)">
+                                    <option value="staging">Staging platform (original)</option>
+                                    <option value="upcam">Up camera (card imaged while held)</option>
+                                </select>
+                            </div>
+                            <div class="col-sm-4">
+                                <label class="form-label small mb-0" for="id-camera-select">Card ID camera</label>
+                                <select class="form-select form-select-sm" id="id-camera-select"
+                                    onchange="setIdCamera(this.value)">
+                                    <option value="down">Carriage camera (down)</option>
+                                    <option value="up">Card camera (up)</option>
+                                </select>
+                            </div>
+                            <div class="col-sm-4 small text-muted" id="sort-cycle-hint" role="status"></div>
+                        </div>
                         <div class="row g-2" id="camera-settings-panel">Loading cameras…</div>
                     </div>
                 </div>
